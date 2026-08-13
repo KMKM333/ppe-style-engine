@@ -1380,8 +1380,17 @@ def channels_list():
            WHERE c.platform = 'Instagram'
            ORDER BY c.channel_name"""
     ).fetchall()
+    channels = []
+    for c in rows:
+        video_rows = conn.execute(
+            """SELECT v.video_id, v.title, v.ingested_at, a.word_count
+               FROM videos v LEFT JOIN video_attributes a ON a.video_id = v.video_id
+               WHERE v.channel_id = ? ORDER BY v.ingested_at DESC""",
+            (c["channel_id"],),
+        ).fetchall()
+        channels.append({**dict(c), "videos": video_rows})
     conn.close()
-    return render_template("channels_list.html", active="channels", channels=rows)
+    return render_template("channels_list.html", active="channels", channels=channels)
 
 
 @app.route("/books")

@@ -43,7 +43,11 @@
   </a>
   <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('attributes_page') }}">
     <div class="muted" style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:30px;display:inline-flex;color:var(--accent)">{{ icon('tag') }}</span>Attributes</div>
-    <div style="font-size:28px;font-weight:700">{{ n_attribute_cats }}</div>
+    <div style="font-size:28px;font-weight:700">{{ n_attribute_fields }}</div>
+  </a>
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('attributes_page') }}">
+    <div class="muted" style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:30px;display:inline-flex;color:var(--accent)">{{ icon('layers') }}</span>Media types</div>
+    <div style="font-size:28px;font-weight:700">{{ n_media_types }}</div>
   </a>
 </div>
 

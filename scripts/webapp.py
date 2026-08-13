@@ -172,12 +172,14 @@ def dashboard():
     n_creations = conn.execute("SELECT COUNT(*) FROM transformations").fetchone()[0]
     profiles = _profiles()
     n_subjects_covered = len({p["subject"] for p in profiles if p["subject"] in SUBJECTS})
-    n_attribute_cats = len([c for c in _attribute_cards(conn) if c["implemented"]])
+    implemented_cards = [c for c in _attribute_cards(conn) if c["implemented"]]
+    n_attribute_fields = sum(c["field_count"] for c in implemented_cards)
+    n_media_types = len(implemented_cards)
     conn.close()
     return render_template(
         "dashboard.html", active="dashboard",
         channels=channels, profiles=profiles, n_inputs=n_inputs, n_tests=n_tests, n_creations=n_creations,
-        n_subjects_covered=n_subjects_covered, n_attribute_cats=n_attribute_cats,
+        n_subjects_covered=n_subjects_covered, n_attribute_fields=n_attribute_fields, n_media_types=n_media_types,
     )
 
 

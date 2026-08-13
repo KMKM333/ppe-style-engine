@@ -152,6 +152,34 @@ CREATE TABLE IF NOT EXISTS video_attributes (
     FOREIGN KEY (video_id) REFERENCES videos(video_id)
 );
 
+-- Content breakdown for a video — the qualitative counterpart to
+-- video_attributes' rubric scores, mirroring book_points/book_terms/
+-- book_examples. A video is short enough to need no chapter/section layer
+-- of its own (unlike books), so these hang directly off video_id.
+CREATE TABLE IF NOT EXISTS video_points (
+    point_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id      INTEGER REFERENCES videos(video_id),
+    point_text     TEXT NOT NULL,
+    created_at       TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS video_terms (
+    term_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id      INTEGER REFERENCES videos(video_id),
+    term            TEXT NOT NULL,
+    definition        TEXT,      -- how the video defines/uses this term
+    created_at           TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS video_examples (
+    example_id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id          INTEGER REFERENCES videos(video_id),
+    example_title       TEXT,    -- short, Instagram-title-style label (3-7 words) for list views
+    example_text          TEXT NOT NULL,
+    reinforces_point         TEXT,   -- which point/claim of the video this example supports
+    created_at                  TEXT DEFAULT (datetime('now'))
+);
+
 -- ============================================================
 -- 4. STYLE PROFILE FINGERPRINTS (aggregated stats per profile)
 -- One row per (profile, numeric attribute) -> mean/std/min/max

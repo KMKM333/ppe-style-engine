@@ -1016,6 +1016,18 @@ def input_detail(video_id):
         return redirect(url_for("inputs_list"))
 
     attrs_row = conn.execute("SELECT * FROM video_attributes WHERE video_id = ?", (video_id,)).fetchone()
+
+    points = conn.execute(
+        "SELECT point_text FROM video_points WHERE video_id = ? ORDER BY point_id", (video_id,)
+    ).fetchall()
+    terms = conn.execute(
+        "SELECT term, definition FROM video_terms WHERE video_id = ? ORDER BY term_id", (video_id,)
+    ).fetchall()
+    examples = conn.execute(
+        "SELECT example_id, example_title, example_text, reinforces_point FROM video_examples "
+        "WHERE video_id = ? ORDER BY example_id", (video_id,)
+    ).fetchall()
+    has_breakdown = bool(points or terms or examples)
     conn.close()
 
     attrs = dict(attrs_row) if attrs_row else {}
@@ -1023,7 +1035,10 @@ def input_detail(video_id):
     for name, fields in ATTRIBUTE_SECTIONS:
         sections.append((name, [(f, attrs.get(f)) for f in fields]))
 
-    return render_template("input_detail.html", active="inputs", video=video, sections=sections)
+    return render_template(
+        "input_detail.html", active="inputs", video=video, sections=sections,
+        points=points, terms=terms, examples=examples, has_breakdown=has_breakdown,
+    )
 
 
 @app.route("/inputs/<int:video_id>/delete", methods=["POST"])

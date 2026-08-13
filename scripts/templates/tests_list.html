@@ -28,7 +28,7 @@
     {% for t in tests %}
     <tr>
       <td>#{{ t.test_id }}</td>
-      <td>{{ t.source_label or '(untitled)' }}</td>
+      <td><a href="{{ url_for('test_detail', test_id=t.test_id) }}">{{ t.source_label or '(untitled)' }}</a></td>
       <td class="muted">{{ t.input_type }}</td>
       <td>{{ t.best_profile or '—' }}</td>
       <td class="score {{ 'good' if (t.best_score or 0) >= 70 else ('mid' if (t.best_score or 0) >= 40 else 'bad') }}">{{ t.best_score if t.best_score is not none else '—' }}</td>

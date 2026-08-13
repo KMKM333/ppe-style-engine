@@ -1961,6 +1961,39 @@ def tests_list():
     )
 
 
+@app.route("/tests/<int:test_id>")
+def test_detail(test_id):
+    conn = get_conn()
+    test = conn.execute("SELECT * FROM test_inputs WHERE test_id=?", (test_id,)).fetchone()
+    if not test:
+        conn.close()
+        flash(f"No such test: {test_id}")
+        return redirect(url_for("tests_list"))
+
+    scores = conn.execute(
+        """SELECT s.*, p.profile_code FROM test_scores s
+           JOIN style_profiles p ON p.profile_id = s.profile_id
+           WHERE s.test_id = ? ORDER BY s.rank""",
+        (test_id,),
+    ).fetchall()
+
+    creations = conn.execute(
+        """SELECT t.transformation_id, t.generated_title, t.generated_text, t.generated_by, t.generated_at,
+                  p.profile_code
+           FROM transformations t
+           JOIN style_profiles p ON p.profile_id = t.target_profile_id
+           WHERE t.test_id = ?
+           ORDER BY t.generated_at DESC""",
+        (test_id,),
+    ).fetchall()
+    conn.close()
+
+    return render_template(
+        "test_detail.html", active="tests",
+        test=test, scores=scores, creations=creations,
+    )
+
+
 @app.route("/profiles/hybrid/create", methods=["POST"])
 def hybrid_profile_create():
     codes = [c for c in request.form.getlist("source_profiles") if c]

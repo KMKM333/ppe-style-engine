@@ -830,37 +830,23 @@ def inputs_list():
     rows = []
 
     if kind != "book":
-        # channel_id and title_format are video-only filters; books never match them.
-        if not channel_id and not title_format:
-            where, params = [], []
-            if q:
-                where.append("v.title LIKE ?")
-                params.append(f"%{q}%")
-            if word_min is not None:
-                where.append("a.word_count >= ?")
-                params.append(word_min)
-            if word_max is not None:
-                where.append("a.word_count <= ?")
-                params.append(word_max)
-            where_sql = f"WHERE {' AND '.join(where)}" if where else ""
-        else:
-            where, params = [], []
-            if channel_id:
-                where.append("v.channel_id = ?")
-                params.append(channel_id)
-            if q:
-                where.append("v.title LIKE ?")
-                params.append(f"%{q}%")
-            if title_format:
-                where.append("a.title_format = ?")
-                params.append(title_format)
-            if word_min is not None:
-                where.append("a.word_count >= ?")
-                params.append(word_min)
-            if word_max is not None:
-                where.append("a.word_count <= ?")
-                params.append(word_max)
-            where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+        where, params = [], []
+        if channel_id:
+            where.append("v.channel_id = ?")
+            params.append(channel_id)
+        if q:
+            where.append("v.title LIKE ?")
+            params.append(f"%{q}%")
+        if title_format:
+            where.append("a.title_format = ?")
+            params.append(title_format)
+        if word_min is not None:
+            where.append("a.word_count >= ?")
+            params.append(word_min)
+        if word_max is not None:
+            where.append("a.word_count <= ?")
+            params.append(word_max)
+        where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
         video_rows = conn.execute(
             f"""SELECT v.video_id, v.title, v.url, v.media_type, v.ingested_at, v.duration_sec,
@@ -894,8 +880,13 @@ def inputs_list():
                 "detail_url": url_for("input_detail", video_id=v["video_id"]),
             })
 
-    if kind != "video" and not channel_id and not title_format:
+    if kind != "video" and not title_format:
+        # title_format has no book equivalent, so it's still video-only; channel_id
+        # now applies to books too, matched via the author->channel join below.
         where, params = [], []
+        if channel_id:
+            where.append("c.channel_id = ?")
+            params.append(channel_id)
         if q:
             where.append("b.title LIKE ?")
             params.append(f"%{q}%")

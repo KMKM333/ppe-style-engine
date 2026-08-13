@@ -48,7 +48,7 @@
     <label for="pasted_text">Pasted script / excerpt</label>
     <textarea id="pasted_text" name="pasted_text" placeholder="Paste all or part of a script here to transform it instead of selecting an input above">{{ pasted_text or '' }}</textarea>
 
-    <button type="submit" style="margin-top:10px">Generate transform prompt</button>
+    <button type="submit" style="margin-top:10px">Generate transform script</button>
   </form>
 </div>
 
@@ -81,34 +81,44 @@
 </details>
 
 {% if prompt_text %}
-<h2>Step 1 — Transform prompt</h2>
-<div class="card">
-  <p class="muted" style="margin-top:0">Seeded with profile {{ selected_profile }}'s live fingerprint. Generate the rewrite automatically with Claude, or copy this prompt to paste into a chat yourself.</p>
-  <textarea class="mono" readonly onclick="this.select()">{{ prompt_text }}</textarea>
-  <form method="post" action="{{ url_for('transform_generate') }}" style="margin-top:10px">
-    <input type="hidden" name="test_id" value="{{ selected_test_id }}">
-    <input type="hidden" name="profile" value="{{ selected_profile }}">
-    <input type="hidden" name="source" value="{{ selected_source or '' }}">
-    <input type="hidden" name="pasted_title" value="{{ pasted_title or '' }}">
-    <input type="hidden" name="pasted_text" value="{{ pasted_text or '' }}">
-    <button type="submit">Generate with Claude ✨</button>
-  </form>
+<div class="flex" style="align-items:stretch">
+  <div class="card" style="flex:1;min-width:320px">
+    <h2 style="margin-top:0">Input</h2>
+    <p class="muted" style="margin-top:0">The original script, as ingested.</p>
+    <textarea class="mono" readonly onclick="this.select()" style="min-height:340px">{{ original_text or '' }}</textarea>
+  </div>
+  <div class="card" style="flex:1;min-width:320px">
+    <h2 style="margin-top:0">Output</h2>
+    {% if gen_text %}
+    <p class="muted" style="margin-top:0">Rewritten into profile {{ selected_profile }}'s style. Edit either field below if you want to tweak it before saving.</p>
+    {% else %}
+    <p class="muted" style="margin-top:0">Generation didn't produce a result — see the message above, or try again.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('transform_save') }}">
+      <input type="hidden" name="test_id" value="{{ selected_test_id }}">
+      <input type="hidden" name="profile" value="{{ selected_profile }}">
+      <label for="gen_title">Title</label>
+      <input type="text" id="gen_title" name="gen_title" value="{{ gen_title or '' }}" placeholder="Generated title will appear here">
+      <label for="gen_text">Script</label>
+      <textarea id="gen_text" name="gen_text" required style="min-height:290px" placeholder="Generated script will appear here">{{ gen_text or '' }}</textarea>
+      <button type="submit">Save + score against all profiles</button>
+    </form>
+  </div>
 </div>
 
-<h2>Step 2 — Save &amp; score the rewrite</h2>
-<div class="card">
-  {% if gen_title or gen_text %}
-  <p class="muted" style="margin-top:0">Auto-generated below — review it, then save. You can edit either field first.</p>
-  {% endif %}
-  <form method="post" action="{{ url_for('transform_save') }}">
-    <input type="hidden" name="test_id" value="{{ selected_test_id }}">
-    <input type="hidden" name="profile" value="{{ selected_profile }}">
-    <label for="gen_title">Generated title</label>
-    <input type="text" id="gen_title" name="gen_title" value="{{ gen_title or '' }}" placeholder="Paste the TITLE line from Claude's reply, or click Generate with Claude above">
-    <label for="gen_text">Generated script</label>
-    <textarea id="gen_text" name="gen_text" required placeholder="Paste the SCRIPT text from Claude's reply, or click Generate with Claude above">{{ gen_text or '' }}</textarea>
-    <button type="submit">Save + score against all profiles</button>
-  </form>
-</div>
+<details class="card" style="padding:0;margin-top:18px">
+  <summary style="cursor:pointer;padding:14px 16px;font-weight:600">+ View the raw prompt sent to Claude</summary>
+  <div style="padding:0 16px 16px">
+    <textarea class="mono" readonly onclick="this.select()">{{ prompt_text }}</textarea>
+    <form method="post" action="{{ url_for('transform_generate') }}" style="margin-top:10px">
+      <input type="hidden" name="test_id" value="{{ selected_test_id }}">
+      <input type="hidden" name="profile" value="{{ selected_profile }}">
+      <input type="hidden" name="source" value="{{ selected_source or '' }}">
+      <input type="hidden" name="pasted_title" value="{{ pasted_title or '' }}">
+      <input type="hidden" name="pasted_text" value="{{ pasted_text or '' }}">
+      <button type="submit" class="secondary">Regenerate with Claude ✨</button>
+    </form>
+  </div>
+</details>
 {% endif %}
 {% endblock %}

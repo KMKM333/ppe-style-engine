@@ -2020,6 +2020,8 @@ def transform_form():
 
     prompt_text = None
     selected_test_id = None
+    original_text = None
+    gen_title = gen_text = None
     if profile and (source or pasted_text):
         try:
             if pasted_text:
@@ -2049,9 +2051,18 @@ def transform_form():
                     conn.close()
                     raise ValueError("Choose an input or paste some text.")
 
+            original_text = raw_text
             result = rate_input(raw_text, title=title, source_label=source_label, input_type=input_type)
             selected_test_id = result["test_id"]
             prompt_text = build_transform_prompt(selected_test_id, profile)
+
+            try:
+                gen_result = generate_transform(prompt_text)
+                gen_title, gen_text = gen_result["title"], gen_result["script"]
+            except LLMConfigError as e:
+                flash(str(e))
+            except Exception as e:
+                flash(f"Generation failed: {e}")
         except ValueError as e:
             flash(str(e))
 
@@ -2060,6 +2071,7 @@ def transform_form():
         video_rows=video_rows, book_rows=book_rows, profiles=_profiles(),
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=selected_test_id, pasted_title=pasted_title, pasted_text=pasted_text,
+        original_text=original_text, gen_title=gen_title, gen_text=gen_text,
     )
 
 
@@ -2079,6 +2091,11 @@ def transform_generate():
 
     prompt_text = build_transform_prompt(test_id, profile)
 
+    conn = get_conn()
+    test_row = conn.execute("SELECT raw_text FROM test_inputs WHERE test_id=?", (test_id,)).fetchone()
+    conn.close()
+    original_text = test_row["raw_text"] if test_row else None
+
     gen_title = gen_text = None
     try:
         result = generate_transform(prompt_text)
@@ -2093,7 +2110,7 @@ def transform_generate():
         video_rows=video_rows, book_rows=book_rows, profiles=_profiles(),
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=test_id, pasted_title=pasted_title, pasted_text=pasted_text,
-        gen_title=gen_title, gen_text=gen_text,
+        original_text=original_text, gen_title=gen_title, gen_text=gen_text,
     )
 
 

@@ -1413,7 +1413,11 @@ def channels_list():
             (c["channel_id"],),
         ).fetchone()[0]
         is_analysed = c["n_videos"] > 0 and n_analysed == c["n_videos"]
-        channels.append({**dict(c), "videos": video_rows, "n_analysed": n_analysed, "is_analysed": is_analysed})
+        analysed_pct = round(n_analysed / c["n_videos"] * 100) if c["n_videos"] else 0
+        channels.append({
+            **dict(c), "videos": video_rows, "n_analysed": n_analysed,
+            "is_analysed": is_analysed, "analysed_pct": analysed_pct,
+        })
     conn.close()
     return render_template("channels_list.html", active="channels", channels=channels)
 

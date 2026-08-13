@@ -14,7 +14,11 @@
       <td><span id="chev-{{ c.channel_id }}" class="muted" style="display:inline-block;width:14px">▸</span><strong>{{ c.channel_name }}</strong></td>
       <td class="{{ 'muted' if not c.subject }}">{{ c.subject or '—' }}</td>
       <td>{{ c.n_videos }}</td>
-      <td><span class="pill {{ 'confirmed' if c.is_analysed else 'bad' }}" title="{{ c.n_analysed }} of {{ c.n_videos }} videos have an analysis breakdown">{{ 'Analysed' if c.is_analysed else 'Not analysed' }}</span></td>
+      <td>
+        <span class="pill {{ 'confirmed' if c.is_analysed else ('draft' if c.n_analysed > 0 else 'bad') }}" title="{{ c.n_analysed }} of {{ c.n_videos }} videos have an analysis breakdown">
+          {% if c.is_analysed %}Analysed{% elif c.n_analysed > 0 %}{{ c.analysed_pct }}% analysed{% else %}Not analysed{% endif %}
+        </span>
+      </td>
       <td class="{{ 'muted' if not c.profile_code }}">{{ c.profile_code or '—' }}</td>
       <td>{% if c.status %}<span class="pill {{ c.status }}">{{ c.status }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
       <td>

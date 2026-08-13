@@ -1387,7 +1387,8 @@ def books_list():
     conn = get_conn()
     rows = conn.execute(
         """SELECT b.book_id, b.title, b.author, b.subject, b.publication_year, b.word_count, b.is_read,
-                  COALESCE(a.classified_by, 'pending') AS classified_by
+                  COALESCE(a.classified_by, 'pending') AS classified_by,
+                  (SELECT COUNT(*) FROM book_examples e WHERE e.book_id = b.book_id) AS n_examples
            FROM books b LEFT JOIN book_attributes a ON a.book_id = b.book_id
            ORDER BY b.ingested_at DESC"""
     ).fetchall()

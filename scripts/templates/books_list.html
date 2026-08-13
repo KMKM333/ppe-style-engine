@@ -10,7 +10,7 @@
 <div class="card">
   {% if books %}
   <table>
-    <tr><th>Title</th><th>Author</th><th>Subject</th><th>Year</th><th>Words</th><th>Status</th><th>Read</th><th></th></tr>
+    <tr><th>Title</th><th>Author</th><th>Subject</th><th>Year</th><th>Words</th><th>Examples</th><th>Status</th><th>Read</th><th></th></tr>
     {% for b in books %}
     <tr>
       <td><strong>{{ b.title }}</strong></td>
@@ -18,6 +18,7 @@
       <td class="{{ 'muted' if not b.subject }}">{{ b.subject or '—' }}</td>
       <td>{{ b.publication_year or '—' }}</td>
       <td>{{ b.word_count or '—' }}</td>
+      <td class="{{ 'muted' if not b.n_examples }}">{{ b.n_examples or '—' }}</td>
       <td><span class="pill {{ 'confirmed' if b.classified_by not in ['pending', None] else 'draft' }}">{{ 'classified' if b.classified_by not in ['pending', None] else 'pending' }}</span></td>
       <td>
         <form method="post" action="{{ url_for('book_toggle_read', book_id=b.book_id) }}" style="margin:0">

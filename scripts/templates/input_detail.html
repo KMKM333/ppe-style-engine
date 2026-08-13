@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}{{ video.title }} — Input{% endblock %}
+{% block content %}
+<h1>{{ video.title }}</h1>
+<div class="sub">
+  {% if video.profile_code %}
+  <a href="{{ url_for('profile_detail', code=video.profile_code) }}" title="View {{ video.profile_code }}'s fingerprint">{{ video.channel_name }}</a>
+  {% else %}
+  {{ video.channel_name }}
+  {% endif %}
+  {% if video.channel_name == 'Instagram Import' %} <span title="Unresolved channel name — this import needs its channel tag corrected" style="color:var(--mid)">⚠️</span>{% endif %}
+  {% if video.duration_sec %} &middot; {{ video.duration_sec }}s{% endif %}
+  {% if video.posted_at %} &middot; posted {{ video.posted_at }}{% endif %}
+  &middot; ingested {{ video.ingested_at }}
+  {% if video.url %} &middot; <a href="{{ video.url }}" target="_blank" rel="noopener">source link</a>{% endif %}
+</div>
+
+<h2 style="margin-top:0">Script</h2>
+<div class="card">
+  <textarea class="mono" readonly onclick="this.select()" style="min-height:280px">{{ video.script }}</textarea>
+</div>
+
+<div class="flex" style="align-items:flex-start">
+  <form method="post" action="{{ url_for('workflow_input') }}" enctype="multipart/form-data" style="flex:none">
+    <input type="hidden" name="text" value="{{ video.script }}">
+    <input type="hidden" name="title" value="{{ video.title }}">
+    <input type="hidden" name="label" value="{{ video.title }} (corpus video #{{ video.video_id }})">
+    <input type="hidden" name="input_type" value="video_script">
+    <button type="submit" class="secondary">Score this via Workflow →</button>
+  </form>
+  <form method="post" action="{{ url_for('input_delete', video_id=video.video_id) }}" style="flex:none"
+        onsubmit="return confirm('Delete this input from the corpus? This rebuilds the channel\'s fingerprint and cannot be undone.');">
+    <button type="submit" class="danger">Delete this input</button>
+  </form>
+</div>
+
+<h2>Attributes</h2>
+{% for section_name, fields in sections %}
+<div class="card">
+  <div class="muted" style="text-transform:uppercase;font-size:12px;letter-spacing:.04em;margin-bottom:8px">{{ section_name }}</div>
+  <table>
+    {% for field, value in fields %}
+    <tr>
+      <td class="muted" style="width:220px">{{ field }}</td>
+      <td>{{ value if value is not none else '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+
+<a class="btn secondary" href="{{ url_for('inputs_list') }}">← All inputs</a>
+{% endblock %}

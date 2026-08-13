@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}PPE Engine{% endblock %}</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
+    --text: #e6e8ec; --muted: #8b93a3; --accent: #6ea8fe; --accent-rgb: 110,168,254; --good: #4ade80;
+    --mid: #facc15; --bad: #f87171;
+  }
+  :root[data-theme="light"] {
+    --bg: #f7f8fa; --panel: #ffffff; --panel2: #f1f3f6; --border: #e2e5ea;
+    --text: #14161c; --muted: #6b7280; --accent: #2563eb; --accent-rgb: 37,99,235; --good: #16a34a;
+    --mid: #b45309; --bad: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); }
+  .app-shell { display:flex; align-items:flex-start; }
+  .sidebar { width:240px; flex-shrink:0; background:var(--panel); border-right:1px solid var(--border);
+    padding:18px 14px; position:sticky; top:0; height:100vh; overflow-y:auto;
+    display:flex; flex-direction:column; gap:2px; }
+  .sidebar-brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:14.5px;
+    padding:4px 8px 16px; white-space:nowrap; }
+  .sidebar-brand .brand-icon { width:22px; height:22px; border-radius:6px; background:var(--accent); flex-shrink:0; }
+  .theme-toggle { position:fixed; top:18px; right:24px; z-index:80;
+    display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px;
+    border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--muted);
+    cursor:pointer; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+  .theme-toggle:hover { color:var(--text); border-color:var(--muted); }
+  .theme-toggle svg { width:17px; height:17px; }
+  .sidebar-search input { width:100%; background:var(--panel2); border:1px solid var(--border); border-radius:8px;
+    color:var(--text); padding:8px 10px; font-size:13px; margin-bottom:14px; }
+  .sidebar-nav { display:flex; flex-direction:column; gap:1px; }
+  .nav-group { margin-top:20px; }
+  .nav-group-label { color:var(--text); font-size:15px; font-weight:700; padding:2px 8px 8px;
+    display:flex; align-items:center; }
+  .nav-group-label-link { text-decoration:none; cursor:pointer; }
+  .nav-group-label-link::after { content:'›'; opacity:.5; font-weight:400; margin-left:5px;
+    transition: transform .15s ease, opacity .15s ease; }
+  .nav-group-label-link:hover { color:var(--accent); }
+  .nav-group-label-link:hover::after { opacity:1; transform:translateX(2px); }
+  .nav-group-label-link.active { color:var(--accent); }
+  .nav-item { display:flex; align-items:center; gap:10px; padding:7px 8px; border-radius:8px; color:var(--text);
+    text-decoration:none; font-size:13.5px; white-space:nowrap; }
+  .nav-item:hover { background:var(--panel2); }
+  .nav-item.active { background:rgba(110,168,254,.15); color:var(--accent); font-weight:600; }
+  .nav-item.top-level { font-weight:600; margin-bottom:4px; }
+  .nav-item.disabled { color:var(--muted); opacity:.6; cursor:default; }
+  .nav-item.disabled:hover { background:none; }
+  .nav-icon { display:inline-flex; align-items:center; justify-content:center; width:17px; height:17px;
+    flex-shrink:0; color:var(--muted); }
+  .nav-icon svg { width:100%; height:100%; }
+  .nav-item:hover .nav-icon { color:var(--text); }
+  .nav-item.active .nav-icon { color:var(--accent); }
+  .nav-item.disabled .nav-icon { color:var(--muted); }
+  .nav-badge { margin-left:auto; background:rgba(110,168,254,.18); color:var(--accent); font-size:11px;
+    font-weight:700; padding:1px 8px; border-radius:999px; }
+  .sidebar-advanced { margin-top:auto; padding-top:14px; border-top:1px solid var(--border); }
+  .content-col { flex:1; min-width:0; }
+  @media (max-width: 860px) {
+    .app-shell { flex-direction:column; }
+    .sidebar { width:100%; height:auto; position:static; flex-direction:row; flex-wrap:wrap; align-items:center;
+      overflow-x:auto; gap:10px; }
+    .sidebar-brand { padding:4px 8px; }
+    .sidebar-search { order:1; flex-basis:100%; }
+    .sidebar-search input { margin-bottom:0; }
+    .sidebar-nav { flex-direction:row; flex-wrap:wrap; }
+    .nav-group { margin-top:0; display:flex; align-items:center; gap:4px; }
+    .nav-group-label { display:none; }
+    .sidebar-advanced { margin-top:0; padding-top:0; border-top:none; border-left:1px solid var(--border); padding-left:10px; }
+  }
+  main { max-width: 1600px; margin: 0 auto; padding: 24px 24px 60px; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  .page-header-band { position:relative; background:
+      radial-gradient(900px 340px at 12% 0%, rgba(var(--accent-rgb),.13), transparent 65%), var(--panel);
+    border-bottom: 1px solid var(--border); box-shadow: 0 1px 0 rgba(var(--accent-rgb),.12); overflow:hidden; }
+  .page-header-band-inner { max-width:1600px; margin:0 auto; padding:24px 24px 38px; position:relative; }
+  .page-header-band .sub { margin-bottom:0; font-size:15.5px; }
+  .page-header-band h1 { font-size:34px; font-weight:700; letter-spacing:-.015em; margin-bottom:10px; }
+  .page-head-row { display:flex; align-items:center; gap:8px; margin:0 0 46px; }
+  .icon-btn { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 12px;
+    border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--muted);
+    cursor:pointer; flex-shrink:0; text-decoration:none; font-size:13px; font-weight:600;
+    font-family:inherit; margin:0; }
+  .icon-btn svg { width:14px; height:14px; flex-shrink:0; }
+  .icon-btn:hover { color:var(--text); border-color:var(--muted); }
+  h2 { font-size: 17px; margin: 28px 0 10px; color: var(--text); }
+  .sub { color: var(--muted); font-size: 14px; margin-bottom: 22px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px;
+    margin-bottom: 18px; }
+  label { display:block; font-size: 13px; color: var(--muted); margin: 12px 0 6px; }
+  input[type=text], select, textarea {
+    width:100%; background: var(--panel2); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); padding: 10px 12px; font-size: 14px; font-family: inherit;
+  }
+  textarea { min-height: 220px; resize: vertical; line-height:1.5; }
+  textarea.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  button, .btn {
+    background: var(--accent); color:#ffffff; border:none; border-radius:8px; padding:10px 18px;
+    font-size:14px; font-weight:600; cursor:pointer; margin-top:16px; display:inline-block; text-decoration:none;
+  }
+  button.secondary, .btn.secondary { background: var(--panel2); color: var(--text); border:1px solid var(--border); }
+  button.danger, .btn.danger { background: rgba(248,113,113,.12); color: var(--bad); border:1px solid rgba(248,113,113,.4); }
+  button.danger:hover, .btn.danger:hover { background: rgba(248,113,113,.2); }
+  table { width:100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align:left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing:.04em; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .pill { display:inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight:600; }
+  .pill.confirmed { background: rgba(74,222,128,.15); color: var(--good); }
+  .pill.draft { background: rgba(250,204,21,.15); color: var(--mid); }
+  .score { font-weight:700; }
+  .score.good { color: var(--good); }
+  .score.mid { color: var(--mid); }
+  .score.bad { color: var(--bad); }
+  .muted { color: var(--muted); }
+  .flex { display:flex; gap: 14px; flex-wrap: wrap; }
+  .flex > * { flex:1; min-width: 200px; }
+  .check-pass { color: var(--good); }
+  .check-fail { color: var(--bad); }
+  .rank1 td { background: rgba(110,168,254,.07); }
+  .empty { color: var(--muted); font-style: italic; padding: 20px 0; }
+  code { background: var(--panel2); padding: 1px 6px; border-radius: 5px; font-size: 12.5px; }
+
+  /* --- workflow step indicator --- */
+  .steps { display:flex; align-items:center; margin: 6px 0 28px; }
+  .steps .step { display:flex; align-items:center; gap:10px; color: var(--muted); font-size: 13px; }
+  .steps .dot { width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background: var(--panel2); border:1px solid var(--border); font-weight:700; font-size:12px; flex-shrink:0; }
+  .steps .step.active .dot { background: var(--accent); border-color: var(--accent); color:#0b1220; }
+  .steps .step.active { color: var(--text); font-weight:600; }
+  .steps .step.done .dot { background: rgba(74,222,128,.15); border-color: var(--good); color: var(--good); }
+  .steps .step.done { color: var(--text); }
+  .steps .line { flex:1; height:1px; background: var(--border); margin: 0 14px; min-width: 24px; }
+
+  /* --- workflow diagram on dashboard --- */
+  .flow { display:flex; align-items:stretch; gap: 0; margin: 10px 0 6px; }
+  .flow .fbox { flex:1; background: var(--panel2); border:1px solid var(--border); border-radius:10px;
+    padding:16px 18px; }
+  .flow .fbox .fnum { color: var(--accent); font-weight:700; font-size:12px; letter-spacing:.04em; }
+  .flow .fbox h3 { margin: 4px 0 6px; font-size: 15px; }
+  .flow .fbox p { margin:0; color: var(--muted); font-size: 13px; line-height:1.4; }
+  .flow .farrow { display:flex; align-items:center; justify-content:center; width:40px; color: var(--muted); font-size:20px; }
+
+  /* --- macro attribute cards --- */
+  .macros { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:14px; margin: 10px 0 6px; }
+  .macro-card { background: var(--panel2); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
+  .macro-card h3 { margin:0 0 8px; font-size:14.5px; }
+  .macro-card .mpct { font-size:24px; font-weight:700; margin-bottom:6px; }
+  .macro-card .mmeta { font-size:12px; color: var(--muted); margin-top:8px; }
+  .bar { background: var(--panel); border:1px solid var(--border); border-radius:6px; height:8px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:6px; }
+
+  /* --- subjects grid --- */
+  .subjects-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap:16px; margin: 10px 0 6px; }
+  .subject-card { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:22px 22px 18px;
+    text-decoration:none; color:inherit; display:flex; flex-direction:column; justify-content:space-between;
+    height:150px; transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+  .subject-card:hover { transform: translateY(-3px); border-color: var(--accent); background: var(--panel2); }
+  .subject-card .sicon { font-size:26px; line-height:1; }
+  .subject-card .sname { font-size:16px; font-weight:700; margin-top:12px; }
+  .subject-card .sfoot { display:flex; align-items:flex-end; justify-content:space-between; margin-top:10px; }
+  .subject-card .scount { font-size:26px; font-weight:700; line-height:1; }
+  .subject-card .scount span { font-size:12px; font-weight:400; color: var(--muted); margin-left:4px; }
+  .subject-card .sarrow { color: var(--muted); font-size:16px; transition: transform .15s ease, color .15s ease; }
+  .subject-card:hover .sarrow { transform: translateX(4px); color: var(--accent); }
+  .subject-card.empty-subject { opacity:.5; }
+  .subject-card.empty-subject .scount { color: var(--muted); }
+
+  /* --- attribute media-type cards (sized like the workflow step boxes) --- */
+  .attributes-grid { display:flex; flex-direction:column; gap:16px; margin: 10px 0 6px; }
+  .attr-card { background: var(--panel); border:1px solid var(--border); border-radius:14px; padding:24px 26px;
+    text-decoration:none; color:inherit; display:flex; flex-direction:column; justify-content:space-between;
+    min-height:250px; transition: transform .15s ease, border-color .15s ease, background .15s ease; }
+  .attr-card:hover { transform: translateY(-3px); border-color: var(--accent); background: var(--panel2); }
+  .attr-card .aicon { font-size:34px; line-height:1; }
+  .attr-card .aname { font-size:20px; font-weight:700; margin-top:16px; }
+  .attr-card .adesc { color: var(--muted); font-size:13.5px; line-height:1.5; margin-top:10px; }
+  .attr-card .afoot { display:flex; align-items:flex-end; justify-content:space-between; margin-top:20px; }
+  .attr-card .acount { font-size:28px; font-weight:700; line-height:1; }
+  .attr-card .acount span { font-size:12px; font-weight:400; color: var(--muted); margin-left:4px; }
+  .attr-card .aarrow { color: var(--muted); font-size:18px; transition: transform .15s ease, color .15s ease; }
+  .attr-card:hover .aarrow { transform: translateX(4px); color: var(--accent); }
+  .attr-card.empty-attr { opacity:.5; }
+  .attr-card.empty-attr .acount { color: var(--muted); }
+
+  /* --- topic tags (books) --- */
+  .tag { display:inline-block; background: var(--panel2); border:1px solid var(--border); border-radius:999px;
+    padding:2px 10px; font-size:12px; color: var(--muted); margin:2px 4px 2px 0; }
+  .chapter-card { margin-bottom: 18px; }
+  .chapter-card h3 { margin: 0 0 4px; font-size: 16px; }
+  .chapter-card .cnum { color: var(--accent); font-weight:700; font-size:12px; letter-spacing:.04em; }
+  .points-list { margin: 10px 0; padding-left: 20px; }
+  .points-list li { margin-bottom: 6px; line-height: 1.5; }
+  .terms-list dt { font-weight: 600; margin-top: 8px; }
+  .terms-list dd { margin: 2px 0 0; color: var(--muted); line-height: 1.5; }
+
+  /* --- unresolved-import banner + fix-channel modal --- */
+  .unresolved-banner { background: rgba(250,204,21,.12); border-bottom:1px solid rgba(250,204,21,.4);
+    color: var(--mid); padding:10px 24px; font-size:13.5px; display:flex; align-items:center;
+    justify-content:center; gap:10px; text-align:center; }
+  .unresolved-banner button.link { background:none; border:none; padding:0; margin:0; color: var(--mid);
+    font-weight:700; text-decoration:underline; cursor:pointer; font-size:13.5px; }
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.6); display:none;
+    align-items:center; justify-content:center; z-index:100; padding:20px; }
+  .modal-overlay.open { display:flex; }
+  .modal-box { background: var(--panel); border:1px solid var(--border); border-radius:14px;
+    padding:26px 28px; max-width:480px; width:100%; }
+  .modal-box h2 { margin:0 0 12px; font-size:18px; }
+  .modal-box p { color: var(--muted); font-size:13.5px; line-height:1.55; margin:0 0 16px; }
+  .modal-box .confidence { color: var(--text); }
+</style>
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('ppe-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  })();
+</script>
+</head>
+<body data-page="{{ active }}">
+{% macro icon(name) %}{% if name == 'dashboard' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+{% elif name == 'book' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+{% elif name == 'instagram' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>
+{% elif name == 'youtube' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 17a24.12 24.12 0 0 1 0-10 2 2 0 0 1 1.4-1.4 49.56 49.56 0 0 1 16.2 0A2 2 0 0 1 21.5 7a24.12 24.12 0 0 1 0 10 2 2 0 0 1-1.4 1.4 49.55 49.55 0 0 1-16.2 0A2 2 0 0 1 2.5 17"/><path d="m10 15 5-3-5-3z"/></svg>
+{% elif name == 'news' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg>
+{% elif name == 'archive' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+{% elif name == 'wand' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/></svg>
+{% elif name == 'sparkles' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+{% elif name == 'users' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+{% elif name == 'grid' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+{% elif name == 'tag' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z"/><circle cx="7.5" cy="7.5" r=".5" fill="currentColor"/></svg>
+{% elif name == 'bar-chart' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+{% elif name == 'target' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+{% elif name == 'arrow-left' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
+{% elif name == 'home' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>
+{% elif name == 'sun' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
+{% elif name == 'moon' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+{% endif %}{% endmacro %}
+<button type="button" class="theme-toggle" id="theme-toggle" title="Toggle light / dark mode" onclick="toggleTheme()">
+  <span id="theme-toggle-icon">{{ icon('moon') }}</span>
+</button>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon"></span>
+      <span>PPE Engine</span>
+    </div>
+    <div class="sidebar-search">
+      <input type="text" id="nav-search" placeholder="Search" oninput="filterNav(this.value)">
+    </div>
+    <nav class="sidebar-nav">
+      <a href="{{ url_for('dashboard') }}" class="nav-item top-level {{ 'active' if active=='dashboard' else '' }}">
+        <span class="nav-icon">{{ icon('dashboard') }}</span>Dashboard
+      </a>
+
+      <div class="nav-group">
+        <a href="{{ url_for('workflow_start') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='workflow' else '' }}">Studio</a>
+        <a href="{{ url_for('inputs_list') }}" class="nav-item {{ 'active' if active=='inputs' else '' }}"><span class="nav-icon">{{ icon('archive') }}</span>Library</a>
+        <a href="{{ url_for('transform_form') }}" class="nav-item {{ 'active' if active=='transform' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Transform</a>
+        <a href="{{ url_for('creations_list') }}" class="nav-item {{ 'active' if active=='creations' else '' }}">
+          <span class="nav-icon">{{ icon('sparkles') }}</span>Creations
+          {% if nav_creations_count %}<span class="nav-badge">{{ nav_creations_count }}</span>{% endif %}
+        </a>
+      </div>
+
+      <div class="nav-group">
+        <a href="{{ url_for('inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='inputs' else '' }}">Library</a>
+        <a href="{{ url_for('books_list') }}" class="nav-item {{ 'active' if active=='books' else '' }}"><span class="nav-icon">{{ icon('book') }}</span>Books</a>
+        <a href="{{ url_for('channels_list') }}" class="nav-item {{ 'active' if active=='channels' else '' }}"><span class="nav-icon">{{ icon('instagram') }}</span>Short Videos, Instagram</a>
+        <span class="nav-item disabled"><span class="nav-icon">{{ icon('youtube') }}</span>Long videos, Youtube</span>
+        <span class="nav-item disabled"><span class="nav-icon">{{ icon('news') }}</span>News</span>
+      </div>
+
+      <div class="nav-group">
+        <a href="{{ url_for('insights_overview') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='insights' else '' }}">Insights</a>
+        <a href="{{ url_for('profiles_list') }}" class="nav-item {{ 'active' if active=='profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Profiles</a>
+        <a href="{{ url_for('subjects_page') }}" class="nav-item {{ 'active' if active=='subjects' else '' }}"><span class="nav-icon">{{ icon('grid') }}</span>Subjects</a>
+        <a href="{{ url_for('attributes_page') }}" class="nav-item {{ 'active' if active=='attributes' else '' }}"><span class="nav-icon">{{ icon('tag') }}</span>Attributes</a>
+      </div>
+    </nav>
+    <div class="sidebar-advanced">
+      <div class="nav-group-label">Advanced</div>
+      <a href="{{ url_for('tests_list') }}" class="nav-item {{ 'active' if active=='tests' else '' }}"><span class="nav-icon">{{ icon('bar-chart') }}</span>Test History</a>
+      <a href="{{ url_for('score_form') }}" class="nav-item {{ 'active' if active=='score' else '' }}"><span class="nav-icon">{{ icon('target') }}</span>Score Text</a>
+    </div>
+  </aside>
+
+  <div class="content-col">
+    {% if unresolved_count and unresolved_count > 0 %}
+    <div class="unresolved-banner">
+      <span>⚠️ {{ unresolved_count }} video{{ '' if unresolved_count == 1 else 's' }} from a recent import couldn't be matched to a channel.</span>
+      <button type="button" class="link" onclick="openChannelFixModal()">Fix now →</button>
+    </div>
+    {% endif %}
+    <main class="{% block main_class %}{% endblock %}">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, m in messages %}
+        <div class="card" style="{{ 'border-color:var(--good);color:var(--good)' if category == 'success' else 'border-color:var(--bad);color:var(--bad)' }}">{{ m }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+<script>
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    var iconSpan = document.getElementById('theme-toggle-icon');
+    if (iconSpan) iconSpan.innerHTML = theme === 'light' ? `{{ icon('sun') }}` : `{{ icon('moon') }}`;
+  }
+  function toggleTheme() {
+    var current = document.documentElement.getAttribute('data-theme') || 'dark';
+    var next = current === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem('ppe-theme', next); } catch (e) {}
+    applyTheme(next);
+  }
+  applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
+
+  function filterNav(q) {
+    q = q.trim().toLowerCase();
+    document.querySelectorAll('.sidebar-nav .nav-item, .sidebar-advanced .nav-item').forEach(function (a) {
+      var text = a.textContent.trim().toLowerCase();
+      a.style.display = (!q || text.indexOf(q) !== -1) ? '' : 'none';
+    });
+    document.querySelectorAll('.nav-group').forEach(function (g) {
+      var items = g.querySelectorAll('.nav-item');
+      var anyVisible = Array.prototype.some.call(items, function (a) { return a.style.display !== 'none'; });
+      g.style.display = (!q || anyVisible) ? '' : 'none';
+    });
+  }
+
+  (function () {
+    var h1 = document.querySelector('main h1');
+    if (!h1) return;
+    var backSvg = `{{ icon('arrow-left') }}`;
+    var homeSvg = `{{ icon('home') }}`;
+    var row = document.createElement('div');
+    row.className = 'page-head-row';
+
+    var backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.className = 'icon-btn';
+    backBtn.title = 'Back';
+    backBtn.innerHTML = backSvg + '<span>Back</span>';
+    backBtn.addEventListener('click', function () { history.back(); });
+    row.appendChild(backBtn);
+
+    if (document.body.dataset.page !== 'dashboard') {
+      var homeBtn = document.createElement('a');
+      homeBtn.href = '{{ url_for("dashboard") }}';
+      homeBtn.className = 'icon-btn';
+      homeBtn.title = 'Home';
+      homeBtn.innerHTML = homeSvg + '<span>Home</span>';
+      row.appendChild(homeBtn);
+    }
+
+    var sub = h1.nextElementSibling;
+    if (!(sub && sub.classList.contains('sub'))) sub = null;
+
+    var band = document.createElement('div');
+    band.className = 'page-header-band';
+    var inner = document.createElement('div');
+    inner.className = 'page-header-band-inner';
+    band.appendChild(inner);
+
+    var main = h1.closest('main');
+    main.parentNode.insertBefore(band, main);
+
+    inner.appendChild(row);
+    inner.appendChild(h1);
+    if (sub) inner.appendChild(sub);
+  })();
+</script>
+
+{% if unresolved_count and unresolved_count > 0 %}
+<div class="modal-overlay" id="channel-fix-modal">
+  <div class="modal-box">
+    <h2>Unresolved channel name</h2>
+    <p>
+      The Instagram import tool couldn't tell which channel this batch belongs to — usually because the
+      channel field was left blank at transcription time — so it filed {{ unresolved_count }}
+      video{{ '' if unresolved_count == 1 else 's' }} under the placeholder "Instagram Import"
+      rather than guess wrong. <strong>That placeholder is a stop sign, not a decision</strong> — it was never
+      meant to sit in your data as a real channel, and left alone it will keep skewing that channel's
+      attribute averages and macro scores.
+      {% if unresolved_suggestion %}
+      Based on script similarity to your existing profiles, this batch reads
+      <span class="confidence">{{ unresolved_suggestion.confidence }}% like {{ unresolved_suggestion.channel_name }}</span>
+      — confirm it below or type the correct channel.
+      {% else %}
+      We couldn't confidently match it to any existing channel — please type the correct name below.
+      {% endif %}
+    </p>
+    <form method="post" action="{{ url_for('fix_unresolved_channel') }}">
+      <label for="channel-fix-input">Correct channel name</label>
+      <input type="text" id="channel-fix-input" name="channel_name"
+             value="{{ unresolved_suggestion.channel_name if unresolved_suggestion else '' }}" required>
+      <div class="flex" style="margin-top:16px">
+        <button type="submit">Assign channel</button>
+        <button type="button" class="secondary" onclick="closeChannelFixModal()">Not now</button>
+      </div>
+    </form>
+  </div>
+</div>
+<script>
+  function openChannelFixModal() { document.getElementById('channel-fix-modal').classList.add('open'); }
+  function closeChannelFixModal() {
+    document.getElementById('channel-fix-modal').classList.remove('open');
+    sessionStorage.setItem('channelFixDismissed', '1');
+  }
+  if (!sessionStorage.getItem('channelFixDismissed')) {
+    openChannelFixModal();
+  }
+</script>
+{% endif %}
+</body>
+</html>

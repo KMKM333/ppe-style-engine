@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Compare Profiles{% endblock %}
+{% block content %}
+<h1>Compare Profiles</h1>
+<div class="sub">Distance/similarity between two profiles' fingerprints — numeric attributes compared by relative difference, categorical attributes by distribution overlap. This is the general mechanism cross-platform consistency (same creator, different channel) would use once that data exists.</div>
+
+<form method="get" action="{{ url_for('profiles_compare') }}" class="card">
+  <div class="flex">
+    <div>
+      <label for="a">Profile A</label>
+      <select id="a" name="a">
+        <option value="">— choose —</option>
+        {% for p in profiles %}
+        <option value="{{ p.profile_code }}" {{ 'selected' if code_a == p.profile_code }}>{{ p.profile_code }} ({{ p.channel_name }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="b">Profile B</label>
+      <select id="b" name="b">
+        <option value="">— choose —</option>
+        {% for p in profiles %}
+        <option value="{{ p.profile_code }}" {{ 'selected' if code_b == p.profile_code }}>{{ p.profile_code }} ({{ p.channel_name }})</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <button type="submit">Compare</button>
+</form>
+
+{% if overall is not none %}
+<div class="card">
+  <div class="muted">Overall similarity — {{ profile_a.profile_code }} vs {{ profile_b.profile_code }}</div>
+  <div style="font-size:32px;font-weight:700" class="score {{ 'good' if overall >= 70 else ('mid' if overall >= 40 else 'bad') }}">{{ overall }}%</div>
+</div>
+
+<div class="card">
+  <table>
+    <tr><th>Attribute</th><th>Kind</th><th>{{ profile_a.profile_code }}</th><th>{{ profile_b.profile_code }}</th><th>Similarity</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td><code>{{ r.attribute }}</code></td>
+      <td class="muted">{{ r.kind }}</td>
+      <td>{{ '%.3f' % r.a if r.kind == 'numeric' else r.a }}</td>
+      <td>{{ '%.3f' % r.b if r.kind == 'numeric' else r.b }}</td>
+      <td class="{{ 'good' if r.similarity_pct >= 70 else ('mid' if r.similarity_pct >= 40 else 'bad') }} score">{{ r.similarity_pct }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% elif code_a and code_b and code_a == code_b %}
+<div class="empty">Pick two different profiles to compare.</div>
+{% endif %}
+{% endblock %}

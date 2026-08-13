@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.profile_code }} — Fingerprint{% endblock %}
+{% block content %}
+<h1>Profile {{ profile.profile_code }}</h1>
+{% if profile.overview %}
+<div class="sub" style="margin-top:-4px">{{ profile.overview }}</div>
+{% endif %}
+<div class="sub">
+  {{ profile.channel_name }}{% if profile.media_type %} &middot; {{ profile.media_type }}{% endif %}{% if profile.subject %} &middot; {{ profile.subject }}{% endif %} &middot; length band {{ profile.length_band }} &middot;
+  {% if is_hybrid %}~{{ profile.n_videos_analysed }} source obs. (weighted){% else %}{{ profile.n_videos_analysed }} {{ 'book(s)' if is_book else 'videos' }} analysed{% endif %} &middot;
+  <span class="pill {{ profile.status }}">{{ profile.status }}</span>
+  &middot; <a href="{{ url_for('style_card', code=profile.profile_code) }}">Style card</a>
+  &middot; <a href="{{ url_for('profile_drift', code=profile.profile_code) }}">Voice drift</a>
+  &middot; <a href="{{ url_for('profiles_compare', a=profile.profile_code) }}">Compare</a>
+</div>
+
+{% if is_hybrid %}
+<h2 style="margin-top:0">Composition</h2>
+<div class="sub" style="margin-top:-6px">This profile is a synthesized blend, not observed content — every attribute below is a weighted average of its source profiles.</div>
+<div class="card">
+  <table>
+    <tr><th>Source profile</th><th style="width:160px">Weight</th></tr>
+    {% for s in hybrid_sources %}
+    <tr>
+      <td><a href="{{ url_for('profile_detail', code=s.profile_code) }}">{{ s.profile_code }}</a> ({{ s.channel_name }})</td>
+      <td>{{ s.weight_pct }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+<h2 style="margin-top:0">Macro attributes</h2>
+<div class="macros">
+  {% for m in macros %}
+  <div class="macro-card">
+    <h3>{{ m.name }}</h3>
+    <div class="mpct score {{ 'good' if m.pct >= 80 else ('mid' if m.pct >= 30 else 'bad') }}">{{ m.pct }}%</div>
+    <div class="bar"><div class="bar-fill" style="width:{{ m.pct }}%;background:{{ 'var(--good)' if m.pct >= 80 else ('var(--mid)' if m.pct >= 30 else 'var(--bad)') }}"></div></div>
+    <div class="mmeta">{{ m.covered }}/{{ m.count }} attributes in this fingerprint</div>
+  </div>
+  {% endfor %}
+</div>
+<div class="sub" style="margin-top:2px">
+  Share of each macro category's attributes that made it into {{ profile.profile_code }}'s fingerprint —
+  see <a href="{{ url_for('attribute_media_detail', slug='books' if is_book else 'instagram') }}">Attributes</a> for the full catalog and per-attribute detail.
+</div>
+{% endif %}
+
+<h2>Numeric attributes</h2>
+<div class="card">
+  {% if numeric %}
+  <table>
+    <tr><th>Attribute</th><th>Mean</th><th>Std</th><th>Median</th><th>Range</th></tr>
+    {% for r in numeric %}
+    <tr>
+      <td>{{ r.attribute }}</td>
+      <td>{{ '%.2f' % r.mean_val }}</td>
+      <td>{{ '%.2f' % r.std_val }}</td>
+      <td>{{ '%.2f' % r.median_val }}</td>
+      <td class="muted">[{{ '%.1f' % r.min_val }}, {{ '%.1f' % r.max_val }}]</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No numeric fingerprint yet.</div>
+  {% endif %}
+</div>
+
+<h2>Categorical attributes</h2>
+<div class="card">
+  {% if categorical %}
+    {% for attr, values in categorical.items() %}
+    <div style="margin-bottom:16px">
+      <div class="muted" style="margin-bottom:6px;text-transform:uppercase;font-size:12px;letter-spacing:.04em">{{ attr }}</div>
+      <table>
+        {% for v in values %}
+        <tr><td>{{ v.value }}</td><td style="width:120px">{{ v.share_pct }}%</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty">No categorical / classified attributes yet — run the classification pass first.</div>
+  {% endif %}
+</div>
+
+{% if not is_hybrid %}
+{% if is_book %}
+<h2>Original inputs: author's books</h2>
+<div class="sub" style="margin-top:-6px">Every book this profile's fingerprint was built from — {{ books|length }} total.</div>
+<div class="card">
+  {% if books %}
+  <table>
+    <tr><th>Source</th><th>Title</th><th>Words</th><th>Summary</th><th></th></tr>
+    {% for b in books %}
+    <tr>
+      <td>{% if b.source_url %}<a href="{{ b.source_url }}" target="_blank" rel="noopener">original file ↗</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td><strong>{{ b.title }}</strong></td>
+      <td>{{ b.word_count if b.word_count is not none else '—' }}</td>
+      <td class="{{ 'muted' if not b.summary }}">{{ b.summary or '—' }}</td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('book_detail', book_id=b.book_id) }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No books ingested for this author yet.</div>
+  {% endif %}
+</div>
+{% else %}
+<h2>Original inputs: channel videos</h2>
+<div class="sub" style="margin-top:-6px">
+  Every raw video this profile's fingerprint was built from — {{ videos|length }} total.
+  Summaries are plain-language soundbites explaining what each video covers — written, not quoted
+  from the script itself. Click a script preview to expand the full text in place.
+</div>
+<div class="card">
+  {% if videos %}
+  <table>
+    <tr><th>Source</th><th>Title</th><th>Words</th><th>Video length</th><th>Summary</th><th>Script</th></tr>
+    {% for v in videos %}
+    <tr>
+      <td>{% if v.url %}<a href="{{ v.url }}" target="_blank" rel="noopener">source ↗</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td><a href="{{ url_for('input_detail', video_id=v.video_id) }}" style="color:var(--text);font-weight:600;text-decoration:none">{{ v.title }}</a></td>
+      <td>{{ v.word_count if v.word_count is not none else '—' }}</td>
+      <td>{{ v.duration_label if v.duration_label is not none else '—' }}</td>
+      <td class="{{ 'muted' if not v.has_written_summary }}">{{ v.summary }}{% if not v.has_written_summary %}<div class="muted" style="font-size:11px;margin-top:4px">(auto, unwritten)</div>{% endif %}</td>
+      <td class="muted script-cell" style="max-width:280px">
+        <span class="script-preview">{{ v.script_preview }}</span><span class="script-full" style="display:none;white-space:pre-wrap">{{ v.script }}</span>
+        <a href="#" class="script-toggle" onclick="toggleScript(this); return false;" style="color:var(--accent);text-decoration:none;font-size:12px;display:block;margin-top:6px">Show full script ▾</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No videos ingested for this channel yet.</div>
+  {% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+<a class="btn secondary" href="{{ url_for('profiles_list') }}">← All profiles</a>
+
+<script>
+function toggleScript(link) {
+  const cell = link.closest('.script-cell');
+  const preview = cell.querySelector('.script-preview');
+  const full = cell.querySelector('.script-full');
+  const expanded = full.style.display !== 'none';
+  preview.style.display = expanded ? '' : 'none';
+  full.style.display = expanded ? 'none' : '';
+  link.textContent = expanded ? 'Show full script ▾' : 'Show less ▴';
+}
+</script>
+{% endblock %}

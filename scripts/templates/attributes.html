@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Attributes — PPE Engine{% endblock %}
+{% block content %}
+<h1>Attributes</h1>
+<div class="sub">
+  Every stylistic/structural attribute the engine tracks, from single fields up to media-wide categories.
+  Sub-micro attributes (distinct values, ranges, true/false) roll up into micro attributes like
+  <code>bias_assumptions</code>, which roll up into per-media macros like "Evidence &amp; Authority" —
+  and those macros roll up once more, below, into five X-Large groups spanning every medium.
+</div>
+
+<h2 style="margin-top:0">X-Large Attributes</h2>
+<div class="sub" style="margin-top:-6px">
+  The level above per-media macros: Books' 9 macro groups and Instagram's 5 collapse into five shared
+  categories, each blending both media's qualitative coverage into a single score. This is the broadest
+  read on how consistently the engine is capturing style, across everything it currently ingests.
+</div>
+
+<div class="macros">
+  {% for g in xlarge_groups %}
+  <div class="macro-card">
+    <h3>{{ g.name }}</h3>
+    <div class="mpct score {{ 'good' if g.avg_pct >= 80 else ('mid' if g.avg_pct >= 30 else 'bad') }}">{{ g.avg_pct }}%</div>
+    <div class="bar"><div class="bar-fill" style="width:{{ g.avg_pct }}%;background:{{ 'var(--good)' if g.avg_pct >= 80 else ('var(--mid)' if g.avg_pct >= 30 else 'var(--bad)') }}"></div></div>
+    <div class="mmeta">{{ g.desc }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<h2>By media type</h2>
+<div class="sub" style="margin-top:-6px">Click a type to see its full field catalog and coverage.</div>
+<div class="attributes-grid">
+  {% for c in cards %}
+  <a class="attr-card {{ 'empty-attr' if not c.implemented }}" href="{{ url_for('attribute_media_detail', slug=c.slug) }}">
+    <div>
+      <div class="aicon">{{ c.icon }}</div>
+      <div class="aname">{{ c.name }}</div>
+      <div class="adesc">{{ c.desc }}</div>
+    </div>
+    <div class="afoot">
+      {% if c.implemented %}
+      <div class="acount">{{ c.item_count }}<span>{{ " item" if c.item_count == 1 else " items" }} &middot; {{ c.field_count }} fields</span></div>
+      {% else %}
+      <div class="acount">—<span>coming soon</span></div>
+      {% endif %}
+      <div class="aarrow">→</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Workflow: Input — PPE Engine{% endblock %}
+{% block content %}
+<h1>Workflow</h1>
+<div class="sub">Input → Choose Profile Style → Output</div>
+
+<div class="steps">
+  <div class="step active"><div class="dot">1</div> Input</div>
+  <div class="line"></div>
+  <div class="step"><div class="dot">2</div> Choose Style</div>
+  <div class="line"></div>
+  <div class="step"><div class="dot">3</div> Output</div>
+</div>
+
+<form method="post" action="{{ url_for('workflow_input') }}" enctype="multipart/form-data" class="card">
+  <label for="text">Option A — paste text</label>
+  <textarea id="text" name="text" placeholder="Paste the full script / paragraph / article here...">{{ wf.text or '' }}</textarea>
+
+  <label style="margin-top:20px">Option B — upload a media file</label>
+  <input type="file" name="file" accept=".txt,.md,.srt,.vtt">
+  <div class="muted" style="font-size:12px;margin-top:6px">
+    A plain-text transcript (.txt/.md) or subtitle file (.srt/.vtt — timestamps are stripped automatically).
+    If you upload a file, it's used instead of the pasted text above.
+  </div>
+
+  <div class="flex" style="margin-top:6px">
+    <div>
+      <label for="title">Title (optional)</label>
+      <input type="text" id="title" name="title" value="{{ wf.title or '' }}">
+    </div>
+    <div>
+      <label for="label">Source label (optional)</label>
+      <input type="text" id="label" name="label" value="{{ wf.label or '' }}" placeholder="e.g. Ali_Razavi12 CPI script">
+    </div>
+    <div>
+      <label for="input_type">Input type</label>
+      <select id="input_type" name="input_type">
+        <option value="video_script" {{ 'selected' if wf.input_type == 'video_script' or not wf.input_type }}>video_script</option>
+        <option value="book_paragraph" {{ 'selected' if wf.input_type == 'book_paragraph' }}>book_paragraph</option>
+        <option value="news_article" {{ 'selected' if wf.input_type == 'news_article' }}>news_article</option>
+        <option value="other" {{ 'selected' if wf.input_type == 'other' }}>other</option>
+      </select>
+    </div>
+  </div>
+
+  <button type="submit">Continue to Choose Style →</button>
+</form>
+{% endblock %}

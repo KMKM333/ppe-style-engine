@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Score Text — PPE Engine{% endblock %}
+{% block content %}
+<h1>Score Text</h1>
+<div class="sub">Pre-creation rating: paste a script, paragraph, or article and see how it scores on its own merits, plus its fit against every confirmed style profile.</div>
+
+<form method="post" action="{{ url_for('score_submit') }}" class="card">
+  <label for="text">Text to score</label>
+  <textarea id="text" name="text" required placeholder="Paste the full script / paragraph / article here...">{{ request.form.text or '' }}</textarea>
+
+  <div class="flex">
+    <div>
+      <label for="title">Title (optional)</label>
+      <input type="text" id="title" name="title" value="{{ request.form.title or '' }}">
+    </div>
+    <div>
+      <label for="label">Source label (optional)</label>
+      <input type="text" id="label" name="label" value="{{ request.form.label or '' }}" placeholder="e.g. Ali_Razavi12 CPI script">
+    </div>
+    <div>
+      <label for="input_type">Input type</label>
+      <select id="input_type" name="input_type">
+        <option value="video_script" selected>video_script</option>
+        <option value="book_paragraph">book_paragraph</option>
+        <option value="news_article">news_article</option>
+        <option value="other">other</option>
+      </select>
+    </div>
+  </div>
+
+  <button type="submit">Score against all profiles</button>
+</form>
+{% endblock %}

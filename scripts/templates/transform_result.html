@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Transform Result — {{ result.target_profile }}{% endblock %}
+{% block content %}
+<h1>Post-creation scoring</h1>
+<div class="sub">Transformation #{{ result.transformation_id }} &middot; target profile <strong>{{ result.target_profile }}</strong></div>
+
+<div class="card">
+  <table>
+    <tr><th>Rank</th><th>Profile</th><th>Post-score</th><th>Pre-score (original)</th><th>Delta</th><th></th></tr>
+    {% for r in result.results %}
+    <tr class="{{ 'rank1' if r.rank == 1 else '' }}">
+      <td>#{{ r.rank }}</td>
+      <td><strong>{{ r.profile_code }}</strong></td>
+      <td class="score {{ 'good' if r.total_score >= 70 else ('mid' if r.total_score >= 40 else 'bad') }}">{{ r.total_score }}</td>
+      <td class="muted">{{ r.pre_score_same_profile if r.pre_score_same_profile is not none else '—' }}</td>
+      <td class="{{ 'check-pass' if (r.score_delta or 0) > 0 else ('check-fail' if (r.score_delta or 0) < 0 else 'muted') }}">
+        {{ '%+.1f' % r.score_delta if r.score_delta is not none else '—' }}
+      </td>
+      <td>{{ '← TARGET' if r.is_target_profile else '' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<a class="btn" href="{{ url_for('transform_form') }}">Run another transform</a>
+<a class="btn secondary" href="{{ url_for('creation_detail', transformation_id=result.transformation_id) }}">View in Creations →</a>
+<a class="btn secondary" href="{{ url_for('tests_list') }}">Test history</a>
+{% endblock %}

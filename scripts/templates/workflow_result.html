@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Workflow: Output — {{ result.target_profile }}{% endblock %}
+{% block content %}
+<h1>Workflow</h1>
+<div class="sub">Input → Choose Profile Style → Output</div>
+
+<div class="steps">
+  <div class="step done"><div class="dot">1</div> Input</div>
+  <div class="line"></div>
+  <div class="step done"><div class="dot">2</div> Choose Style</div>
+  <div class="line"></div>
+  <div class="step done"><div class="dot">3</div> Output</div>
+</div>
+
+{% set target = result.results | selectattr('is_target_profile') | first %}
+
+<h2 style="margin-top:0">Your output — {{ result.target_profile }}</h2>
+<div class="card">
+  {% if generated_title %}<div style="font-weight:700;font-size:17px;margin-bottom:10px">{{ generated_title }}</div>{% endif %}
+  <textarea class="mono" readonly onclick="this.select()" style="min-height:260px">{{ generated_text }}</textarea>
+
+  {% if target %}
+  <div class="flex" style="margin-top:18px">
+    <div class="card" style="margin-bottom:0">
+      <div class="muted">Post-creation score ({{ result.target_profile }})</div>
+      <div style="font-size:28px;font-weight:700" class="score {{ 'good' if target.total_score >= 70 else ('mid' if target.total_score >= 40 else 'bad') }}">{{ target.total_score }}</div>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div class="muted">Pre-creation score (original)</div>
+      <div style="font-size:28px;font-weight:700">{{ target.pre_score_same_profile if target.pre_score_same_profile is not none else '—' }}</div>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div class="muted">Delta</div>
+      <div style="font-size:28px;font-weight:700" class="{{ 'check-pass' if (target.score_delta or 0) > 0 else ('check-fail' if (target.score_delta or 0) < 0 else '') }}">
+        {{ '%+.1f' % target.score_delta if target.score_delta is not none else '—' }}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<h2>Full ranking (all profiles)</h2>
+<div class="card">
+  <table>
+    <tr><th>Rank</th><th>Profile</th><th>Post-score</th><th>Pre-score (original)</th><th>Delta</th><th></th></tr>
+    {% for r in result.results %}
+    <tr class="{{ 'rank1' if r.rank == 1 else '' }}">
+      <td>#{{ r.rank }}</td>
+      <td><strong>{{ r.profile_code }}</strong></td>
+      <td class="score {{ 'good' if r.total_score >= 70 else ('mid' if r.total_score >= 40 else 'bad') }}">{{ r.total_score }}</td>
+      <td class="muted">{{ r.pre_score_same_profile if r.pre_score_same_profile is not none else '—' }}</td>
+      <td class="{{ 'check-pass' if (r.score_delta or 0) > 0 else ('check-fail' if (r.score_delta or 0) < 0 else 'muted') }}">
+        {{ '%+.1f' % r.score_delta if r.score_delta is not none else '—' }}
+      </td>
+      <td>{{ '← TARGET' if r.is_target_profile else '' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<a class="btn" href="{{ url_for('workflow_start', reset=1) }}">Start a new workflow →</a>
+<a class="btn secondary" href="{{ url_for('creation_detail', transformation_id=result.transformation_id) }}">View in Creations →</a>
+{% endblock %}

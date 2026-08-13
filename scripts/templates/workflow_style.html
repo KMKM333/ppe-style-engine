@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Workflow: Choose Style — PPE Engine{% endblock %}
+{% block content %}
+<h1>Workflow</h1>
+<div class="sub">Input → Choose Profile Style → Output</div>
+
+<div class="steps">
+  <div class="step done"><div class="dot">1</div> Input</div>
+  <div class="line"></div>
+  <div class="step active"><div class="dot">2</div> Choose Style</div>
+  <div class="line"></div>
+  <div class="step"><div class="dot">3</div> Output</div>
+</div>
+
+<div class="card">
+  <div class="muted" style="text-transform:uppercase;font-size:12px;letter-spacing:.04em;margin-bottom:6px">Your input</div>
+  <div style="font-weight:600">{{ test.source_label or '(untitled)' }}</div>
+  <p class="muted" style="font-size:13.5px;line-height:1.5">{{ preview }}</p>
+  <div>Intrinsic score: <span class="score {{ 'good' if intrinsic >= 70 else ('mid' if intrinsic >= 40 else 'bad') }}">{{ intrinsic }}/100</span>
+    &middot; <a href="{{ url_for('workflow_start') }}">edit input</a></div>
+</div>
+
+<form method="post" action="{{ url_for('workflow_generate') }}">
+  <input type="hidden" name="test_id" value="{{ test.test_id }}">
+
+  <h2>Short-form styles (band A)</h2>
+  <div class="card">
+    {% if short_profiles %}
+    <table>
+      <tr><th></th><th>Code</th><th>Channel</th><th>Pre-creation score</th><th>Status</th></tr>
+      {% for p in short_profiles %}
+      <tr>
+        <td><input type="radio" name="profile" value="{{ p.profile_code }}" required></td>
+        <td><strong>{{ p.profile_code }}</strong></td>
+        <td>{{ p.channel_name }}</td>
+        <td class="score {{ 'good' if p.total_score >= 70 else ('mid' if p.total_score >= 40 else 'bad') }}">{{ p.total_score }}</td>
+        <td><span class="pill {{ p.status }}">{{ p.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">No short-form (band A) profiles built yet.</div>
+    {% endif %}
+  </div>
+
+  <h2>Long-form styles (band B)</h2>
+  <div class="card">
+    {% if long_profiles %}
+    <table>
+      <tr><th></th><th>Code</th><th>Channel</th><th>Pre-creation score</th><th>Status</th></tr>
+      {% for p in long_profiles %}
+      <tr>
+        <td><input type="radio" name="profile" value="{{ p.profile_code }}" required></td>
+        <td><strong>{{ p.profile_code }}</strong></td>
+        <td>{{ p.channel_name }}</td>
+        <td class="score {{ 'good' if p.total_score >= 70 else ('mid' if p.total_score >= 40 else 'bad') }}">{{ p.total_score }}</td>
+        <td><span class="pill {{ p.status }}">{{ p.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">No long-form (band B) profiles built yet — ingest a ~20-minute channel and build a B.1/B.2 profile to unlock this (see README).</div>
+    {% endif %}
+  </div>
+
+  {% if other_profiles %}
+  <h2>Other profiles</h2>
+  <div class="card">
+    <table>
+      <tr><th></th><th>Code</th><th>Channel</th><th>Pre-creation score</th><th>Status</th></tr>
+      {% for p in other_profiles %}
+      <tr>
+        <td><input type="radio" name="profile" value="{{ p.profile_code }}" required></td>
+        <td><strong>{{ p.profile_code }}</strong></td>
+        <td>{{ p.channel_name }}</td>
+        <td class="score {{ 'good' if p.total_score >= 70 else ('mid' if p.total_score >= 40 else 'bad') }}">{{ p.total_score }}</td>
+        <td><span class="pill {{ p.status }}">{{ p.status }}</span></td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
+  <button type="submit">Continue to Output →</button>
+</form>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — PPE Engine{% endblock %}
+{% block content %}
+<h1>Engine Overview</h1>
+<div class="sub">One SQLite database, {{ channels|length }} channel(s), {{ profiles|length }} style profile(s), {{ n_inputs }} ingested input(s).</div>
+
+<h2 style="margin-top:0">How the workflow works</h2>
+<div class="card">
+  <div class="flow">
+    <div class="fbox">
+      <div class="fnum">STEP 1</div>
+      <h3>Input</h3>
+      <p>Paste a script/paragraph, or upload a media file (.txt/.srt/.vtt transcript).</p>
+    </div>
+    <div class="farrow">→</div>
+    <div class="fbox">
+      <div class="fnum">STEP 2</div>
+      <h3>Choose Profile Style</h3>
+      <p>See how it scores pre-creation, then pick a target: Short (A.1/A.2/A.3…) or Long (B.1/B.2/B.3…).</p>
+    </div>
+    <div class="farrow">→</div>
+    <div class="fbox">
+      <div class="fnum">STEP 3</div>
+      <h3>Output</h3>
+      <p>Get a fingerprint-seeded rewrite prompt, generate it, and see the before/after score delta.</p>
+    </div>
+  </div>
+  <a class="btn" href="{{ url_for('workflow_start') }}">Start the workflow →</a>
+</div>
+
+<div class="flex">
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('inputs_list') }}">
+    <div class="muted" style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:30px;display:inline-flex;color:var(--accent)">{{ icon('archive') }}</span>Inputs ingested</div>
+    <div style="font-size:28px;font-weight:700">{{ n_inputs }}</div>
+  </a>
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('profiles_list') }}">
+    <div class="muted" style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:30px;display:inline-flex;color:var(--accent)">{{ icon('users') }}</span>Profiles</div>
+    <div style="font-size:28px;font-weight:700">{{ profiles|length }}</div>
+  </a>
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('subjects_page') }}">
+    <div class="muted" style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:30px;display:inline-flex;color:var(--accent)">{{ icon('grid') }}</span>Subjects</div>
+    <div style="font-size:28px;font-weight:700">{{ n_subjects_covered }}</div>
+  </a>
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('attributes_page') }}">
+    <div class="muted" style="display:flex;align-items:center;gap:6px"><span style="width:30px;height:30px;display:inline-flex;color:var(--accent)">{{ icon('tag') }}</span>Attributes</div>
+    <div style="font-size:28px;font-weight:700">{{ n_attribute_cats }}</div>
+  </a>
+</div>
+
+
+<h2><a href="{{ url_for('subjects_page') }}" style="color:inherit;text-decoration:none">Browse by Subject →</a></h2>
+<div class="sub" style="margin-top:-6px">Explore style profiles grouped by Economics, Politics, Philosophy, Psychology, Sustainability, Science, and Technology.</div>
+
+<h2>Style Profiles</h2>
+<div class="card">
+  {% if profiles %}
+  <table>
+    <tr><th>Media type</th><th>Code</th><th>Channel</th><th>Subject</th><th>N analysed</th><th>Status</th><th></th></tr>
+    {% for p in profiles %}
+    <tr>
+      <td class="{{ 'muted' if not p.media_type }}">{{ p.media_type or "—" }}</td>
+      <td><strong>{{ p.profile_code }}</strong></td>
+      <td>{{ p.channel_name }}</td>
+      <td class="{{ 'muted' if not p.subject }}">{{ p.subject or "—" }}</td>
+      <td>{{ p.n_videos_analysed }}</td>
+      <td><span class="pill {{ p.status }}">{{ p.status }}</span></td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('profile_detail', code=p.profile_code) }}">View fingerprint</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No profiles built yet.</div>
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,11 @@
+instagram_transcriber/
+.tunnel/
+.claude/
+.git/
+scripts/__pycache__/
+scripts/webapp.log
+**/__pycache__/
+*.pyc
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm

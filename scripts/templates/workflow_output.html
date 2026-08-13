@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Workflow: Output — PPE Engine{% endblock %}
+{% block content %}
+<h1>Workflow</h1>
+<div class="sub">Input → Choose Profile Style → Output</div>
+
+<div class="steps">
+  <div class="step done"><div class="dot">1</div> Input</div>
+  <div class="line"></div>
+  <div class="step done"><div class="dot">2</div> Choose Style</div>
+  <div class="line"></div>
+  <div class="step active"><div class="dot">3</div> Output</div>
+</div>
+
+<div class="sub" style="margin-top:-14px">Target style: <strong>{{ profile }}</strong> &middot; <a href="{{ url_for('workflow_style') }}">change style</a></div>
+
+<h2 style="margin-top:0">Generate the rewrite</h2>
+<div class="card">
+  <p class="muted" style="margin-top:0">Copy this prompt to Claude (or ask Claude Code directly in this session) to get the rewritten title + script, seeded with {{ profile }}'s live fingerprint.</p>
+  <textarea class="mono" readonly onclick="this.select()">{{ prompt_text }}</textarea>
+</div>
+
+<h2>Paste the result</h2>
+<div class="card">
+  <form method="post" action="{{ url_for('workflow_save') }}">
+    <input type="hidden" name="test_id" value="{{ test_id }}">
+    <input type="hidden" name="profile" value="{{ profile }}">
+    <label for="gen_title">Generated title</label>
+    <input type="text" id="gen_title" name="gen_title" placeholder="Paste the TITLE line from Claude's reply">
+    <label for="gen_text">Generated script</label>
+    <textarea id="gen_text" name="gen_text" required placeholder="Paste the SCRIPT text from Claude's reply"></textarea>
+    <button type="submit">See my output →</button>
+  </form>
+</div>
+{% endblock %}

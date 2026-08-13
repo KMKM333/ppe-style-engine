@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.profile_code }} — Style Card{% endblock %}
+{% block content %}
+<h1>Style Card — {{ profile.profile_code }}</h1>
+<div class="sub">
+  {{ profile.channel_name }} &middot; the AI-observed fingerprint is computed FROM the corpus (see
+  <a href="{{ url_for('profile_detail', code=profile.profile_code) }}">fingerprint</a>) — this page is the other
+  direction: a human-declared description of the voice, fully editable, with a delta shown against what's
+  actually observed where a field maps to a real metric.
+</div>
+
+{% for row in card_rows %}
+<div class="card">
+  <div style="font-weight:600;margin-bottom:4px">{{ row.label }}</div>
+  {% if row.ai_suggestion %}
+  <div class="muted" style="font-size:13px;margin-bottom:10px">AI-observed: {{ row.ai_suggestion }}</div>
+  {% else %}
+  <div class="muted" style="font-size:13px;margin-bottom:10px">No corpus signal for this field — declare it manually.</div>
+  {% endif %}
+  <form method="post" action="{{ url_for('style_card_save', code=profile.profile_code) }}">
+    <input type="hidden" name="field" value="{{ row.field }}">
+    <input type="hidden" name="numeric_attr" value="{{ row.numeric_attr or '' }}">
+    <textarea name="declared_value" style="min-height:70px" placeholder="Declare this profile's {{ row.label|lower }}...">{{ row.declared_value }}</textarea>
+    <div class="flex" style="align-items:center;margin-top:8px">
+      <button type="submit" style="margin:0">Save</button>
+      {% if row.numeric_attr %}
+      <div class="muted" style="font-size:12.5px">
+        Observed fingerprint mean for <code>{{ row.numeric_attr }}</code>: {{ '%.3f' % row.observed_mean if row.observed_mean is not none else '—' }}
+        {% if row.delta is not none %}
+        &middot; declared−observed delta:
+        <span class="{{ 'check-pass' if row.delta == 0 else '' }}">{{ '%+.3f' % row.delta }}</span>
+        {% elif row.declared_value %}
+        &middot; <span class="muted">declare a plain number here to compute a delta</span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endfor %}
+
+<h2>Negative space</h2>
+<div class="sub" style="margin-top:-6px">Things this profile should never say or do — declared constraints, not observed from the corpus.</div>
+<div class="card">
+  {% set banned_words = negative_space | selectattr('constraint_type', 'equalto', 'banned_word') | list %}
+  {% set banned_tones = negative_space | selectattr('constraint_type', 'equalto', 'banned_tone') | list %}
+  {% set banned_formats = negative_space | selectattr('constraint_type', 'equalto', 'banned_format') | list %}
+
+  {% for label, items in [('Banned words/phrases', banned_words), ('Banned tones', banned_tones), ('Banned formats', banned_formats)] %}
+  <div style="margin-bottom:14px">
+    <div class="muted" style="text-transform:uppercase;font-size:12px;letter-spacing:.04em;margin-bottom:6px">{{ label }}</div>
+    {% if items %}
+    <table>
+      {% for r in items %}
+      <tr>
+        <td>{{ r.declared_value }}</td>
+        <td style="width:80px">
+          <form method="post" action="{{ url_for('negative_space_delete', code=profile.profile_code, row_id=r.id) }}">
+            <button type="submit" class="secondary" style="margin:0;padding:4px 10px;font-size:12px">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty" style="padding:6px 0">None declared yet.</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <form method="post" action="{{ url_for('negative_space_add', code=profile.profile_code) }}" style="margin-top:6px">
+    <div class="flex">
+      <div>
+        <label for="constraint_type">Type</label>
+        <select id="constraint_type" name="constraint_type">
+          <option value="banned_word">Banned word/phrase</option>
+          <option value="banned_tone">Banned tone</option>
+          <option value="banned_format">Banned format</option>
+        </select>
+      </div>
+      <div>
+        <label for="value">Value</label>
+        <input type="text" id="value" name="value" placeholder="e.g. never use corporate jargon">
+      </div>
+    </div>
+    <button type="submit">Add constraint</button>
+  </form>
+</div>
+
+<a class="btn secondary" href="{{ url_for('profile_detail', code=profile.profile_code) }}">← Fingerprint</a>
+{% endblock %}

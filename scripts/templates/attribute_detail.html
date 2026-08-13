@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ media.name }} — Attributes{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>{{ media.icon }} {{ media.name }}</h1>
+
+{% if not implemented %}
+<div class="sub">This media type isn't wired up for ingestion yet.</div>
+<div class="empty">
+  No attribute schema exists for {{ media.name }} yet. Once ingestion is built for this type, its per-field
+  coverage will show up here the same way it does for Instagram videos and Books.
+</div>
+{% else %}
+<div class="sub">{{ total_fields }} fields tracked across {{ total_items }} ingested {{ 'item' if total_items == 1 else 'items' }}. Coverage below shows how many have each field populated (auto attributes are computed at ingest; categorical ones need a classification pass).</div>
+
+<h2 style="margin-top:0">Macro attributes</h2>
+<div class="macros">
+  {% for m in macros %}
+  <div class="macro-card">
+    <h3>{{ m.name }}</h3>
+    <div class="mpct {{ 'score' }} {{ 'good' if m.avg_pct >= 80 else ('mid' if m.avg_pct >= 30 else 'bad') }}">{{ m.avg_pct }}%</div>
+    <div class="bar"><div class="bar-fill" style="width:{{ m.avg_pct }}%;background:{{ 'var(--good)' if m.avg_pct >= 80 else ('var(--mid)' if m.avg_pct >= 30 else 'var(--bad)') }}"></div></div>
+    <div class="mmeta">{{ m.count }} attributes &middot; {{ m.fully_populated }} fully populated &middot; {{ m.empty }} need classification</div>
+  </div>
+  {% endfor %}
+</div>
+
+<h2>All attributes</h2>
+{% for section_name, fields in sections %}
+<div class="card">
+  <div class="muted" style="text-transform:uppercase;font-size:12px;letter-spacing:.04em;margin-bottom:8px">
+    {{ section_name }}{% if fields and fields[0].macro != section_name %} <span style="opacity:.6">— {{ fields[0].macro }}</span>{% endif %}
+  </div>
+  <table>
+    <tr><th>Attribute</th><th>Type</th><th>Description</th><th>Coverage</th><th>Stats</th></tr>
+    {% for f in fields %}
+    <tr>
+      <td><code>{{ f.name }}</code></td>
+      <td class="muted">{{ f.type }}</td>
+      <td>{{ f.description }}</td>
+      <td class="{{ 'check-pass' if f.pct >= 99.9 else ('muted' if f.pct == 0 else '') }}">{{ f.populated }}/{{ f.total }} ({{ f.pct }}%)</td>
+      <td class="muted">{{ f.extra or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+{% endif %}
+
+<a class="btn secondary" href="{{ url_for('attributes_page') }}">← All types</a>
+{% endblock %}

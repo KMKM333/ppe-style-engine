@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Channels — PPE Engine{% endblock %}
+{% block content %}
+<h1>Instagram Channels</h1>
+<div class="sub">
+  Every Instagram creator with ingested videos, each fingerprinted into its own style profile.
+</div>
+<div class="card">
+  {% if channels %}
+  <table>
+    <tr><th>Channel</th><th>Subject</th><th>Videos</th><th>Profile</th><th>Status</th><th></th></tr>
+    {% for c in channels %}
+    <tr>
+      <td><strong>{{ c.channel_name }}</strong></td>
+      <td class="{{ 'muted' if not c.subject }}">{{ c.subject or '—' }}</td>
+      <td>{{ c.n_videos }}</td>
+      <td class="{{ 'muted' if not c.profile_code }}">{{ c.profile_code or '—' }}</td>
+      <td>{% if c.status %}<span class="pill {{ c.status }}">{{ c.status }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>
+        {% if c.profile_code %}
+        <a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('profile_detail', code=c.profile_code) }}">View</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No Instagram channels ingested yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

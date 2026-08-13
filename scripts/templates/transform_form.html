@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Rewrite / Transform — PPE Engine{% endblock %}
+{% block content %}
+<h1>Rewrite Into a Target Style</h1>
+<div class="sub">Post-creation workflow: pick an ingested input (or paste your own text) and a target profile, get a fingerprint-seeded prompt, generate the rewrite (with Claude), then score how well it landed.</div>
+
+<div class="card">
+  <form method="get" action="{{ url_for('transform_form') }}">
+    <div class="flex">
+      <div>
+        <label for="source">Input</label>
+        <select id="source" name="source">
+          <option value="">— choose an ingested input —</option>
+          {% if video_rows %}
+          <optgroup label="Videos">
+            {% for v in video_rows %}
+            <option value="video:{{ v.video_id }}" {{ 'selected' if selected_source == 'video:' ~ v.video_id else '' }}>
+              {{ v.media_type or 'Video' }} — {{ v.channel_name }} — {{ v.title }}{% if v.word_count %} ({{ v.word_count }}w){% endif %}
+            </option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+          {% if book_rows %}
+          <optgroup label="Books">
+            {% for b in book_rows %}
+            <option value="book:{{ b.book_id }}" {{ 'selected' if selected_source == 'book:' ~ b.book_id else '' }}>
+              Book — {{ b.author or 'Unknown' }} — {{ b.title }}{% if b.word_count %} ({{ b.word_count }}w){% endif %}
+            </option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
+        </select>
+      </div>
+      <div>
+        <label for="profile">Target profile</label>
+        <select id="profile" name="profile" required>
+          <option value="">— choose a profile —</option>
+          {% for p in profiles %}
+          <option value="{{ p.profile_code }}" {{ 'selected' if selected_profile == p.profile_code else '' }}>{{ p.profile_code }} ({{ p.channel_name }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="sub" style="margin:14px 0 4px">— or paste text to transform instead of picking an input above —</div>
+    <label for="pasted_title">Title (optional)</label>
+    <input type="text" id="pasted_title" name="pasted_title" value="{{ pasted_title or '' }}" placeholder="Title for the pasted text">
+    <label for="pasted_text">Pasted script / excerpt</label>
+    <textarea id="pasted_text" name="pasted_text" placeholder="Paste all or part of a script here to transform it instead of selecting an input above">{{ pasted_text or '' }}</textarea>
+
+    <button type="submit" style="margin-top:10px">Generate transform prompt</button>
+  </form>
+</div>
+
+<details class="card" style="padding:0">
+  <summary style="cursor:pointer;padding:14px 16px;font-weight:600">+ Build a hybrid target profile</summary>
+  <div style="padding:0 16px 16px">
+    <div class="sub" style="margin-top:0">
+      Check 2 or more profiles below and (optionally) give each a relative weight, then create a blended
+      profile — its numeric fingerprint (length, sentence rhythm, readability, etc.) and categorical
+      fingerprint (title format, hook type, tone, etc.) are the weighted average of the sources you pick.
+      The new profile shows up as a normal target option above.
+    </div>
+    <form method="post" action="{{ url_for('hybrid_profile_create') }}">
+      <input type="hidden" name="source" value="{{ selected_source or '' }}">
+      <input type="hidden" name="pasted_title" value="{{ pasted_title or '' }}">
+      <input type="hidden" name="pasted_text" value="{{ pasted_text or '' }}">
+      <table>
+        <tr><th style="width:36px"></th><th>Profile</th><th style="width:120px">Relative weight</th></tr>
+        {% for p in profiles %}
+        <tr>
+          <td><input type="checkbox" name="source_profiles" value="{{ p.profile_code }}" id="hp_{{ loop.index }}"></td>
+          <td><label for="hp_{{ loop.index }}">{{ p.profile_code }} ({{ p.channel_name }})</label></td>
+          <td><input type="number" name="weight__{{ p.profile_code }}" value="1" min="0" step="0.1" style="width:80px"></td>
+        </tr>
+        {% endfor %}
+      </table>
+      <button type="submit" style="margin-top:10px">Create hybrid profile</button>
+    </form>
+  </div>
+</details>
+
+{% if prompt_text %}
+<h2>Step 1 — Transform prompt</h2>
+<div class="card">
+  <p class="muted" style="margin-top:0">Seeded with profile {{ selected_profile }}'s live fingerprint. Generate the rewrite automatically with Claude, or copy this prompt to paste into a chat yourself.</p>
+  <textarea class="mono" readonly onclick="this.select()">{{ prompt_text }}</textarea>
+  <form method="post" action="{{ url_for('transform_generate') }}" style="margin-top:10px">
+    <input type="hidden" name="test_id" value="{{ selected_test_id }}">
+    <input type="hidden" name="profile" value="{{ selected_profile }}">
+    <input type="hidden" name="source" value="{{ selected_source or '' }}">
+    <input type="hidden" name="pasted_title" value="{{ pasted_title or '' }}">
+    <input type="hidden" name="pasted_text" value="{{ pasted_text or '' }}">
+    <button type="submit">Generate with Claude ✨</button>
+  </form>
+</div>
+
+<h2>Step 2 — Save &amp; score the rewrite</h2>
+<div class="card">
+  {% if gen_title or gen_text %}
+  <p class="muted" style="margin-top:0">Auto-generated below — review it, then save. You can edit either field first.</p>
+  {% endif %}
+  <form method="post" action="{{ url_for('transform_save') }}">
+    <input type="hidden" name="test_id" value="{{ selected_test_id }}">
+    <input type="hidden" name="profile" value="{{ selected_profile }}">
+    <label for="gen_title">Generated title</label>
+    <input type="text" id="gen_title" name="gen_title" value="{{ gen_title or '' }}" placeholder="Paste the TITLE line from Claude's reply, or click Generate with Claude above">
+    <label for="gen_text">Generated script</label>
+    <textarea id="gen_text" name="gen_text" required placeholder="Paste the SCRIPT text from Claude's reply, or click Generate with Claude above">{{ gen_text or '' }}</textarea>
+    <button type="submit">Save + score against all profiles</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

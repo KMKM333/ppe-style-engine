@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Insights — PPE Engine{% endblock %}
+{% block content %}
+<h1>Insights</h1>
+<div class="sub">Everything the engine has learned about style so far — {{ n_profiles }} fingerprint{{ '' if n_profiles == 1 else 's' }} across {{ n_subjects_covered }} subject{{ '' if n_subjects_covered == 1 else 's' }}, scored against {{ n_tests }} test{{ '' if n_tests == 1 else 's' }} and turned into {{ n_creations }} creation{{ '' if n_creations == 1 else 's' }}.</div>
+
+<div class="flex">
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('profiles_list') }}">
+    <div class="muted">Profiles</div>
+    <div style="font-size:28px;font-weight:700">{{ n_profiles }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">{{ n_confirmed }} confirmed &middot; {{ n_draft }} draft</div>
+  </a>
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('subjects_page') }}">
+    <div class="muted">Subjects covered</div>
+    <div style="font-size:28px;font-weight:700">{{ n_subjects_covered }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">of 7 tracked subjects</div>
+  </a>
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('attributes_page') }}">
+    <div class="muted">Attribute categories</div>
+    <div style="font-size:28px;font-weight:700">{{ n_attribute_cats }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">media types with rubric coverage</div>
+  </a>
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('tests_list') }}">
+    <div class="muted">Tests scored</div>
+    <div style="font-size:28px;font-weight:700">{{ n_tests }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">pre-creation ratings</div>
+  </a>
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('creations_list') }}">
+    <div class="muted">Creations</div>
+    <div style="font-size:28px;font-weight:700">{{ n_creations }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">rewrites generated</div>
+  </a>
+</div>
+
+<h2>Profiles by media type</h2>
+<div class="card">
+  {% if media_breakdown %}
+  {% for m in media_breakdown %}
+  <div style="margin-bottom:{{ '0' if loop.last else '14px' }}">
+    <div style="display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:5px">
+      {% if m.url %}
+      <a href="{{ m.url }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ m.label }}</a>
+      {% else %}
+      <span class="muted">{{ m.label }}</span>
+      {% endif %}
+      <span class="muted">{{ m.count }} &middot; {{ m.pct }}%</span>
+    </div>
+    <div class="bar"><div class="bar-fill" style="width:{{ m.pct }}%;background:var(--accent)"></div></div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div class="empty">No profiles built yet.</div>
+  {% endif %}
+</div>
+
+<h2><a href="{{ url_for('subjects_page') }}" style="color:inherit;text-decoration:none">Subject coverage →</a></h2>
+<div class="sub" style="margin-top:-6px">Only subjects with at least one profile are shown here.</div>
+<div class="subjects-grid">
+  {% if subject_groups %}
+  {% for g in subject_groups %}
+  <a class="subject-card" href="{{ url_for('subject_detail', subject=g.name) }}">
+    <div class="sicon">{{ g.icon }}</div>
+    <div class="sname">{{ g.name }}</div>
+    <div class="sfoot">
+      <div class="scount">{{ g.count }}<span>{{ " profile" if g.count == 1 else " profiles" }}</span></div>
+      <div class="sarrow">→</div>
+    </div>
+  </a>
+  {% endfor %}
+  {% else %}
+  <div class="empty">No subjects assigned yet.</div>
+  {% endif %}
+</div>
+
+<h2><a href="{{ url_for('attributes_page') }}" style="color:inherit;text-decoration:none">Attribute coverage →</a></h2>
+<div class="sub" style="margin-top:-6px">Average field-fill rate across every ingested item, per media type.</div>
+<div class="macros">
+  {% for c in attribute_cards %}
+  <a class="macro-card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('attribute_media_detail', slug=c.slug) if c.implemented else '#' }}">
+    <h3>{{ c.icon }} {{ c.name }}</h3>
+    {% if c.implemented %}
+    <div class="mpct">{{ c.avg_pct }}%</div>
+    <div class="bar"><div class="bar-fill" style="width:{{ c.avg_pct }}%;background:{{ 'var(--good)' if c.avg_pct >= 80 else ('var(--mid)' if c.avg_pct >= 30 else 'var(--bad)') }}"></div></div>
+    <div class="mmeta">{{ c.item_count }} item{{ '' if c.item_count == 1 else 's' }} &middot; {{ c.field_count }} fields tracked</div>
+    {% else %}
+    <div class="mpct muted">—</div>
+    <div class="bar"><div class="bar-fill" style="width:0%"></div></div>
+    <div class="mmeta">coming soon</div>
+    {% endif %}
+  </a>
+  {% endfor %}
+</div>
+
+<h2><a href="{{ url_for('tests_list') }}" style="color:inherit;text-decoration:none">Recent test activity →</a></h2>
+<div class="card">
+  {% if recent_tests %}
+  <table>
+    <tr><th>Label</th><th>Type</th><th>Best fit</th><th>Score</th><th>Submitted</th></tr>
+    {% for t in recent_tests %}
+    <tr>
+      <td>{{ t.source_label or '(untitled)' }}</td>
+      <td class="muted">{{ t.input_type }}</td>
+      <td>{{ t.best_profile or '—' }}</td>
+      <td class="score {{ 'good' if (t.best_score or 0) >= 70 else ('mid' if (t.best_score or 0) >= 40 else 'bad') }}">{{ t.best_score if t.best_score is not none else '—' }}</td>
+      <td class="muted">{{ t.submitted_at }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No text has been scored yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

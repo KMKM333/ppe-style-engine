@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.profile_code }} — Voice Drift{% endblock %}
+{% block content %}
+<h1>Voice Drift — {{ profile.profile_code }}</h1>
+<div class="sub">
+  {{ profile.channel_name }} &middot; snapshot the fingerprint now, come back later, and compare —
+  drift is only measurable once you have two points in time.
+</div>
+
+<div class="card">
+  <form method="post" action="{{ url_for('profile_drift_snapshot', code=profile.profile_code) }}">
+    <div class="flex">
+      <div>
+        <label for="label">Snapshot label</label>
+        <input type="text" id="label" name="label" placeholder="e.g. baseline, Q1 2026" value="baseline">
+      </div>
+    </div>
+    <button type="submit">Take snapshot now ({{ profile.n_videos_analysed }} videos)</button>
+  </form>
+</div>
+
+<h2>Snapshots</h2>
+<div class="card">
+  {% if snapshots %}
+  <table>
+    <tr><th>Label</th><th>N videos</th><th>Taken</th><th></th></tr>
+    {% for s in snapshots %}
+    <tr class="{{ 'rank1' if compared and compared.snapshot_id == s.snapshot_id }}">
+      <td>{{ s.label }}</td>
+      <td>{{ s.n_videos_analysed }}</td>
+      <td class="muted">{{ s.snapshotted_at }}</td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('profile_drift', code=profile.profile_code, snapshot_id=s.snapshot_id) }}">Compare to current</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No snapshots yet — take one above to start tracking drift.</div>
+  {% endif %}
+</div>
+
+{% if compared %}
+<h2>Drift: "{{ compared.label }}" ({{ compared.snapshotted_at }}) → current</h2>
+<div class="card">
+  <table>
+    <tr><th>Attribute</th><th>Then</th><th>Now</th><th>Delta</th></tr>
+    {% for r in numeric_drift %}
+    <tr>
+      <td><code>{{ r.attribute }}</code></td>
+      <td class="muted">{{ '%.3f' % r.old }}</td>
+      <td>{{ '%.3f' % r.current }}</td>
+      <td class="{{ 'check-pass' if r.delta > 0 else ('check-fail' if r.delta < 0 else 'muted') }}">
+        {{ '%+.3f' % r.delta }}{% if r.pct is not none %} ({{ '%+.1f' % r.pct }}%){% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<h2>Categorical distribution shift</h2>
+<div class="card">
+  <p class="muted" style="margin-top:0">Total variation distance between "then" and "now" distributions — 0 = identical, 100 = completely different.</p>
+  <table>
+    <tr><th>Attribute</th><th>Shift</th></tr>
+    {% for r in categorical_drift %}
+    <tr>
+      <td><code>{{ r.attribute }}</code></td>
+      <td class="{{ 'good' if r.shift_pct < 10 else ('mid' if r.shift_pct < 30 else 'bad') }} score">{{ r.shift_pct }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<a class="btn secondary" href="{{ url_for('profile_detail', code=profile.profile_code) }}">← Fingerprint</a>
+{% endblock %}

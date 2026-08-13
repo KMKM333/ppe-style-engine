@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Test History — PPE Engine{% endblock %}
+{% macro sort_th(col, label) %}
+  {% set is_active = filters.sort == col %}
+  {% set new_dir = 'desc' if (is_active and filters.dir != 'desc') else 'asc' %}
+  <th>
+    <a href="{{ url_for('tests_list', sort=col, dir=new_dir) }}"
+       style="color:inherit;text-decoration:none;white-space:nowrap">
+      {{ label }}{% if is_active %}<span style="color:var(--accent)">{{ ' ▲' if filters.dir == 'asc' else ' ▼' }}</span>{% else %}<span class="muted" style="opacity:.4"> ⇅</span>{% endif %}
+    </a>
+  </th>
+{% endmacro %}
+{% block content %}
+<h1>Test History</h1>
+<div class="sub">Every text scored so far (pre-creation ratings).</div>
+<div class="card">
+  {% if tests %}
+  <table>
+    <tr>
+      {{ sort_th('test_id', 'ID') }}
+      {{ sort_th('source_label', 'Label') }}
+      {{ sort_th('input_type', 'Type') }}
+      {{ sort_th('best_profile', 'Best fit') }}
+      {{ sort_th('best_score', 'Score') }}
+      {{ sort_th('submitted_at', 'Submitted') }}
+      <th></th>
+    </tr>
+    {% for t in tests %}
+    <tr>
+      <td>#{{ t.test_id }}</td>
+      <td>{{ t.source_label or '(untitled)' }}</td>
+      <td class="muted">{{ t.input_type }}</td>
+      <td>{{ t.best_profile or '—' }}</td>
+      <td class="score {{ 'good' if (t.best_score or 0) >= 70 else ('mid' if (t.best_score or 0) >= 40 else 'bad') }}">{{ t.best_score if t.best_score is not none else '—' }}</td>
+      <td class="muted">{{ t.submitted_at }}</td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('transform_form', test_id=t.test_id) }}">Rewrite →</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No text has been scored yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,12 @@
+instagram_transcriber/
+.tunnel/
+.claude/
+db_backups/
+db/*.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
+**/__pycache__/
+*.pyc
+scripts/webapp.log
+.env.local

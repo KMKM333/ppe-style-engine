@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{{ book.title }} — Books{% endblock %}
+{% block content %}
+<h1>{{ book.title }}</h1>
+<div class="sub">
+  {{ book.author or 'Unknown author' }}
+  {% if book.subject %} &middot; {{ book.subject }}{% endif %}
+  {% if book.publication_year %} &middot; {{ book.publication_year }}{% endif %}
+  {% if book.word_count %} &middot; {{ book.word_count }} words{% endif %}
+  &middot; <span class="pill {{ 'confirmed' if is_classified else 'draft' }}">{{ 'classified' if is_classified else 'pending' }}</span>
+</div>
+
+{% if source_file_url %}
+<div style="margin:10px 0 18px">
+  <a class="btn secondary" style="margin:0" href="{{ source_file_url }}" target="_blank" rel="noopener">Open original file ↗</a>
+</div>
+{% endif %}
+
+{% if book.summary %}
+<div class="card">{{ book.summary }}</div>
+{% endif %}
+
+{% if not is_classified %}
+<div class="empty">
+  This book hasn't been classified yet. Run
+  <code>python3 classify_book_template.py --export --book_id {{ book.book_id }}</code>
+  to get the rubric prompt, then merge the results with <code>--load results.json</code>.
+</div>
+{% else %}
+{% for section_name, fields in attr_sections %}
+<h2>{{ section_name }}</h2>
+<div class="card">
+  <table>
+    {% for label, value in fields %}
+    <tr>
+      <td class="muted" style="width:240px;white-space:nowrap">{{ label }}</td>
+      <td>
+        {% if value is none or value == '' %}<span class="muted">—</span>
+        {% elif value == 1 %}Yes
+        {% elif value == 0 %}No
+        {% else %}{{ value }}{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+
+<h2>Chapter / section breakdown</h2>
+<div class="sub" style="margin-top:-6px">
+  Every chapter's topics, key points, terms, and examples — pulled out so you can refer back to
+  any of them without re-reading the book.
+</div>
+{% if chapters %}
+{% for ch in chapters %}
+<div class="card chapter-card">
+  <div class="cnum">SECTION {{ ch.section.section_number if ch.section.section_number is not none else loop.index }}</div>
+  <h3>{{ ch.section.section_title }}</h3>
+  {% if ch.section.summary %}<div class="sub" style="margin:0 0 8px">{{ ch.section.summary }}</div>{% endif %}
+
+  {% if ch.topics %}
+  <div style="margin-bottom:10px">
+    {% for t in ch.topics %}<span class="tag">{{ t }}</span>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if ch.section.diagram_svg %}
+  {{ ch.section.diagram_svg | safe }}
+  {% endif %}
+
+  {% if ch.points %}
+  <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-top:12px">Key points</div>
+  <ul class="points-list">
+    {% for p in ch.points %}<li>{{ p.point_text }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if ch.terms %}
+  <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-top:12px">Terms</div>
+  <dl class="terms-list">
+    {% for t in ch.terms %}
+    <dt>{{ t.term }}</dt>
+    <dd>{{ t.definition or '—' }}</dd>
+    {% endfor %}
+  </dl>
+  {% endif %}
+
+  {% if ch.examples %}
+  <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-top:12px">Examples</div>
+  <table style="margin-top:6px">
+    <tr><th>Example</th><th>Reinforces</th></tr>
+    {% for ex in ch.examples %}
+    <tr id="example-{{ ex.example_id }}">
+      <td>{% if ex.example_title %}<strong>{{ ex.example_title }}</strong><br>{% endif %}{{ ex.example_text }}</td>
+      <td class="muted">{{ ex.reinforces_point or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+{% endfor %}
+{% else %}
+<div class="empty">No chapter breakdown extracted yet.</div>
+{% endif %}
+
+{% if unsectioned_examples %}
+<h2>Other examples</h2>
+<div class="sub" style="margin-top:-6px">Examples not attributed to a specific chapter/section.</div>
+<div class="card">
+  <table>
+    <tr><th>Example</th><th>Reinforces</th><th>Location</th></tr>
+    {% for ex in unsectioned_examples %}
+    <tr id="example-{{ ex.example_id }}">
+      <td>{% if ex.example_title %}<strong>{{ ex.example_title }}</strong><br>{% endif %}{{ ex.example_text }}</td>
+      <td class="muted">{{ ex.reinforces_point or '—' }}</td>
+      <td class="muted" style="white-space:nowrap">{{ ex.chapter_or_location or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endif %}
+
+<a class="btn secondary" href="{{ url_for('books_list') }}">← All books</a>
+{% endblock %}

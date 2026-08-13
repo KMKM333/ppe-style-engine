@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}{{ subject }} — Subjects{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>{{ subject }}</h1>
+<div class="sub">Style profiles tagged {{ subject }}.</div>
+<div class="card">
+  {% if profiles %}
+  <table>
+    <tr>
+      <th style="white-space:nowrap">Media type</th>
+      <th style="white-space:nowrap">Code</th>
+      <th style="white-space:nowrap">Channel</th>
+      <th style="width:100%">Overview</th>
+      <th style="white-space:nowrap">Length band</th>
+      <th style="white-space:nowrap">N analysed</th>
+      <th style="white-space:nowrap">Status</th>
+      <th></th>
+    </tr>
+    {% for p in profiles %}
+    <tr>
+      <td class="{{ 'muted' if not p.media_type }}" style="white-space:nowrap">{{ p.media_type or "—" }}</td>
+      <td style="white-space:nowrap"><strong>{{ p.profile_code }}</strong></td>
+      <td style="white-space:nowrap">{{ p.channel_name }}</td>
+      <td class="{{ 'muted' if not p.overview }}">{{ p.overview or "—" }}</td>
+      <td style="white-space:nowrap">{{ p.length_band }}</td>
+      <td style="white-space:nowrap">{{ p.n_videos_analysed }}</td>
+      <td style="white-space:nowrap"><span class="pill {{ p.status }}">{{ p.status }}</span></td>
+      <td style="white-space:nowrap"><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('profile_detail', code=p.profile_code) }}">View fingerprint</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No profiles tagged {{ subject }} yet.</div>
+  {% endif %}
+</div>
+<a class="btn secondary" href="{{ url_for('subjects_page') }}">← All subjects</a>
+{% endblock %}

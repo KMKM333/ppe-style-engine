@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Subjects — PPE Engine{% endblock %}
+{% block content %}
+<h1>Subjects</h1>
+<div class="sub">Every profile is tagged with the subject matter its channel covers. Click a subject to see its profiles.</div>
+
+<div class="subjects-grid">
+  {% for g in groups %}
+  <a class="subject-card {{ 'empty-subject' if g.count == 0 }}" href="{{ url_for('subject_detail', subject=g.name) }}">
+    <div class="sicon">{{ g.icon }}</div>
+    <div class="sname">{{ g.name }}</div>
+    <div class="sfoot">
+      <div class="scount">{{ g.count }}<span>{{ " profile" if g.count == 1 else " profiles" }}</span></div>
+      <div class="sarrow">→</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

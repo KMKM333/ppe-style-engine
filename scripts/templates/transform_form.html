@@ -29,6 +29,15 @@
             {% endfor %}
           </optgroup>
           {% endif %}
+          {% if example_rows %}
+          <optgroup label="Examples">
+            {% for e in example_rows %}
+            <option value="example:{{ e.example_id }}" {{ 'selected' if selected_source == 'example:' ~ e.example_id else '' }}>
+              Example — {{ e.author or 'Unknown' }} — {{ e.book_title }}: {{ e.example_title or ('Example #' ~ e.example_id) }}
+            </option>
+            {% endfor %}
+          </optgroup>
+          {% endif %}
         </select>
       </div>
       <div>

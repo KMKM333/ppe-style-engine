@@ -1996,8 +1996,13 @@ def _transform_inputs():
     book_rows = conn.execute(
         "SELECT book_id, title, author, word_count FROM books ORDER BY ingested_at DESC"
     ).fetchall()
+    example_rows = conn.execute(
+        """SELECT e.example_id, e.example_title, e.example_text, b.title AS book_title, b.author
+           FROM book_examples e JOIN books b ON b.book_id = e.book_id
+           ORDER BY b.author, b.title, e.example_id"""
+    ).fetchall()
     conn.close()
-    return video_rows, book_rows
+    return video_rows, book_rows, example_rows
 
 
 @app.route("/transform", methods=["GET"])
@@ -2007,7 +2012,7 @@ def transform_form():
     pasted_text = request.args.get("pasted_text", "").strip()
     profile = request.args.get("profile", default="", type=str)
 
-    video_rows, book_rows = _transform_inputs()
+    video_rows, book_rows, example_rows = _transform_inputs()
 
     prompt_text = None
     selected_test_id = None
@@ -2038,6 +2043,16 @@ def transform_form():
                         raise ValueError("No such book, or book has no stored full text")
                     raw_text, title = row["full_text"], row["title"]
                     source_label, input_type = f"Book #{sid}: {title}", "book_text"
+                elif kind == "example":
+                    row = conn.execute(
+                        "SELECT example_title, example_text FROM book_examples WHERE example_id=?", (sid,)
+                    ).fetchone()
+                    conn.close()
+                    if not row:
+                        raise ValueError("No such example")
+                    title = row["example_title"] or f"Example #{sid}"
+                    raw_text = row["example_text"]
+                    source_label, input_type = f"Example #{sid}: {title}", "book_example"
                 else:
                     conn.close()
                     raise ValueError("Choose an input or paste some text.")
@@ -2059,7 +2074,7 @@ def transform_form():
 
     return render_template(
         "transform_form.html", active="transform",
-        video_rows=video_rows, book_rows=book_rows, profiles=_profiles(),
+        video_rows=video_rows, book_rows=book_rows, example_rows=example_rows, profiles=_profiles(),
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=selected_test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,
@@ -2074,7 +2089,7 @@ def transform_generate():
     pasted_title = request.form.get("pasted_title", "")
     pasted_text = request.form.get("pasted_text", "")
 
-    video_rows, book_rows = _transform_inputs()
+    video_rows, book_rows, example_rows = _transform_inputs()
 
     if not test_id or not profile:
         flash("Generate the prompt first (pick an input + target profile above).")
@@ -2098,7 +2113,7 @@ def transform_generate():
 
     return render_template(
         "transform_form.html", active="transform",
-        video_rows=video_rows, book_rows=book_rows, profiles=_profiles(),
+        video_rows=video_rows, book_rows=book_rows, example_rows=example_rows, profiles=_profiles(),
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,

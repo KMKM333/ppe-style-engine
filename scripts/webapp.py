@@ -1516,6 +1516,12 @@ def book_detail(book_id):
     )
 
 
+# Pilot rollout of the "book examples & concepts" profile section — see book_id
+# 5 ("Talking To My Daughter", Yanis Varoufakis, profile BK.4) only for now,
+# even though every ingested book already has examples/terms classified.
+BOOK_BREAKDOWN_PILOT_BOOK_IDS = {5}
+
+
 @app.route("/profiles/<code>")
 def profile_detail(code):
     conn = get_conn()
@@ -1558,6 +1564,7 @@ def profile_detail(code):
         ).fetchall()
 
     videos, books = [], []
+    book_examples, book_terms, pilot_book_titles = [], [], []
     if is_hybrid:
         pass
     elif is_book:
@@ -1574,6 +1581,19 @@ def profile_detail(code):
             }
             for b in book_rows
         ]
+        pilot_book_ids = [b["book_id"] for b in books if b["book_id"] in BOOK_BREAKDOWN_PILOT_BOOK_IDS]
+        pilot_book_titles = [b["title"] for b in books if b["book_id"] in BOOK_BREAKDOWN_PILOT_BOOK_IDS]
+        if pilot_book_ids:
+            placeholders = ",".join("?" * len(pilot_book_ids))
+            book_examples = conn.execute(
+                f"""SELECT example_id, example_title, example_text, reinforces_point, book_id
+                    FROM book_examples WHERE book_id IN ({placeholders}) ORDER BY example_id""",
+                pilot_book_ids,
+            ).fetchall()
+            book_terms = conn.execute(
+                f"SELECT term, definition, book_id FROM book_terms WHERE book_id IN ({placeholders}) ORDER BY term_id",
+                pilot_book_ids,
+            ).fetchall()
     else:
         video_rows = conn.execute(
             """SELECT v.video_id, v.title, v.url, v.script, v.summary, v.duration_sec, a.word_count
@@ -1602,6 +1622,7 @@ def profile_detail(code):
     return render_template(
         "profile_detail.html", active="profiles", is_book=is_book, is_hybrid=is_hybrid, hybrid_sources=hybrid_sources,
         profile=p, numeric=numeric, categorical=categorical, macros=macros, videos=videos, books=books,
+        book_examples=book_examples, book_terms=book_terms, pilot_book_titles=pilot_book_titles,
     )
 
 

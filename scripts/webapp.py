@@ -1403,7 +1403,17 @@ def channels_list():
                WHERE v.channel_id = ? ORDER BY v.ingested_at DESC""",
             (c["channel_id"],),
         ).fetchall()
-        channels.append({**dict(c), "videos": video_rows})
+        n_analysed = conn.execute(
+            """SELECT COUNT(DISTINCT v.video_id) FROM videos v
+               WHERE v.channel_id = ? AND v.video_id IN (
+                   SELECT video_id FROM video_points
+                   UNION SELECT video_id FROM video_terms
+                   UNION SELECT video_id FROM video_examples
+               )""",
+            (c["channel_id"],),
+        ).fetchone()[0]
+        is_analysed = c["n_videos"] > 0 and n_analysed == c["n_videos"]
+        channels.append({**dict(c), "videos": video_rows, "n_analysed": n_analysed, "is_analysed": is_analysed})
     conn.close()
     return render_template("channels_list.html", active="channels", channels=channels)
 

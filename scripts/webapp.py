@@ -1198,11 +1198,9 @@ def creation_detail(transformation_id):
     ).fetchall()
     conn.close()
 
-    source_preview = (t["raw_text"][:280] + "…") if len(t["raw_text"]) > 280 else t["raw_text"]
-
     return render_template(
         "creation_detail.html", active="creations",
-        t=t, scores=scores, source_preview=source_preview,
+        t=t, scores=scores,
     )
 
 

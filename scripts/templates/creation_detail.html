@@ -8,16 +8,18 @@
   &middot; {{ t.generated_at }}
 </div>
 
-<h2 style="margin-top:0">Generated script</h2>
-<div class="card">
-  <textarea class="mono" readonly onclick="this.select()" style="min-height:260px">{{ t.generated_text }}</textarea>
-</div>
-
-<h2>Source input</h2>
-<div class="card">
-  <div style="font-weight:600">#{{ t.test_id }} — {{ t.source_label or '(untitled)' }}</div>
-  <p class="muted" style="font-size:13.5px;line-height:1.5">{{ source_preview }}</p>
-  <a class="btn secondary" style="margin:0" href="{{ url_for('transform_form', test_id=t.test_id) }}">Re-run transform on this input</a>
+<div class="flex" style="align-items:stretch">
+  <div class="card" style="flex:1;min-width:320px">
+    <h2 style="margin-top:0">Original script</h2>
+    <p class="muted" style="margin-top:0">#{{ t.test_id }} — {{ t.source_label or '(untitled)' }}</p>
+    <textarea class="mono" readonly onclick="this.select()" style="min-height:340px">{{ t.raw_text }}</textarea>
+    <a class="btn secondary" style="margin-top:10px" href="{{ url_for('transform_form', test_id=t.test_id) }}">Re-run transform on this input</a>
+  </div>
+  <div class="card" style="flex:1;min-width:320px">
+    <h2 style="margin-top:0">Generated script</h2>
+    <p class="muted" style="margin-top:0">Rewritten into {{ t.profile_code }}'s style.</p>
+    <textarea class="mono" readonly onclick="this.select()" style="min-height:340px">{{ t.generated_text }}</textarea>
+  </div>
 </div>
 
 <h2>Score ranking (all profiles)</h2>

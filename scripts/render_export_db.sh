@@ -13,5 +13,5 @@ if [ -z "$TARGET" ]; then
 fi
 
 mkdir -p "$(dirname "$OUT")"
-ssh "$TARGET" "cat /app/db/ppe_engine.db" > "$OUT"
+ssh "$TARGET" "cat /data/ppe_engine.db" > "$OUT"
 echo "Saved live database to $OUT ($(du -h "$OUT" | cut -f1))"

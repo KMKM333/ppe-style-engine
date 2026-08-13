@@ -1,12 +1,19 @@
 """db_init.py — creates (or reconnects to) the SQLite database from schema.sql"""
+import os
 import sqlite3
 from pathlib import Path
 
-DB_PATH = Path(__file__).parent.parent / "db" / "ppe_engine.db"
+# PPE_DB_PATH lets a deploy point the live database at a mounted disk
+# (e.g. a Render persistent disk) without colliding with schema.sql, which
+# ships inside the image at db/schema.sql — that path must stay separate
+# from wherever the disk is mounted, since a volume mount hides whatever
+# was baked into the image at that same path.
+DB_PATH = Path(os.environ.get("PPE_DB_PATH", str(Path(__file__).parent.parent / "db" / "ppe_engine.db")))
 SCHEMA_PATH = Path(__file__).parent.parent / "db" / "schema.sql"
 
 
 def get_conn():
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")

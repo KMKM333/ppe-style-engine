@@ -16,6 +16,6 @@ if [ ! -f "$LOCAL_FILE" ]; then
   exit 1
 fi
 
-ssh "$TARGET" "cat > /app/db/ppe_engine.db" < "$LOCAL_FILE"
+ssh "$TARGET" "cat > /data/ppe_engine.db" < "$LOCAL_FILE"
 echo "Uploaded $LOCAL_FILE to the live service."
 echo "Restart the service from the Render dashboard so it picks up the new data."

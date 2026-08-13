@@ -8,7 +8,9 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: PPE_DB_PATH
+        value: /data/ppe_engine.db
     disk:
       name: ppe-data
-      mountPath: /app/db
+      mountPath: /data
       sizeGB: 1

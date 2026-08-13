@@ -20,7 +20,7 @@ from db_init import get_conn
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
 from score_engine import rate_input, score_intrinsic
-from transform import build_transform_prompt, save_transformation, score_transformation
+from transform import build_transform_prompt, build_data_output_prompt, save_transformation, score_transformation, FORM_SPECS
 from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, LLMConfigError
 
@@ -2042,6 +2042,8 @@ def transform_form():
     pasted_title = request.args.get("pasted_title", "").strip()
     pasted_text = request.args.get("pasted_text", "").strip()
     profile = request.args.get("profile", default="", type=str)
+    mode = request.args.get("mode", "transform")
+    output_form = request.args.get("form", "").strip()
 
     video_rows, book_rows, example_rows = _transform_inputs()
 
@@ -2049,7 +2051,9 @@ def transform_form():
     selected_test_id = None
     original_text = None
     gen_title = gen_text = None
-    if profile and (source or pasted_text):
+    if mode == "data_output" and not output_form and profile and (source or pasted_text):
+        flash("Choose an output form to generate a data output.")
+    elif profile and (source or pasted_text):
         try:
             if pasted_text:
                 raw_text = pasted_text
@@ -2091,7 +2095,10 @@ def transform_form():
             original_text = raw_text
             result = rate_input(raw_text, title=title, source_label=source_label, input_type=input_type)
             selected_test_id = result["test_id"]
-            prompt_text = build_transform_prompt(selected_test_id, profile)
+            if mode == "data_output":
+                prompt_text = build_data_output_prompt(selected_test_id, profile, output_form)
+            else:
+                prompt_text = build_transform_prompt(selected_test_id, profile)
 
             try:
                 gen_result = generate_transform(prompt_text)
@@ -2109,6 +2116,7 @@ def transform_form():
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=selected_test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,
+        selected_mode=mode, selected_form=output_form, form_specs=FORM_SPECS,
     )
 
 
@@ -2119,14 +2127,22 @@ def transform_generate():
     source = request.form.get("source", "")
     pasted_title = request.form.get("pasted_title", "")
     pasted_text = request.form.get("pasted_text", "")
+    mode = request.form.get("mode", "transform")
+    output_form = request.form.get("form", "").strip()
 
     video_rows, book_rows, example_rows = _transform_inputs()
 
     if not test_id or not profile:
         flash("Generate the prompt first (pick an input + target profile above).")
         return redirect(url_for("transform_form"))
+    if mode == "data_output" and not output_form:
+        flash("Choose an output form to generate a data output.")
+        return redirect(url_for("transform_form"))
 
-    prompt_text = build_transform_prompt(test_id, profile)
+    if mode == "data_output":
+        prompt_text = build_data_output_prompt(test_id, profile, output_form)
+    else:
+        prompt_text = build_transform_prompt(test_id, profile)
 
     conn = get_conn()
     test_row = conn.execute("SELECT raw_text FROM test_inputs WHERE test_id=?", (test_id,)).fetchone()
@@ -2148,6 +2164,7 @@ def transform_generate():
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,
+        selected_mode=mode, selected_form=output_form, form_specs=FORM_SPECS,
     )
 
 

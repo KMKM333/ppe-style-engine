@@ -65,6 +65,117 @@ SCRIPT:
 """
 
 
+DATA_OUTPUT_PROMPT = """Rewrite the CONTENT below so it adopts the VOICE of the target
+profile described, delivered in the STRUCTURAL FORM specified. Keep the underlying
+subject/argument/facts from the content — change only how it's told.
+
+CONTENT TO REWRITE:
+---
+{content}
+---
+
+TARGET VOICE — {profile_code} ({profile_label}):
+{voice_traits}
+
+OUTPUT FORM — {form_label}:
+{form_spec}
+
+Produce:
+1. A title matching the output form's conventions
+2. The rewritten script matching the form's structural targets above, in the target profile's voice
+
+Return exactly:
+TITLE: <title>
+SCRIPT:
+<script>
+"""
+
+# Structural targets derived from corpus-wide feature extraction across all
+# ingested Instagram scripts (336) and book examples (398) — see the "form"
+# a piece takes, independent of whose voice it's written in. A target profile's
+# own fingerprint (_voice_traits) only ever covers attributes its media type
+# was actually classified on, which is why voice and form are kept separate:
+# a book-author profile has no hook_type/title_format of its own to draw on.
+FORM_SPECS = {
+    "insta_script": {
+        "label": "Instagram script",
+        "spec": (
+            "- Target length: ~310 words\n"
+            "- Target sentence length: ~22 words/sentence on average\n"
+            "- Direct address (\"you\"): ~3 per 100 words — speak straight to the viewer\n"
+            "- Include roughly 1-2 questions across the piece\n"
+            "- Title format: name/source + concept (e.g. \"<Name>'s <Concept>\")\n"
+            "- Hook: open with a bold/contrarian claim or a relatable scenario\n"
+            "- Close: a punchy takeaway, mic-drop line, or light CTA — not a trailing-off summary\n"
+            "- Voice: conversational, colloquial, built to be read aloud in ~60-90 seconds"
+        ),
+    },
+    "book_example": {
+        "label": "Book example / case study",
+        "spec": (
+            "- Target length: ~70 words (a single self-contained case study, not a full chapter)\n"
+            "- Target sentence length: ~30 words/sentence on average\n"
+            "- Third-person, narrative prose — avoid addressing the reader directly (\"you\")\n"
+            "- No questions, no CTA, no direct address\n"
+            "- Title format: a short descriptive label naming the example (e.g. \"<Subject>'s <Notable Detail>\")\n"
+            "- Structure: set the scene, state what happened, let the point land implicitly through the narrative\n"
+            "- Voice: expository, varied vocabulary, reads like a nonfiction case study excerpt"
+        ),
+    },
+}
+
+
+def _voice_traits(conn, profile_id, max_numeric=6, max_categorical=8):
+    """Generic dump of whatever fingerprint attributes exist for this profile —
+    works for both video and book-author profiles without hardcoding either
+    attribute vocabulary, since the two media types are classified on
+    completely different fields."""
+    lines = []
+    for r in conn.execute(
+        "SELECT attribute, median_val FROM profile_fingerprint_numeric WHERE profile_id=? "
+        "AND median_val IS NOT NULL ORDER BY attribute LIMIT ?",
+        (profile_id, max_numeric),
+    ).fetchall():
+        lines.append(f"- {r['attribute']}: ~{round(r['median_val'], 2)}")
+    for r in conn.execute(
+        "SELECT DISTINCT attribute FROM profile_fingerprint_categorical WHERE profile_id=? "
+        "ORDER BY attribute LIMIT ?",
+        (profile_id, max_categorical),
+    ).fetchall():
+        lines.append(f"- {r['attribute']}: {_fp_top_categorical(conn, profile_id, r['attribute'], 2)}")
+    if not lines:
+        return "(profile not yet classified — infer voice from its subject matter)"
+    return "\n".join(lines)
+
+
+def build_data_output_prompt(test_id: int, profile_code: str, form: str) -> str:
+    if form not in FORM_SPECS:
+        raise ValueError(f"Unknown output form: {form}")
+
+    conn = get_conn()
+    test_row = conn.execute("SELECT * FROM test_inputs WHERE test_id=?", (test_id,)).fetchone()
+    profile = conn.execute(
+        """SELECT p.*, c.channel_name FROM style_profiles p
+           JOIN channels c ON c.channel_id = p.channel_id WHERE p.profile_code=?""",
+        (profile_code,),
+    ).fetchone()
+    if not test_row or not profile:
+        conn.close()
+        raise ValueError("test_id or profile_code not found")
+
+    form_def = FORM_SPECS[form]
+    prompt = DATA_OUTPUT_PROMPT.format(
+        content=test_row["raw_text"],
+        profile_code=profile_code,
+        profile_label=profile["channel_name"],
+        voice_traits=_voice_traits(conn, profile["profile_id"]),
+        form_label=form_def["label"],
+        form_spec=form_def["spec"],
+    )
+    conn.close()
+    return prompt
+
+
 def _fp_value(conn, profile_id, attr, field="median_val"):
     row = conn.execute(
         "SELECT * FROM profile_fingerprint_numeric WHERE profile_id=? AND attribute=?", (profile_id, attr)

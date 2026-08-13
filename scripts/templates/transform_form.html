@@ -49,6 +49,15 @@
           {% endfor %}
         </select>
       </div>
+      <div>
+        <label for="form">Output form <span class="muted">(for Data Output)</span></label>
+        <select id="form" name="form">
+          <option value="">— choose an output form —</option>
+          {% for code, def in form_specs.items() %}
+          <option value="{{ code }}" {{ 'selected' if selected_form == code else '' }}>{{ def.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
 
     <div class="sub" style="margin:14px 0 4px">— or paste text to transform instead of picking an input above —</div>
@@ -57,7 +66,15 @@
     <label for="pasted_text">Pasted script / excerpt</label>
     <textarea id="pasted_text" name="pasted_text" placeholder="Paste all or part of a script here to transform it instead of selecting an input above">{{ pasted_text or '' }}</textarea>
 
-    <button type="submit" style="margin-top:10px">Generate transform script</button>
+    <div style="margin-top:10px;display:flex;gap:10px;flex-wrap:wrap">
+      <button type="submit" name="mode" value="transform">Generate transform script</button>
+      <button type="submit" name="mode" value="data_output" class="secondary">Generate data output</button>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin-bottom:0">
+      "Generate transform script" adopts the target profile's own structure. "Generate data output" keeps the
+      target profile's voice but forces the structure of the Output form chosen above — e.g. an author's voice
+      delivered as an Instagram script, or a channel's voice delivered as a book example.
+    </p>
   </form>
 </div>
 
@@ -99,7 +116,13 @@
   <div class="card" style="flex:1;min-width:320px">
     <h2 style="margin-top:0">Output</h2>
     {% if gen_text %}
-    <p class="muted" style="margin-top:0">Rewritten into profile {{ selected_profile }}'s style. Edit either field below if you want to tweak it before saving.</p>
+    <p class="muted" style="margin-top:0">
+      {% if selected_mode == 'data_output' %}
+      Rewritten in {{ selected_profile }}'s voice, delivered as {{ form_specs[selected_form].label }}. Edit either field below if you want to tweak it before saving.
+      {% else %}
+      Rewritten into profile {{ selected_profile }}'s style. Edit either field below if you want to tweak it before saving.
+      {% endif %}
+    </p>
     {% else %}
     <p class="muted" style="margin-top:0">Generation didn't produce a result — see the message above, or try again.</p>
     {% endif %}
@@ -125,6 +148,8 @@
       <input type="hidden" name="source" value="{{ selected_source or '' }}">
       <input type="hidden" name="pasted_title" value="{{ pasted_title or '' }}">
       <input type="hidden" name="pasted_text" value="{{ pasted_text or '' }}">
+      <input type="hidden" name="mode" value="{{ selected_mode or 'transform' }}">
+      <input type="hidden" name="form" value="{{ selected_form or '' }}">
       <button type="submit" class="secondary">Regenerate with Claude ✨</button>
     </form>
   </div>

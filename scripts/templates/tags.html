@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Term &amp; Example Tags — PPE Engine{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>Term &amp; Example Tags</h1>
+<div class="sub">
+  Every distinct term and named example across all videos and books, deduplicated case-insensitively.
+  Click a tag to jump to Library filtered to everything else that shares it.
+</div>
+
+<div class="flex">
+  <div class="card">
+    <div class="muted">Distinct terms</div>
+    <div style="font-size:28px;font-weight:700">{{ n_terms }}</div>
+  </div>
+  <div class="card">
+    <div class="muted">Distinct examples</div>
+    <div style="font-size:28px;font-weight:700">{{ n_examples }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <label for="tag-search">Search tags</label>
+  <input type="text" id="tag-search" placeholder="e.g. moral luck" oninput="filterTags(this.value)">
+</div>
+
+<h2 style="margin-top:0">Terms</h2>
+<div class="sub" style="margin-top:-6px">Concepts, biases, laws, and jargon defined across the corpus.</div>
+<div class="card">
+  {% if terms %}
+  <div class="tag-cloud" id="terms-cloud">
+    {% for t in terms %}
+    <a class="tag-link tag-cloud-item" href="{{ url_for('inputs_list', term=t.value) }}" data-search="{{ t.value|lower }}">
+      {{ t.value }}<span class="tag-count">{{ t.count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="empty" id="terms-empty" style="display:none">No terms match your search.</div>
+  {% else %}
+  <div class="empty">No terms extracted yet.</div>
+  {% endif %}
+</div>
+
+<h2>Examples</h2>
+<div class="sub" style="margin-top:-6px">Named cases, studies, and stories used to illustrate points across the corpus.</div>
+<div class="card">
+  {% if examples %}
+  <div class="tag-cloud" id="examples-cloud">
+    {% for e in examples %}
+    <a class="tag-link tag-cloud-item" href="{{ url_for('inputs_list', example=e.value) }}" data-search="{{ e.value|lower }}">
+      {{ e.value }}<span class="tag-count">{{ e.count }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  <div class="empty" id="examples-empty" style="display:none">No examples match your search.</div>
+  {% else %}
+  <div class="empty">No examples extracted yet.</div>
+  {% endif %}
+</div>
+
+<script>
+function filterTags(q) {
+  q = q.trim().toLowerCase();
+  ['terms', 'examples'].forEach(function (kind) {
+    var cloud = document.getElementById(kind + '-cloud');
+    if (!cloud) return;
+    var items = cloud.querySelectorAll('.tag-cloud-item');
+    var anyVisible = false;
+    items.forEach(function (a) {
+      var match = !q || a.dataset.search.indexOf(q) !== -1;
+      a.style.display = match ? '' : 'none';
+      if (match) anyVisible = true;
+    });
+    var empty = document.getElementById(kind + '-empty');
+    if (empty) empty.style.display = (q && !anyVisible) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

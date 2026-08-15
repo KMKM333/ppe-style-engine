@@ -20,6 +20,11 @@
     <div style="font-size:28px;font-weight:700">{{ n_attribute_cats }}</div>
     <div class="muted" style="font-size:12px;margin-top:2px">media types with rubric coverage</div>
   </a>
+  <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('tags_page') }}">
+    <div class="muted">Term &amp; example tags</div>
+    <div style="font-size:28px;font-weight:700">{{ n_terms + n_examples }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">{{ n_terms }} terms &middot; {{ n_examples }} examples</div>
+  </a>
   <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('tests_list') }}">
     <div class="muted">Tests scored</div>
     <div style="font-size:28px;font-weight:700">{{ n_tests }}</div>

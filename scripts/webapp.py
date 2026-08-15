@@ -809,6 +809,36 @@ def attribute_media_detail(slug):
     )
 
 
+@app.route("/tags")
+def tags_page():
+    """Every distinct term and example title across videos and books, each
+    linking to the Inputs filter that finds everything else sharing it — the
+    browsable index for the term/example tagging added to Inputs filtering."""
+    conn = get_conn()
+    term_rows = conn.execute(
+        """SELECT term, COUNT(*) AS n FROM (
+               SELECT term FROM video_terms WHERE term IS NOT NULL AND term != ''
+               UNION ALL
+               SELECT term FROM book_terms WHERE term IS NOT NULL AND term != ''
+           ) GROUP BY term COLLATE NOCASE ORDER BY term COLLATE NOCASE"""
+    ).fetchall()
+    example_rows = conn.execute(
+        """SELECT example_title, COUNT(*) AS n FROM (
+               SELECT example_title FROM video_examples WHERE example_title IS NOT NULL AND example_title != ''
+               UNION ALL
+               SELECT example_title FROM book_examples WHERE example_title IS NOT NULL AND example_title != ''
+           ) GROUP BY example_title COLLATE NOCASE ORDER BY example_title COLLATE NOCASE"""
+    ).fetchall()
+    conn.close()
+
+    terms = [{"value": r["term"], "count": r["n"]} for r in term_rows]
+    examples = [{"value": r["example_title"], "count": r["n"]} for r in example_rows]
+    return render_template(
+        "tags.html", active="tags", terms=terms, examples=examples,
+        n_terms=len(terms), n_examples=len(examples),
+    )
+
+
 INPUT_KINDS = [
     ("", "All types"),
     ("video", "Instagram videos"),
@@ -1306,6 +1336,19 @@ def insights_overview():
     attribute_cards = _attribute_cards(conn)
     n_attribute_cats = len([c for c in attribute_cards if c["implemented"]])
 
+    n_terms = conn.execute(
+        """SELECT COUNT(DISTINCT term COLLATE NOCASE) FROM (
+               SELECT term FROM video_terms WHERE term IS NOT NULL AND term != ''
+               UNION ALL SELECT term FROM book_terms WHERE term IS NOT NULL AND term != ''
+           )"""
+    ).fetchone()[0]
+    n_examples = conn.execute(
+        """SELECT COUNT(DISTINCT example_title COLLATE NOCASE) FROM (
+               SELECT example_title FROM video_examples WHERE example_title IS NOT NULL AND example_title != ''
+               UNION ALL SELECT example_title FROM book_examples WHERE example_title IS NOT NULL AND example_title != ''
+           )"""
+    ).fetchone()[0]
+
     media_counts = Counter((p["media_type"] or "Unknown") for p in profiles)
     media_breakdown = []
     for key, label, endpoint in [
@@ -1345,6 +1388,7 @@ def insights_overview():
     return render_template(
         "insights_overview.html", active="insights",
         n_profiles=n_profiles, n_subjects_covered=n_subjects_covered, n_attribute_cats=n_attribute_cats,
+        n_terms=n_terms, n_examples=n_examples,
         n_tests=n_tests, n_creations=n_creations, n_confirmed=n_confirmed, n_draft=n_draft,
         media_breakdown=media_breakdown, subject_groups=subject_groups, attribute_cards=attribute_cards,
         recent_tests=recent_tests,

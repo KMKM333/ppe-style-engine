@@ -1250,7 +1250,13 @@ PROFILES_SORT_KEYS = {
     "length_band": lambda p: (p.get("length_band") or "").lower(),
     "n_videos_analysed": lambda p: p.get("n_videos_analysed") or 0,
     "status": lambda p: (p.get("status") or "").lower(),
+    "concepts_added": lambda p: p.get("concepts_added") or False,
 }
+
+# Book profiles whose author has a book in this set get the "concepts/examples
+# added" pilot breakdown (see profile_detail's book_examples/book_terms section);
+# every Instagram profile has it via the per-video breakdown instead.
+BOOK_BREAKDOWN_PILOT_BOOK_IDS = {5}
 
 
 @app.route("/insights")
@@ -1316,6 +1322,19 @@ def profiles_list():
     sort = request.args.get("sort", "profile_code")
     direction = "desc" if request.args.get("dir") == "desc" else "asc"
     profiles = _profiles()
+
+    conn = get_conn()
+    placeholders = ",".join("?" * len(BOOK_BREAKDOWN_PILOT_BOOK_IDS))
+    pilot_authors = {
+        r["author"] for r in conn.execute(
+            f"SELECT DISTINCT author FROM books WHERE book_id IN ({placeholders})",
+            list(BOOK_BREAKDOWN_PILOT_BOOK_IDS),
+        ).fetchall()
+    }
+    conn.close()
+    for p in profiles:
+        p["concepts_added"] = p["media_type"] == "Instagram" or p["channel_name"] in pilot_authors
+
     profiles.sort(key=PROFILES_SORT_KEYS.get(sort, PROFILES_SORT_KEYS["profile_code"]), reverse=(direction == "desc"))
     return render_template(
         "profiles_list.html", active="profiles", profiles=profiles,
@@ -1518,12 +1537,6 @@ def book_detail(book_id):
         chapters=chapters, unsectioned_examples=unsectioned_examples, is_classified=is_classified,
         source_file_url=source_file_url,
     )
-
-
-# Pilot rollout of the "book examples & concepts" profile section — see book_id
-# 5 ("Talking To My Daughter", Yanis Varoufakis, profile BK.4) only for now,
-# even though every ingested book already has examples/terms classified.
-BOOK_BREAKDOWN_PILOT_BOOK_IDS = {5}
 
 
 @app.route("/profiles/<code>")

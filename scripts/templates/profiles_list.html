@@ -25,6 +25,7 @@
       <th>Overview</th>
       {{ sort_th('n_videos_analysed', 'N analysed') }}
       {{ sort_th('status', 'Status') }}
+      {{ sort_th('concepts_added', 'Concepts/examples') }}
       <th></th>
     </tr>
     {% for p in profiles %}
@@ -36,6 +37,7 @@
       <td class="{{ 'muted' if not p.overview }}" title="{{ p.overview or '' }}">{{ p.overview|truncate(90) if p.overview else "—" }}</td>
       <td style="white-space:nowrap">{{ p.n_videos_analysed }}</td>
       <td style="white-space:nowrap"><span class="pill {{ p.status }}">{{ p.status }}</span></td>
+      <td style="white-space:nowrap"><span class="pill {{ 'confirmed' if p.concepts_added else 'bad' }}">{{ 'Added' if p.concepts_added else 'Not added' }}</span></td>
       <td style="white-space:nowrap"><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('profile_detail', code=p.profile_code) }}">View fingerprint</a></td>
     </tr>
     {% endfor %}

@@ -32,6 +32,12 @@ CATEGORICAL_ATTRS = [
     "counter_argument_engagement", "argument_architecture", "prescriptiveness",
     "temporal_orientation", "narrative_density", "claim_falsifiability",
     "rhetorical_appeal_balance", "thesis_consistency", "citation_density",
+    # Style & Craft (18 new, all controlled-vocabulary like the rest above)
+    "emotional_register", "narrative_voice", "polemical_tone", "narrative_presence",
+    "jargon_accessibility", "argumentative_density", "abstraction_concreteness_balance",
+    "hedging_vs_assertion", "rhetorical_questioning",
+    "diction", "syntax_pattern", "pacing", "sensory_language_density", "narrative_distance",
+    "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain",
 ]
 
 BOOLEAN_ATTRS = ["uses_visual_aids"]

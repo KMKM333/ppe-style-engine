@@ -332,7 +332,7 @@ CREATE TABLE IF NOT EXISTS transform_scores (
 
 -- ============================================================
 -- 8. BOOKS: non-fiction book ingestion, analysed against a separate
--- 23-attribute qualitative rubric (see classify_book_template.py). Books
+-- 42-attribute qualitative rubric (see classify_book_template.py). Books
 -- are cross-referenced against the same 7-subject taxonomy used for style
 -- profiles, so a book and a creator can be compared on the same subject.
 -- ============================================================
@@ -403,6 +403,28 @@ CREATE TABLE IF NOT EXISTS book_attributes (
     thesis_consistency               TEXT, -- Tight and consistent, Expands but coherent, Drifts/loses focus
     comparative_positioning          TEXT, -- free-text: other named books/thinkers/schools it positions against or builds on
     citation_density                 TEXT, -- Heavily footnoted/academic, Moderately sourced, Light/conversational, Essayistic/unsourced
+
+    -- Style & Craft (18 new attributes, literary/rhetorical dimensions beyond
+    -- the structural rubric above — see BOOK_CLASSIFICATION_PROMPT for the
+    -- full rating scale of each)
+    diction                          TEXT, -- Simple/plain, Moderate/accessible, Complex/elevated, Formal, Old-fashioned/archaic
+    syntax_pattern                   TEXT, -- Short & simple low variety, Long & complex low variety, Highly varied, Fragmented/experimental
+    pacing                           TEXT, -- Fast/action-driven, Slow/descriptive, Balanced action & description, Variable/uneven
+    emotional_register               TEXT, -- Humorous/light, Dark/somber, Serious/grave, Whimsical/playful, Melancholic, Uplifting/inspiring, Mixed/variable
+    narrative_voice                  TEXT, -- Distinct/idiosyncratic, Neutral/generic, Formal/detached narrator, Conversational/intimate narrator, Multiple distinct voices
+    sensory_language_density         TEXT, -- Minimal/abstract, Occasional sensory detail, Rich/immersive, Saturated with sensory imagery
+    narrative_distance               TEXT, -- Stream-of-consciousness/intimate, Close/internal, Moderate distance, Detached/observational, Omniscient/distant
+    figurative_language_density      TEXT, -- Sparse/literal, Occasional, Frequent, Dense/highly figurative
+    prose_rhythm                     TEXT, -- Staccato/choppy, Flowing/poetic, Balanced/mixed cadence, Monotonous/uniform
+    argumentative_density            TEXT, -- Low, Moderate, High, Very high/dense argumentation (logical transition word frequency)
+    abstraction_concreteness_balance TEXT, -- Highly abstract, Balanced, Highly concrete, Alternates deliberately
+    noun_verb_ratio_style             TEXT, -- Verb-driven/dynamic, Balanced, Noun-heavy/nominalized, Heavily nominalized/dense academic
+    jargon_accessibility             TEXT, -- Plain/no jargon, Light jargon mostly defined, Moderate jargon some undefined, Heavy jargon assumes expertise
+    cognitive_metaphor_domain        TEXT, -- Organic/biological, Mechanical/engineering, Journey/spatial, Combat/competition, Ecosystem/network, Mixed/no dominant domain
+    hedging_vs_assertion             TEXT, -- Highly hedged/speculative, Balanced, Assertive with occasional hedges, Highly assertive/absolute
+    polemical_tone                   TEXT, -- Polite/measured critique, Firm but respectful, Sharply critical, Aggressive/dismissive
+    narrative_presence               TEXT, -- Detached/impersonal, Occasional first-person, Consistently participatory, Highly personal/confessional
+    rhetorical_questioning           TEXT, -- Rare/absent, Used to transition, Used to challenge assumptions, Frequent — both
 
     -- Readability (auto-computed from full_text via the same Flesch-Kincaid
     -- heuristic feature_extraction.py uses for videos — not a classification

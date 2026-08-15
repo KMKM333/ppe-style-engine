@@ -12,7 +12,7 @@ This file has three parts:
 
 1. BOOK_CLASSIFICATION_PROMPT — the fixed prompt to send per-book to Claude
    (via API, Claude Code, or pasted into a chat) so every book is scored
-   against the same 23-attribute rubric, plus a full chapter/section
+   against the same 42-attribute rubric, plus a full chapter/section
    breakdown (topics, key points, terms, and examples per section).
 
 2. merge_book_classification() — takes the JSON Claude returns and writes it
@@ -53,6 +53,16 @@ Evidence & Authority
 Tone & Voice
 - tone: one of ["Objective/neutral", "Passionate/advocacy", "Skeptical/critical", "Urgent/alarmist",
   "Wry/ironic", "Reverent/admiring"]
+- emotional_register: one of ["Humorous/light", "Dark/somber", "Serious/grave", "Whimsical/playful",
+  "Melancholic", "Uplifting/inspiring", "Mixed/variable"] — the book's overall emotional feel, distinct
+  from `tone` above (which is about persuasive stance, not emotional register)
+- narrative_voice: one of ["Distinct/idiosyncratic", "Neutral/generic", "Formal/detached narrator",
+  "Conversational/intimate narrator", "Multiple distinct voices"] — how the narrator/author sounds
+- polemical_tone: one of ["Polite/measured critique", "Firm but respectful", "Sharply critical",
+  "Aggressive/dismissive of opposing views"] — how adversarial the language gets toward opposing views
+- narrative_presence: one of ["Detached/impersonal (passive, third person)",
+  "Occasional first-person ('I argue')", "Consistently participatory ('we must')",
+  "Highly personal/confessional"] — how much the author inserts themselves into the text
 
 Structure & Organization
 - structure_style: one of ["Linear/chronological", "Thematic (non-chronological)",
@@ -66,6 +76,9 @@ Target Audience
   "Academic/specialist", "Policy makers", "Students"]
 - vocabulary_complexity: one of ["Plain language", "Some field terms, defined inline",
   "Assumes prior domain knowledge", "Heavy jargon"]
+- jargon_accessibility: one of ["Plain, no jargon", "Light jargon, mostly defined",
+  "Moderate jargon, some undefined", "Heavy jargon, assumes expertise"] — specifically whether
+  specialized terminology gets defined in-text (via definitions or analogies), not just its density
 
 Bias & Assumptions
 - bias_assumptions: string — hidden viewpoints, missing counterarguments, or unstated beliefs influencing the text
@@ -96,6 +109,45 @@ Additional dimensions
   explicitly positions itself against or builds on
 - citation_density: one of ["Heavily footnoted/academic", "Moderately sourced", "Light/conversational sourcing",
   "Essayistic/unsourced opinion"]
+- argumentative_density: one of ["Low (few logical transitions)", "Moderate", "High (frequent transitions)",
+  "Very high/dense argumentation"] — frequency of logical transition words (therefore, however,
+  consequently, moreover)
+- abstraction_concreteness_balance: one of ["Highly abstract, few concrete examples",
+  "Balanced abstract & concrete", "Highly concrete, grounded in examples",
+  "Alternates deliberately between abstract and concrete"] — how abstract concepts (e.g. justice,
+  equilibrium) are cross-referenced against concrete examples (e.g. a courtroom, a market stall)
+- hedging_vs_assertion: one of ["Highly hedged/speculative", "Balanced hedging and assertion",
+  "Assertive with occasional hedges", "Highly assertive/absolute"] — speculative qualifiers
+  ("it appears that", "perhaps", "likely") versus absolute declarations ("undeniably", "always", "proves")
+- rhetorical_questioning: one of ["Rare/absent", "Used to transition between ideas",
+  "Used to challenge reader's assumptions", "Frequent — both transitional and challenging"]
+
+Style & Craft
+- diction: one of ["Simple/plain", "Moderate/accessible", "Complex/elevated", "Formal",
+  "Old-fashioned/archaic"] — the dominant register of word choice
+- syntax_pattern: one of ["Short & simple, low variety", "Long & complex, low variety",
+  "Highly varied (short and long mixed)", "Fragmented/experimental"] — sentence length, variety, and
+  grammar patterns
+- pacing: one of ["Fast/action-driven", "Slow/descriptive", "Balanced action & description",
+  "Variable/uneven pacing"] — how fast or slow scenes/sections move, action versus description
+- sensory_language_density: one of ["Minimal/abstract", "Occasional sensory detail",
+  "Rich/immersive sensory detail", "Saturated with sensory imagery"] — how often the text invokes
+  sight, sound, smell, taste, and touch
+- narrative_distance: one of ["Stream-of-consciousness/intimate", "Close/internal", "Moderate distance",
+  "Detached/observational", "Omniscient/distant"] — how close the reader is to the character's/subject's
+  thoughts
+- figurative_language_density: one of ["Sparse/literal", "Occasional figurative language",
+  "Frequent figurative language", "Dense/highly figurative"] — density of metaphors, similes, and
+  personification
+- prose_rhythm: one of ["Staccato/choppy", "Flowing/poetic", "Balanced/mixed cadence",
+  "Monotonous/uniform"] — sentence cadence
+- noun_verb_ratio_style: one of ["Verb-driven/dynamic", "Balanced", "Noun-heavy/nominalized (formal)",
+  "Heavily nominalized/dense academic"] — whether the prose leans on nouns/nominalizations
+  (e.g. "globalization", "quantification") for a heavier, more formal style, or stays verb-driven
+- cognitive_metaphor_domain: one of ["Organic/biological (growth, health, decay)",
+  "Mechanical/engineering (gears, friction, leverage)", "Journey/spatial (path, direction, movement)",
+  "Combat/competition (battle, war, fight)", "Ecosystem/network", "Mixed/no dominant domain"] — the
+  primary metaphorical domain used to explain systems or ideas
 
 Chapter/section breakdown
 - sections: array of objects, one per chapter or major section of the book, IN ORDER, each with:
@@ -163,6 +215,12 @@ BOOK_CLASS_FIELDS = [
     "narrative_density", "claim_falsifiability", "ideological_positioning",
     "rhetorical_appeal_balance", "thesis_consistency", "comparative_positioning",
     "citation_density",
+    # Style & Craft (18 new)
+    "emotional_register", "narrative_voice", "polemical_tone", "narrative_presence",
+    "jargon_accessibility", "argumentative_density", "abstraction_concreteness_balance",
+    "hedging_vs_assertion", "rhetorical_questioning",
+    "diction", "syntax_pattern", "pacing", "sensory_language_density", "narrative_distance",
+    "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain",
 ]
 
 

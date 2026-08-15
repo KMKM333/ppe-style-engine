@@ -549,8 +549,8 @@ def _book_profile_macro_coverage(conn, profile_id):
 ATTRIBUTE_MEDIA_TYPES = [
     {
         "slug": "books", "name": "Books", "icon": "📚", "implemented": True,
-        "desc": "Full-length books, scored per book against a 23-field rubric covering thesis, evidence, "
-                "tone, structure, audience, and argument architecture.",
+        "desc": "Full-length books, scored per book against a 42-field rubric covering thesis, evidence, "
+                "tone, structure, audience, argument architecture, and literary style & craft.",
     },
     {
         "slug": "instagram", "name": "Short videos, Instagram", "icon": "📱", "implemented": True,
@@ -723,8 +723,8 @@ def _xlarge_macro_cards(conn):
 XLARGE_GROUPS = [
     ("Structure & Pacing", ["Structure & Organization", "Structure & Pacing"],
      "How the piece is organized and paced."),
-    ("Voice & Diction", ["Tone & Voice", "Readability", "Voice & Diction"],
-     "Tone, readability, and word choice."),
+    ("Voice & Diction", ["Tone & Voice", "Readability", "Voice & Diction", "Style & Craft"],
+     "Tone, readability, word choice, and literary craft."),
     ("Argument & Evidence", ["Evidence & Authority", "Argument & Reasoning", "Bias & Assumptions", "Rhetoric & Persuasion"],
      "Reasoning, evidence, bias, and persuasion."),
     ("Audience & Context", ["Thesis & Purpose", "Target Audience", "Context & Positioning", "Content & Delivery"],
@@ -1376,12 +1376,13 @@ def subject_detail(subject):
 BOOK_ATTRIBUTE_SECTIONS = [
     ("Thesis & Purpose", ["thesis_statement", "primary_goal"]),
     ("Evidence & Authority", ["primary_evidence_type", "secondary_evidence_types", "citation_density"]),
-    ("Tone & Voice", ["tone", "rhetorical_appeal_balance"]),
+    ("Tone & Voice", ["tone", "rhetorical_appeal_balance", "emotional_register", "narrative_voice", "polemical_tone", "narrative_presence"]),
     ("Structure & Organization", ["structure_style", "uses_visual_aids", "subheading_density", "thesis_consistency"]),
-    ("Target Audience", ["target_audience", "vocabulary_complexity"]),
+    ("Target Audience", ["target_audience", "vocabulary_complexity", "jargon_accessibility"]),
     ("Bias & Assumptions", ["bias_assumptions", "counter_argument_engagement", "ideological_positioning"]),
-    ("Argument & Reasoning", ["argument_architecture", "prescriptiveness", "claim_falsifiability", "narrative_density"]),
+    ("Argument & Reasoning", ["argument_architecture", "prescriptiveness", "claim_falsifiability", "narrative_density", "argumentative_density", "abstraction_concreteness_balance", "hedging_vs_assertion", "rhetorical_questioning"]),
     ("Context & Positioning", ["temporal_orientation", "interdisciplinary_fields", "named_frameworks_coined", "comparative_positioning"]),
+    ("Style & Craft", ["diction", "syntax_pattern", "pacing", "sensory_language_density", "narrative_distance", "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain"]),
     ("Readability", ["avg_sentence_len", "avg_syllables_per_word", "readability_score"]),
 ]
 
@@ -1389,15 +1390,25 @@ BOOK_FIELD_LABELS = {
     "thesis_statement": "Thesis statement", "primary_goal": "Primary goal",
     "primary_evidence_type": "Primary evidence type", "secondary_evidence_types": "Secondary evidence types",
     "citation_density": "Citation density", "tone": "Tone", "rhetorical_appeal_balance": "Rhetorical appeal balance",
+    "emotional_register": "Emotional register", "narrative_voice": "Narrative voice",
+    "polemical_tone": "Polemical tone", "narrative_presence": "Narrative presence (the \"I\")",
     "structure_style": "Structure style", "uses_visual_aids": "Uses visual aids",
     "subheading_density": "Subheading density", "thesis_consistency": "Thesis consistency",
     "target_audience": "Target audience", "vocabulary_complexity": "Vocabulary complexity",
+    "jargon_accessibility": "Jargon density & accessibility",
     "bias_assumptions": "Bias & assumptions", "counter_argument_engagement": "Counter-argument engagement",
     "ideological_positioning": "Ideological positioning", "argument_architecture": "Argument architecture",
     "prescriptiveness": "Prescriptiveness", "claim_falsifiability": "Claim falsifiability",
-    "narrative_density": "Narrative density", "temporal_orientation": "Temporal orientation",
+    "narrative_density": "Narrative density", "argumentative_density": "Argumentative density",
+    "abstraction_concreteness_balance": "Abstraction vs. concreteness",
+    "hedging_vs_assertion": "Hedging vs. assertion", "rhetorical_questioning": "Rhetorical questioning",
+    "temporal_orientation": "Temporal orientation",
     "interdisciplinary_fields": "Interdisciplinary fields", "named_frameworks_coined": "Named frameworks coined",
     "comparative_positioning": "Comparative positioning",
+    "diction": "Diction", "syntax_pattern": "Syntax", "pacing": "Pacing",
+    "sensory_language_density": "Sensory language", "narrative_distance": "Narrative distance",
+    "figurative_language_density": "Figurative language", "prose_rhythm": "Rhythm",
+    "noun_verb_ratio_style": "Noun-to-verb ratio", "cognitive_metaphor_domain": "Cognitive metaphors",
     "avg_sentence_len": "Average sentence length", "avg_syllables_per_word": "Average syllables per word",
     "readability_score": "Readability score (Flesch-Kincaid grade)",
 }

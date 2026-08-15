@@ -107,6 +107,18 @@
   button.danger:hover, .btn.danger:hover { background: rgba(248,113,113,.2); }
   table { width:100%; border-collapse: collapse; font-size: 14px; }
   th, td { text-align:left; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  /* Fixed column widths shared across every section's separate <table> on the
+     attribute-detail page, so ATTRIBUTE/TYPE/DESCRIPTION/COVERAGE/STATS line
+     up vertically from one section card to the next instead of each table
+     auto-sizing its own columns off its own content. */
+  table.attr-table { table-layout: fixed; }
+  table.attr-table col.col-attribute { width: 19%; }
+  table.attr-table col.col-type { width: 17%; }
+  table.attr-table col.col-description { width: 25%; }
+  table.attr-table col.col-coverage { width: 19%; }
+  table.attr-table col.col-stats { width: 20%; }
+  table.attr-table th { white-space: nowrap; }
+  table.attr-table td, table.attr-table th { overflow-wrap: break-word; }
   th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing:.04em; }
   tr:hover td { background: rgba(255,255,255,0.02); }
   .pill { display:inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight:600; }

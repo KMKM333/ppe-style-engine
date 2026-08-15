@@ -31,7 +31,11 @@
   <div class="muted" style="text-transform:uppercase;font-size:12px;letter-spacing:.04em;margin-bottom:8px">
     {{ section_name }}{% if fields and fields[0].macro != section_name %} <span style="opacity:.6">— {{ fields[0].macro }}</span>{% endif %}
   </div>
-  <table>
+  <table class="attr-table">
+    <colgroup>
+      <col class="col-attribute"><col class="col-type"><col class="col-description">
+      <col class="col-coverage"><col class="col-stats">
+    </colgroup>
     <tr><th>Attribute</th><th>Type</th><th>Description</th><th>Coverage</th><th>Stats</th></tr>
     {% for f in fields %}
     <tr>

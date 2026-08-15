@@ -15,4 +15,11 @@ python3 db_init.py
 # that's already present.
 python3 migrate_add_style_craft_attrs.py
 
+# CTA (has_cta/cta_type/cta_placement/cta_count) is now a heuristic Auto
+# attribute like title_format, computed at ingest — this only backfills
+# video_attributes rows from before that heuristic existed (cta_type IS
+# NULL), so it's safe on every boot and never overwrites a real
+# classification.
+python3 backfill_cta_heuristic.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

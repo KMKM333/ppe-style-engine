@@ -10,6 +10,7 @@ Claude fills in for those, one batch at a time.
 """
 import re
 import statistics
+from collections import Counter
 
 
 FILLER_WORDS = [
@@ -181,6 +182,49 @@ HUMOR_MARKER_RE = re.compile(r"\b(" + "|".join(_HUMOR_MARKERS) + r")\b", re.I)
 
 PUNCTUATION_RE = re.compile(r"[.,;:!?—–\-\"'()]")
 
+# CTA (call-to-action) heuristics, matching classify_template.py's cta_type
+# controlled vocabulary — a text-pattern proxy for the same signal an LLM
+# classification pass would tag, so has_cta/cta_type/cta_placement/cta_count
+# are available for scoring text (pasted input, freshly generated rewrites)
+# that's never been through a Claude classification pass.
+_COMMENT_BAIT_RE = re.compile(
+    r"\b(comment below|let me know|what do you think|drop a comment|"
+    r"comment your|tell me in the comments|let us know)\b", re.I,
+)
+_FOLLOW_SUBSCRIBE_RE = re.compile(
+    r"\b(follow|subscribe|hit (?:that |the )?follow|"
+    r"smash (?:that |the )?(?:like|follow)|turn on notifications)\b", re.I,
+)
+_NEWSLETTER_PRODUCT_RE = re.compile(
+    r"\b(newsletter|link in (?:my |the )?bio|check out my|sign up|join my|"
+    r"buy my|my book|my course|my podcast|my substack)\b", re.I,
+)
+_CTA_PATTERNS = [
+    ("Comment-bait question", _COMMENT_BAIT_RE),
+    ("Follow/subscribe", _FOLLOW_SUBSCRIBE_RE),
+    ("Newsletter/product plug", _NEWSLETTER_PRODUCT_RE),
+]
+
+
+def classify_cta(text):
+    """Heuristic auto-classifier for has_cta/cta_type/cta_placement/cta_count
+    — same keyword-pattern approach as classify_title_format, over the exact
+    controlled vocabulary classify_template.py uses. cta_type picks whichever
+    category has the most hits; cta_placement is Start/Mid/End by where the
+    first hit falls in the text."""
+    if not text or not text.strip():
+        return {"has_cta": 0, "cta_type": "None", "cta_placement": "None", "cta_count": 0}
+
+    hits = [(m.start(), category) for category, pattern in _CTA_PATTERNS for m in pattern.finditer(text)]
+    if not hits:
+        return {"has_cta": 0, "cta_type": "None", "cta_placement": "None", "cta_count": 0}
+
+    cta_type = Counter(category for _, category in hits).most_common(1)[0][0]
+    first_pos = min(pos for pos, _ in hits)
+    frac = first_pos / len(text)
+    cta_placement = "Start" if frac < 1 / 3 else ("Mid" if frac < 2 / 3 else "End")
+    return {"has_cta": 1, "cta_type": cta_type, "cta_placement": cta_placement, "cta_count": len(hits)}
+
 # a small general jargon list to seed jargon_density; extend per-domain as you go
 PPE_JARGON_SEED = [
     "epistemic", "ontology", "dialectic", "utilitarian", "deontological",
@@ -330,6 +374,7 @@ def extract_auto_features(script_text: str, title_text: str = "") -> dict:
 
         "classified_by": "auto",
     }
+    features.update(classify_cta(text))
     return features
 
 

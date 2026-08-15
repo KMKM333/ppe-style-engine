@@ -35,7 +35,7 @@ NUMERIC_ATTRS = [
     "number_count", "instruction_verb_count", "framework_marker_count",
     "sentence_rhythm_cv", "closing_paragraph_ratio", "lexical_diversity",
     "punctuation_density", "colloquialism_density", "contrast_structure_count",
-    "named_entity_count", "humor_marker_count",
+    "named_entity_count", "humor_marker_count", "cta_count",
 ]
 
 CATEGORICAL_ATTRS_OPTIONAL = [

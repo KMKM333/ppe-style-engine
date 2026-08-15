@@ -1299,9 +1299,12 @@ def creations_list():
     total = conn.execute("SELECT COUNT(*) FROM transformations").fetchone()[0]
     conn.close()
 
+    overall_valuation, n_valued, n_total_scored = _all_creations_valuation()
+
     return render_template(
         "creations_list.html", active="creations",
         rows=rows, profiles=_profiles(), generated_by_values=generated_by_values, total=total,
+        overall_valuation=overall_valuation, n_valued=n_valued, n_total_scored=n_total_scored,
         filters={
             "profile": profile_code, "q": q, "generated_by": generated_by,
             "delta_min": delta_min, "sort": sort, "dir": direction,
@@ -1331,37 +1334,33 @@ def _score_field_to_macro():
     return field_to_macro
 
 
-def _creation_valuation(breakdown):
-    """Turns a transform_scores.score_breakdown dict ({attribute: subscore})
-    into "how much of this creation's fit score came from each macro
-    category" — a valuation, not a performance read: each attribute
-    contributes its scoring_weights weight to whichever macro it belongs to,
-    and the pie is that weight's share of the total, regardless of how well
-    the attribute actually scored. Returns None for the content-match special
-    case (breakdown has no per-attribute entries to value)."""
+def _macro_weights_for_breakdown(breakdown, weights, field_to_macro):
+    """Returns {macro: weight_sum} for one creation's score_breakdown dict
+    ({attribute: subscore}) — each attribute present contributes its
+    scoring_weights weight to whichever macro it belongs to. Returns None
+    for the content-match special case (no per-attribute entries to value)."""
     if not breakdown or "content_match" in breakdown:
         return None
-
-    conn = get_conn()
-    weights = {r["attribute"]: r["weight"] for r in conn.execute("SELECT attribute, weight FROM scoring_weights")}
-    conn.close()
-
-    field_to_macro = _score_field_to_macro()
     macro_weight = {}
     for attr in breakdown:
         macro = field_to_macro.get(attr, "Other")
         w = weights.get(attr, 1.0)
         macro_weight[macro] = macro_weight.get(macro, 0.0) + w
+    return macro_weight
 
-    total_weight = sum(macro_weight.values())
+
+def _valuation_slices(macro_weight):
+    """Turns a {macro: weight_sum} dict into sorted pie slices (pct, color,
+    conic-gradient start/end) — a valuation, not a performance read: each
+    slice is that macro's share of the total scoring weight actually
+    available, regardless of how well any attribute in it scored."""
+    total_weight = sum(macro_weight.values()) if macro_weight else 0
     if not total_weight:
         return None
-
     slices = sorted(
         ({"macro": m, "pct": round(w / total_weight * 100, 1)} for m, w in macro_weight.items()),
         key=lambda s: s["pct"], reverse=True,
     )
-    # attach conic-gradient stops and legend colors, cycling the palette
     cumulative = 0.0
     for i, s in enumerate(slices):
         s["color"] = VALUATION_COLORS[i % len(VALUATION_COLORS)]
@@ -1369,6 +1368,46 @@ def _creation_valuation(breakdown):
         cumulative += s["pct"]
         s["end_pct"] = round(cumulative, 2)
     return slices
+
+
+def _creation_valuation(breakdown):
+    """Single-creation wrapper around _macro_weights_for_breakdown +
+    _valuation_slices, used by the per-creation dashboard."""
+    conn = get_conn()
+    weights = {r["attribute"]: r["weight"] for r in conn.execute("SELECT attribute, weight FROM scoring_weights")}
+    conn.close()
+    macro_weight = _macro_weights_for_breakdown(breakdown, weights, _score_field_to_macro())
+    return _valuation_slices(macro_weight) if macro_weight is not None else None
+
+
+def _all_creations_valuation():
+    """Aggregates every creation's target-profile score_breakdown into one
+    combined valuation — the same macro-weight-share logic as a single
+    creation, but summed across every creation that has a valuable
+    breakdown, so a macro that shows up in more creations naturally carries
+    more combined weight. Returns (slices_or_None, n_valued, n_total)."""
+    conn = get_conn()
+    weights = {r["attribute"]: r["weight"] for r in conn.execute("SELECT attribute, weight FROM scoring_weights")}
+    breakdown_rows = conn.execute(
+        """SELECT ts.score_breakdown FROM transform_scores ts
+           JOIN transformations t ON t.transformation_id = ts.transformation_id
+           WHERE ts.profile_id = t.target_profile_id AND ts.score_breakdown IS NOT NULL"""
+    ).fetchall()
+    conn.close()
+
+    field_to_macro = _score_field_to_macro()
+    combined = {}
+    n_valued = 0
+    for row in breakdown_rows:
+        breakdown = json.loads(row["score_breakdown"])
+        macro_weight = _macro_weights_for_breakdown(breakdown, weights, field_to_macro)
+        if macro_weight is None:
+            continue
+        n_valued += 1
+        for m, w in macro_weight.items():
+            combined[m] = combined.get(m, 0.0) + w
+
+    return _valuation_slices(combined), n_valued, len(breakdown_rows)
 
 
 @app.route("/creations/<int:transformation_id>")

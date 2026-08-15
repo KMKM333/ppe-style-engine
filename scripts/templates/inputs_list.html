@@ -5,7 +5,7 @@
   {% set is_active = filters.sort == col %}
   {% set new_dir = 'desc' if (is_active and filters.dir != 'desc') else 'asc' %}
   <th>
-    <a href="{{ url_for('inputs_list', kind=filters.kind, q=filters.q, channel_id=filters.channel_id, title_format=filters.title_format, word_min=filters.word_min, word_max=filters.word_max, sort=col, dir=new_dir) }}"
+    <a href="{{ url_for('inputs_list', kind=filters.kind, q=filters.q, channel_id=filters.channel_id, title_format=filters.title_format, term=filters.term, example=filters.example, word_min=filters.word_min, word_max=filters.word_max, sort=col, dir=new_dir) }}"
        style="color:inherit;text-decoration:none;white-space:nowrap">
       {{ label }}{% if is_active %}<span style="color:var(--accent)">{{ ' ▲' if filters.dir == 'asc' else ' ▼' }}</span>{% else %}<span class="muted" style="opacity:.4"> ⇅</span>{% endif %}
     </a>
@@ -72,6 +72,23 @@
   <div class="sub" style="margin:14px 0 4px">Title format only filters videos — books have no title format, so they'll be excluded while it's set.</div>
   <div class="flex">
     <div>
+      <label for="term">Term / concept tag</label>
+      <input type="text" id="term" name="term" list="term-tags" value="{{ filters.term }}" placeholder="e.g. moral luck">
+      <datalist id="term-tags">
+        {% for t in all_terms %}<option value="{{ t }}">{% endfor %}
+      </datalist>
+    </div>
+    <div>
+      <label for="example">Example tag</label>
+      <input type="text" id="example" name="example" list="example-tags" value="{{ filters.example }}" placeholder="e.g. The Trolley Problem">
+      <datalist id="example-tags">
+        {% for e in all_examples %}<option value="{{ e }}">{% endfor %}
+      </datalist>
+    </div>
+  </div>
+  <div class="sub" style="margin:14px 0 4px">Term/example tags match exactly — pick one from the dropdown, or click a tag on any video/book page to jump here filtered.</div>
+  <div class="flex">
+    <div>
       <label for="word_min">Min word count</label>
       <input type="text" inputmode="numeric" id="word_min" name="word_min" value="{{ filters.word_min if filters.word_min is not none else '' }}">
     </div>
@@ -99,6 +116,15 @@
   <button type="submit">Apply filters</button>
   <a href="{{ url_for('inputs_list') }}" class="btn secondary">Reset</a>
 </form>
+
+{% if filters.term or filters.example %}
+<div class="sub" style="margin:-6px 0 14px">
+  Filtered by
+  {% if filters.term %}<span class="tag-link" style="cursor:default">term: {{ filters.term }}</span>{% endif %}
+  {% if filters.example %}<span class="tag-link" style="cursor:default">example: {{ filters.example }}</span>{% endif %}
+  &middot; <a href="{{ url_for('inputs_list', kind=filters.kind, q=filters.q, channel_id=filters.channel_id, title_format=filters.title_format, word_min=filters.word_min, word_max=filters.word_max, sort=filters.sort, dir=filters.dir) }}">clear tag filter ✕</a>
+</div>
+{% endif %}
 
 <div class="card">
   {% if rows %}
@@ -156,6 +182,7 @@
       </td>
       <td>
         <a href="{{ ex.detail_url }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ ex.label }}</a>
+        {% if ex.example_title %}<a class="tag-link" style="margin-left:6px" href="{{ url_for('inputs_list', example=ex.example_title) }}" title="Find every input sharing this example">🏷</a>{% endif %}
       </td>
       <td class="muted">—</td>
       <td class="muted">—</td>

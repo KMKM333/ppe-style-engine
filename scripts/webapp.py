@@ -823,6 +823,8 @@ def inputs_list():
     channel_id = request.args.get("channel_id", type=int)
     q = request.args.get("q", "").strip()
     title_format = request.args.get("title_format", "").strip()
+    term = request.args.get("term", "").strip()
+    example = request.args.get("example", "").strip()
     word_min = request.args.get("word_min", type=int)
     word_max = request.args.get("word_max", type=int)
     sort = request.args.get("sort", "ingested_at")
@@ -848,6 +850,12 @@ def inputs_list():
         if word_max is not None:
             where.append("a.word_count <= ?")
             params.append(word_max)
+        if term:
+            where.append("EXISTS (SELECT 1 FROM video_terms vt WHERE vt.video_id = v.video_id AND vt.term = ? COLLATE NOCASE)")
+            params.append(term)
+        if example:
+            where.append("EXISTS (SELECT 1 FROM video_examples ve WHERE ve.video_id = v.video_id AND ve.example_title = ? COLLATE NOCASE)")
+            params.append(example)
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
         video_rows = conn.execute(
@@ -898,6 +906,12 @@ def inputs_list():
         if word_max is not None:
             where.append("b.word_count <= ?")
             params.append(word_max)
+        if term:
+            where.append("EXISTS (SELECT 1 FROM book_terms bt WHERE bt.book_id = b.book_id AND bt.term = ? COLLATE NOCASE)")
+            params.append(term)
+        if example:
+            where.append("EXISTS (SELECT 1 FROM book_examples be WHERE be.book_id = b.book_id AND be.example_title = ? COLLATE NOCASE)")
+            params.append(example)
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
         book_rows = conn.execute(
@@ -923,6 +937,7 @@ def inputs_list():
                 {
                     "number": i,
                     "label": ex["example_title"] or _trim(ex["example_text"], 90),
+                    "example_title": ex["example_title"],
                     "detail_url": f"{book_detail_url}#example-{ex['example_id']}",
                     "location": (
                         f"Section {ex['section_number']}, page {ex['page_range']}"
@@ -972,6 +987,23 @@ def inputs_list():
             "SELECT DISTINCT title_format FROM video_attributes WHERE title_format IS NOT NULL ORDER BY title_format"
         ).fetchall()
     ]
+    # "tags" for the term/example filters below: every distinct term and example
+    # title across both videos and books, so a tag clicked on any detail page
+    # filters this list down to everything else that shares the same concept.
+    all_terms = sorted({
+        r[0] for r in conn.execute("SELECT DISTINCT term FROM video_terms WHERE term IS NOT NULL").fetchall()
+    } | {
+        r[0] for r in conn.execute("SELECT DISTINCT term FROM book_terms WHERE term IS NOT NULL").fetchall()
+    }, key=str.lower)
+    all_examples = sorted({
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT example_title FROM video_examples WHERE example_title IS NOT NULL"
+        ).fetchall()
+    } | {
+        r[0] for r in conn.execute(
+            "SELECT DISTINCT example_title FROM book_examples WHERE example_title IS NOT NULL"
+        ).fetchall()
+    }, key=str.lower)
     total = conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0] + conn.execute(
         "SELECT COUNT(*) FROM books"
     ).fetchone()[0]
@@ -990,11 +1022,13 @@ def inputs_list():
     return render_template(
         "inputs_list.html", active="inputs",
         rows=rows, channels=channels, title_formats=title_formats, total=total, kinds=INPUT_KINDS,
+        all_terms=all_terms, all_examples=all_examples,
         n_books=n_books, n_books_only=n_books_only, n_book_examples=n_book_examples,
         n_short_videos=n_short_videos, n_short_video_accounts=n_short_video_accounts,
         n_long_videos=n_long_videos, n_news=n_news,
         filters={
             "kind": kind, "channel_id": channel_id, "q": q, "title_format": title_format,
+            "term": term, "example": example,
             "word_min": word_min, "word_max": word_max, "sort": sort, "dir": direction,
         },
     )

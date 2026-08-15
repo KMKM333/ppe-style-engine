@@ -151,7 +151,7 @@
     <tr><th>Example</th><th>Reinforces</th></tr>
     {% for ex in book_examples %}
     <tr id="example-{{ ex.example_id }}">
-      <td>{% if ex.example_title %}<strong>{{ ex.example_title }}</strong><br>{% endif %}{{ ex.example_text }}</td>
+      <td>{% if ex.example_title %}<a class="tag-link" href="{{ url_for('inputs_list', example=ex.example_title) }}">{{ ex.example_title }}</a><br>{% endif %}{{ ex.example_text }}</td>
       <td class="muted">{{ ex.reinforces_point or '—' }}</td>
     </tr>
     {% endfor %}
@@ -163,7 +163,7 @@
   <div class="muted" style="margin-bottom:6px;text-transform:uppercase;font-size:12px;letter-spacing:.04em">Concepts</div>
   <dl class="terms-list">
     {% for t in book_terms %}
-    <dt>{{ t.term }}</dt>
+    <dt><a class="tag-link" href="{{ url_for('inputs_list', term=t.term) }}">{{ t.term }}</a></dt>
     <dd>{{ t.definition or '—' }}</dd>
     {% endfor %}
   </dl>

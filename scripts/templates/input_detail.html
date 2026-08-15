@@ -40,7 +40,7 @@
   <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-top:12px">Terms</div>
   <dl class="terms-list">
     {% for t in terms %}
-    <dt>{{ t.term }}</dt>
+    <dt><a class="tag-link" href="{{ url_for('inputs_list', term=t.term) }}">{{ t.term }}</a></dt>
     <dd>{{ t.definition or '—' }}</dd>
     {% endfor %}
   </dl>
@@ -52,7 +52,7 @@
     <tr><th>Example</th><th>Reinforces</th></tr>
     {% for ex in examples %}
     <tr id="example-{{ ex.example_id }}">
-      <td>{% if ex.example_title %}<strong>{{ ex.example_title }}</strong><br>{% endif %}{{ ex.example_text }}</td>
+      <td>{% if ex.example_title %}<a class="tag-link" href="{{ url_for('inputs_list', example=ex.example_title) }}">{{ ex.example_title }}</a><br>{% endif %}{{ ex.example_text }}</td>
       <td class="muted">{{ ex.reinforces_point or '—' }}</td>
     </tr>
     {% endfor %}

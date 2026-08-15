@@ -1309,6 +1309,68 @@ def creations_list():
     )
 
 
+VALUATION_COLORS = [
+    "#6ea8fe", "#4ade80", "#facc15", "#f87171", "#c084fc",
+    "#2dd4bf", "#fb923c", "#f472b6", "#a3e635",
+]
+
+
+def _score_field_to_macro():
+    """Maps every scoreable attribute name to its macro category — video
+    fields roll up through ATTRIBUTE_SECTIONS -> SECTION_TO_MACRO the same
+    way the Attributes page does; book fields use their BOOK_ATTRIBUTE_SECTIONS
+    section directly, since book sections are already macro-sized."""
+    field_to_macro = {}
+    for section_name, fields in ATTRIBUTE_SECTIONS:
+        macro = SECTION_TO_MACRO.get(section_name, section_name)
+        for f in fields:
+            field_to_macro[f] = macro
+    for section_name, fields in BOOK_ATTRIBUTE_SECTIONS:
+        for f in fields:
+            field_to_macro.setdefault(f, section_name)
+    return field_to_macro
+
+
+def _creation_valuation(breakdown):
+    """Turns a transform_scores.score_breakdown dict ({attribute: subscore})
+    into "how much of this creation's fit score came from each macro
+    category" — a valuation, not a performance read: each attribute
+    contributes its scoring_weights weight to whichever macro it belongs to,
+    and the pie is that weight's share of the total, regardless of how well
+    the attribute actually scored. Returns None for the content-match special
+    case (breakdown has no per-attribute entries to value)."""
+    if not breakdown or "content_match" in breakdown:
+        return None
+
+    conn = get_conn()
+    weights = {r["attribute"]: r["weight"] for r in conn.execute("SELECT attribute, weight FROM scoring_weights")}
+    conn.close()
+
+    field_to_macro = _score_field_to_macro()
+    macro_weight = {}
+    for attr in breakdown:
+        macro = field_to_macro.get(attr, "Other")
+        w = weights.get(attr, 1.0)
+        macro_weight[macro] = macro_weight.get(macro, 0.0) + w
+
+    total_weight = sum(macro_weight.values())
+    if not total_weight:
+        return None
+
+    slices = sorted(
+        ({"macro": m, "pct": round(w / total_weight * 100, 1)} for m, w in macro_weight.items()),
+        key=lambda s: s["pct"], reverse=True,
+    )
+    # attach conic-gradient stops and legend colors, cycling the palette
+    cumulative = 0.0
+    for i, s in enumerate(slices):
+        s["color"] = VALUATION_COLORS[i % len(VALUATION_COLORS)]
+        s["start_pct"] = round(cumulative, 2)
+        cumulative += s["pct"]
+        s["end_pct"] = round(cumulative, 2)
+    return slices
+
+
 @app.route("/creations/<int:transformation_id>")
 def creation_detail(transformation_id):
     conn = get_conn()
@@ -1333,9 +1395,13 @@ def creation_detail(transformation_id):
     ).fetchall()
     conn.close()
 
+    target_score = next((s for s in scores if s["profile_id"] == t["target_profile_id"]), None)
+    breakdown = json.loads(target_score["score_breakdown"]) if target_score and target_score["score_breakdown"] else {}
+    valuation = _creation_valuation(breakdown)
+
     return render_template(
         "creation_detail.html", active="creations",
-        t=t, scores=scores,
+        t=t, scores=scores, valuation=valuation,
     )
 
 

@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 {% block title %}{{ profile.profile_code }} — Fingerprint{% endblock %}
 {% block content %}
-<h1>Profile {{ profile.profile_code }}</h1>
+<h1>{{ profile.profile_code }}, {{ profile.channel_name }}</h1>
 {% if profile.overview %}
 <div class="sub" style="margin-top:-4px">{{ profile.overview }}</div>
 {% endif %}
 <div class="sub">
-  {{ profile.channel_name }}{% if profile.media_type %} &middot; {{ profile.media_type }}{% endif %}{% if profile.subject %} &middot; {{ profile.subject }}{% endif %} &middot; length band {{ profile.length_band }} &middot;
+  {% if profile.media_type %}{{ profile.media_type }} &middot; {% endif %}{% if profile.subject %}{{ profile.subject }} &middot; {% endif %}length band {{ profile.length_band }} &middot;
   {% if is_hybrid %}~{{ profile.n_videos_analysed }} source obs. (weighted){% else %}{{ profile.n_videos_analysed }} {{ 'book(s)' if is_book else 'videos' }} analysed{% endif %} &middot;
   <span class="pill {{ profile.status }}">{{ profile.status }}</span>
   &middot; <a href="{{ url_for('style_card', code=profile.profile_code) }}">Style card</a>

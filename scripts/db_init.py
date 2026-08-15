@@ -1,6 +1,7 @@
 """db_init.py — creates (or reconnects to) the SQLite database from schema.sql"""
 import os
 import sqlite3
+import time
 from pathlib import Path
 
 # PPE_DB_PATH lets a deploy point the live database at a mounted disk
@@ -22,9 +23,23 @@ def get_conn():
 
 def init_db():
     conn = get_conn()
-    with open(SCHEMA_PATH) as f:
-        conn.executescript(f.read())
-    conn.commit()
+    try:
+        with open(SCHEMA_PATH) as f:
+            conn.executescript(f.read())
+        conn.commit()
+    except sqlite3.DatabaseError:
+        # DB_PATH exists but isn't a valid SQLite file — e.g. a restore that
+        # was interrupted mid-write and left the file truncated. Move it
+        # aside (never delete) so the app can boot on a fresh DB instead of
+        # crash-looping forever, and leave the bad file for manual recovery.
+        conn.close()
+        quarantined = DB_PATH.with_name(f"{DB_PATH.stem}_corrupt_{int(time.time())}{DB_PATH.suffix}")
+        DB_PATH.rename(quarantined)
+        print(f"DB at {DB_PATH} was not a valid SQLite file; moved it to {quarantined} and starting fresh.")
+        conn = get_conn()
+        with open(SCHEMA_PATH) as f:
+            conn.executescript(f.read())
+        conn.commit()
 
     # seed a default scoring_weights row per numeric attribute (weight=1.0)
     numeric_attrs = [

@@ -42,18 +42,22 @@
           {% endif %}
         </select>
       </div>
-      <div>
-        <label for="profile">Target profile</label>
-        <select id="profile" name="profile" required>
+      <div style="position:relative">
+        <label for="profile-search">Target profile</label>
+        <input type="text" id="profile-search" autocomplete="off" placeholder="Search profiles by code or channel…">
+        <div id="profile-search-results" class="input-search-results" style="display:none"></div>
+        <select id="profile" name="profile" required style="margin-top:6px">
           <option value="">— choose a profile —</option>
           {% for p in profiles %}
           <option value="{{ p.profile_code }}" {{ 'selected' if selected_profile == p.profile_code else '' }}>{{ p.profile_code }} ({{ p.channel_name }})</option>
           {% endfor %}
         </select>
       </div>
-      <div>
-        <label for="form">Output form <span class="muted">(for Data Output)</span></label>
-        <select id="form" name="form">
+      <div style="position:relative">
+        <label for="form-search">Output form <span class="muted">(for Data Output)</span></label>
+        <input type="text" id="form-search" autocomplete="off" placeholder="Search output forms…">
+        <div id="form-search-results" class="input-search-results" style="display:none"></div>
+        <select id="form" name="form" style="margin-top:6px">
           <option value="">— choose an output form —</option>
           {% for code, def in form_specs.items() %}
           <option value="{{ code }}" {{ 'selected' if selected_form == code else '' }}>{{ def.label }}</option>
@@ -159,21 +163,20 @@
 {% endif %}
 
 <script>
-(function () {
-  var OPTIONS = {{ input_options|tojson }};
+function initSearchableSelect(searchId, resultsId, selectId, options) {
   var BY_VALUE = {};
-  OPTIONS.forEach(function (o) { BY_VALUE[o.value] = o; });
+  options.forEach(function (o) { BY_VALUE[o.value] = o; });
 
-  var searchBox = document.getElementById('input-search');
-  var resultsBox = document.getElementById('input-search-results');
-  var select = document.getElementById('source');
+  var searchBox = document.getElementById(searchId);
+  var resultsBox = document.getElementById(resultsId);
+  var select = document.getElementById(selectId);
 
   var preselected = BY_VALUE[select.value];
   if (preselected) searchBox.value = preselected.label;
 
   function renderResults(q) {
     resultsBox.innerHTML = '';
-    var matches = OPTIONS.filter(function (o) { return o.search.indexOf(q) !== -1; }).slice(0, 40);
+    var matches = options.filter(function (o) { return o.search.indexOf(q) !== -1; }).slice(0, 40);
     if (!matches.length) {
       var empty = document.createElement('div');
       empty.className = 'input-search-empty';
@@ -183,7 +186,7 @@
       matches.forEach(function (o) {
         var row = document.createElement('div');
         row.className = 'input-search-row';
-        row.innerHTML = '<span class="input-search-kind">' + o.kind + '</span>' + o.label;
+        row.innerHTML = (o.kind ? '<span class="input-search-kind">' + o.kind + '</span>' : '') + o.label;
         row.addEventListener('click', function () {
           select.value = o.value;
           searchBox.value = o.label;
@@ -210,6 +213,10 @@
   document.addEventListener('click', function (e) {
     if (e.target !== searchBox && !resultsBox.contains(e.target)) resultsBox.style.display = 'none';
   });
-})();
+}
+
+initSearchableSelect('input-search', 'input-search-results', 'source', {{ input_options|tojson }});
+initSearchableSelect('profile-search', 'profile-search-results', 'profile', {{ profile_options|tojson }});
+initSearchableSelect('form-search', 'form-search-results', 'form', {{ output_form_options|tojson }});
 </script>
 {% endblock %}

@@ -2384,6 +2384,25 @@ def _transform_input_options(video_rows, book_rows, example_rows):
     return options
 
 
+def _transform_profile_options(profiles):
+    """Flattens the target-profile <select> options for the same
+    search-box-over-a-select pattern as the Input field."""
+    options = [
+        {"value": p["profile_code"], "label": f"{p['profile_code']} ({p['channel_name']})", "kind": p.get("media_type") or ""}
+        for p in profiles
+    ]
+    for o in options:
+        o["search"] = o["label"].lower()
+    return options
+
+
+def _transform_output_form_options():
+    options = [{"value": code, "label": spec["label"], "kind": ""} for code, spec in FORM_SPECS.items()]
+    for o in options:
+        o["search"] = o["label"].lower()
+    return options
+
+
 @app.route("/transform", methods=["GET"])
 def transform_form():
     source = request.args.get("source", "").strip()
@@ -2395,6 +2414,8 @@ def transform_form():
 
     video_rows, book_rows, example_rows = _transform_inputs()
     input_options = _transform_input_options(video_rows, book_rows, example_rows)
+    profile_options = _transform_profile_options(_profiles())
+    output_form_options = _transform_output_form_options()
 
     prompt_text = None
     selected_test_id = None
@@ -2462,7 +2483,8 @@ def transform_form():
     return render_template(
         "transform_form.html", active="transform",
         video_rows=video_rows, book_rows=book_rows, example_rows=example_rows,
-        input_options=input_options, profiles=_profiles(),
+        input_options=input_options, profile_options=profile_options, output_form_options=output_form_options,
+        profiles=_profiles(),
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=selected_test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,
@@ -2482,6 +2504,8 @@ def transform_generate():
 
     video_rows, book_rows, example_rows = _transform_inputs()
     input_options = _transform_input_options(video_rows, book_rows, example_rows)
+    profile_options = _transform_profile_options(_profiles())
+    output_form_options = _transform_output_form_options()
 
     if not test_id or not profile:
         flash("Generate the prompt first (pick an input + target profile above).")
@@ -2512,7 +2536,8 @@ def transform_generate():
     return render_template(
         "transform_form.html", active="transform",
         video_rows=video_rows, book_rows=book_rows, example_rows=example_rows,
-        input_options=input_options, profiles=_profiles(),
+        input_options=input_options, profile_options=profile_options, output_form_options=output_form_options,
+        profiles=_profiles(),
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,

@@ -811,28 +811,82 @@ def attribute_media_detail(slug):
 
 @app.route("/tags")
 def tags_page():
-    """Every distinct term and example title across videos and books, each
-    linking to the Inputs filter that finds everything else sharing it — the
-    browsable index for the term/example tagging added to Inputs filtering."""
+    """Every term/example occurrence across videos and books, one row per
+    occurrence (not deduplicated) so each row can carry its own source
+    channel/author, description, and link back to that specific analysis —
+    the browsable index for the term/example tagging added to Inputs
+    filtering. The Term/Example value itself still links to the Inputs
+    filter that finds everything else sharing it."""
     conn = get_conn()
     term_rows = conn.execute(
-        """SELECT term, COUNT(*) AS n FROM (
-               SELECT term FROM video_terms WHERE term IS NOT NULL AND term != ''
-               UNION ALL
-               SELECT term FROM book_terms WHERE term IS NOT NULL AND term != ''
-           ) GROUP BY term COLLATE NOCASE ORDER BY term COLLATE NOCASE"""
+        """SELECT vt.term AS value, vt.definition AS description,
+                  c.channel_name AS source_name, p.profile_code AS profile_code,
+                  v.video_id AS video_id, NULL AS book_id
+           FROM video_terms vt
+           JOIN videos v ON v.video_id = vt.video_id
+           JOIN channels c ON c.channel_id = v.channel_id
+           LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+           WHERE vt.term IS NOT NULL AND vt.term != ''
+           UNION ALL
+           SELECT bt.term AS value, bt.definition AS description,
+                  b.author AS source_name, p.profile_code AS profile_code,
+                  NULL AS video_id, b.book_id AS book_id
+           FROM book_terms bt
+           JOIN books b ON b.book_id = bt.book_id
+           LEFT JOIN channels c ON c.channel_name = b.author AND c.platform = 'Book'
+           LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+           WHERE bt.term IS NOT NULL AND bt.term != ''
+           ORDER BY value COLLATE NOCASE, source_name COLLATE NOCASE"""
     ).fetchall()
     example_rows = conn.execute(
-        """SELECT example_title, COUNT(*) AS n FROM (
-               SELECT example_title FROM video_examples WHERE example_title IS NOT NULL AND example_title != ''
-               UNION ALL
-               SELECT example_title FROM book_examples WHERE example_title IS NOT NULL AND example_title != ''
-           ) GROUP BY example_title COLLATE NOCASE ORDER BY example_title COLLATE NOCASE"""
+        """SELECT ve.example_title AS value, ve.example_text AS description,
+                  c.channel_name AS source_name, p.profile_code AS profile_code,
+                  v.video_id AS video_id, NULL AS book_id, ve.example_id AS example_id
+           FROM video_examples ve
+           JOIN videos v ON v.video_id = ve.video_id
+           JOIN channels c ON c.channel_id = v.channel_id
+           LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+           WHERE ve.example_title IS NOT NULL AND ve.example_title != ''
+           UNION ALL
+           SELECT be.example_title AS value, be.example_text AS description,
+                  b.author AS source_name, p.profile_code AS profile_code,
+                  NULL AS video_id, b.book_id AS book_id, be.example_id AS example_id
+           FROM book_examples be
+           JOIN books b ON b.book_id = be.book_id
+           LEFT JOIN channels c ON c.channel_name = b.author AND c.platform = 'Book'
+           LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+           WHERE be.example_title IS NOT NULL AND be.example_title != ''
+           ORDER BY value COLLATE NOCASE, source_name COLLATE NOCASE"""
     ).fetchall()
     conn.close()
 
-    terms = [{"value": r["term"], "count": r["n"]} for r in term_rows]
-    examples = [{"value": r["example_title"], "count": r["n"]} for r in example_rows]
+    def _detail_url(video_id, book_id, anchor=None):
+        if video_id is not None:
+            url = url_for("input_detail", video_id=video_id)
+        else:
+            url = url_for("book_detail", book_id=book_id)
+        return f"{url}#example-{anchor}" if anchor is not None else url
+
+    terms = [
+        {
+            "value": r["value"],
+            "description": _trim(r["description"], 160) if r["description"] else None,
+            "source_name": r["source_name"] or "—",
+            "profile_code": r["profile_code"],
+            "detail_url": _detail_url(r["video_id"], r["book_id"]),
+        }
+        for r in term_rows
+    ]
+    examples = [
+        {
+            "value": r["value"],
+            "description": _trim(r["description"], 160) if r["description"] else None,
+            "source_name": r["source_name"] or "—",
+            "profile_code": r["profile_code"],
+            "detail_url": _detail_url(r["video_id"], r["book_id"], anchor=r["example_id"]),
+        }
+        for r in example_rows
+    ]
     return render_template(
         "tags.html", active="tags", terms=terms, examples=examples,
         n_terms=len(terms), n_examples=len(examples),

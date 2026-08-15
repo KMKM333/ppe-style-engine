@@ -4,17 +4,18 @@
 {% block content %}
 <h1>Term &amp; Example Tags</h1>
 <div class="sub">
-  Every distinct term and named example across all videos and books, deduplicated case-insensitively.
-  Click a tag to jump to Library filtered to everything else that shares it.
+  Every term and named example, one row per occurrence across all videos and books. Click the
+  term/example itself to jump to Library filtered to everything else that shares it, or "View" to
+  open the source analysis it came from.
 </div>
 
 <div class="flex">
   <div class="card">
-    <div class="muted">Distinct terms</div>
+    <div class="muted">Term entries</div>
     <div style="font-size:28px;font-weight:700">{{ n_terms }}</div>
   </div>
   <div class="card">
-    <div class="muted">Distinct examples</div>
+    <div class="muted">Example entries</div>
     <div style="font-size:28px;font-weight:700">{{ n_examples }}</div>
   </div>
 </div>
@@ -28,13 +29,26 @@
 <div class="sub" style="margin-top:-6px">Concepts, biases, laws, and jargon defined across the corpus.</div>
 <div class="card">
   {% if terms %}
-  <div class="tag-cloud" id="terms-cloud">
+  <table style="table-layout:fixed" id="terms-table">
+    <colgroup>
+      <col style="width:20%"><col style="width:18%"><col style="width:47%"><col style="width:15%">
+    </colgroup>
+    <tr><th>Term</th><th>Channel / author</th><th>Description</th><th></th></tr>
     {% for t in terms %}
-    <a class="tag-link tag-cloud-item" href="{{ url_for('inputs_list', term=t.value) }}" data-search="{{ t.value|lower }}">
-      {{ t.value }}<span class="tag-count">{{ t.count }}</span>
-    </a>
+    <tr class="tag-row" data-search="{{ t.value|lower }}">
+      <td><a class="tag-link" href="{{ url_for('inputs_list', term=t.value) }}">{{ t.value }}</a></td>
+      <td>
+        {% if t.profile_code %}
+        <a href="{{ url_for('profile_detail', code=t.profile_code) }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ t.source_name }}</a>
+        {% else %}
+        {{ t.source_name }}
+        {% endif %}
+      </td>
+      <td class="{{ 'muted' if not t.description }}">{{ t.description or '—' }}</td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ t.detail_url }}">View</a></td>
+    </tr>
     {% endfor %}
-  </div>
+  </table>
   <div class="empty" id="terms-empty" style="display:none">No terms match your search.</div>
   {% else %}
   <div class="empty">No terms extracted yet.</div>
@@ -45,13 +59,26 @@
 <div class="sub" style="margin-top:-6px">Named cases, studies, and stories used to illustrate points across the corpus.</div>
 <div class="card">
   {% if examples %}
-  <div class="tag-cloud" id="examples-cloud">
+  <table style="table-layout:fixed" id="examples-table">
+    <colgroup>
+      <col style="width:20%"><col style="width:18%"><col style="width:47%"><col style="width:15%">
+    </colgroup>
+    <tr><th>Example</th><th>Channel / author</th><th>Description</th><th></th></tr>
     {% for e in examples %}
-    <a class="tag-link tag-cloud-item" href="{{ url_for('inputs_list', example=e.value) }}" data-search="{{ e.value|lower }}">
-      {{ e.value }}<span class="tag-count">{{ e.count }}</span>
-    </a>
+    <tr class="tag-row" data-search="{{ e.value|lower }}">
+      <td><a class="tag-link" href="{{ url_for('inputs_list', example=e.value) }}">{{ e.value }}</a></td>
+      <td>
+        {% if e.profile_code %}
+        <a href="{{ url_for('profile_detail', code=e.profile_code) }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ e.source_name }}</a>
+        {% else %}
+        {{ e.source_name }}
+        {% endif %}
+      </td>
+      <td class="{{ 'muted' if not e.description }}">{{ e.description or '—' }}</td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ e.detail_url }}">View</a></td>
+    </tr>
     {% endfor %}
-  </div>
+  </table>
   <div class="empty" id="examples-empty" style="display:none">No examples match your search.</div>
   {% else %}
   <div class="empty">No examples extracted yet.</div>
@@ -62,13 +89,13 @@
 function filterTags(q) {
   q = q.trim().toLowerCase();
   ['terms', 'examples'].forEach(function (kind) {
-    var cloud = document.getElementById(kind + '-cloud');
-    if (!cloud) return;
-    var items = cloud.querySelectorAll('.tag-cloud-item');
+    var table = document.getElementById(kind + '-table');
+    if (!table) return;
+    var rows = table.querySelectorAll('.tag-row');
     var anyVisible = false;
-    items.forEach(function (a) {
-      var match = !q || a.dataset.search.indexOf(q) !== -1;
-      a.style.display = match ? '' : 'none';
+    rows.forEach(function (tr) {
+      var match = !q || tr.dataset.search.indexOf(q) !== -1;
+      tr.style.display = match ? '' : 'none';
       if (match) anyVisible = true;
     });
     var empty = document.getElementById(kind + '-empty');

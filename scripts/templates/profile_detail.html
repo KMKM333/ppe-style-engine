@@ -14,8 +14,7 @@
   &middot; <a href="{{ url_for('profiles_compare', a=profile.profile_code) }}">Compare</a>
 </div>
 
-{% if not is_hybrid %}
-{% if is_book %}
+{% if not is_hybrid and is_book %}
 <h2 style="margin-top:0">Original inputs: author's books</h2>
 <div class="sub" style="margin-top:-6px">Every book this profile's fingerprint was built from — {{ books|length }} total.</div>
 <div class="card">
@@ -36,36 +35,6 @@
   <div class="empty">No books ingested for this author yet.</div>
   {% endif %}
 </div>
-{% else %}
-<h2 style="margin-top:0">Original inputs: channel videos</h2>
-<div class="sub" style="margin-top:-6px">
-  Every raw video this profile's fingerprint was built from — {{ videos|length }} total.
-  Summaries are plain-language soundbites explaining what each video covers — written, not quoted
-  from the script itself. Click a script preview to expand the full text in place.
-</div>
-<div class="card">
-  {% if videos %}
-  <table>
-    <tr><th>Source</th><th>Title</th><th>Words</th><th>Video length</th><th>Summary</th><th>Script</th></tr>
-    {% for v in videos %}
-    <tr>
-      <td>{% if v.url %}<a href="{{ v.url }}" target="_blank" rel="noopener">source ↗</a>{% else %}<span class="muted">—</span>{% endif %}</td>
-      <td><a href="{{ url_for('input_detail', video_id=v.video_id) }}" style="color:var(--text);font-weight:600;text-decoration:none">{{ v.title }}</a></td>
-      <td>{{ v.word_count if v.word_count is not none else '—' }}</td>
-      <td>{{ v.duration_label if v.duration_label is not none else '—' }}</td>
-      <td class="{{ 'muted' if not v.has_written_summary }}">{{ v.summary }}{% if not v.has_written_summary %}<div class="muted" style="font-size:11px;margin-top:4px">(auto, unwritten)</div>{% endif %}</td>
-      <td class="muted script-cell" style="max-width:280px">
-        <span class="script-preview">{{ v.script_preview }}</span><span class="script-full" style="display:none;white-space:pre-wrap">{{ v.script }}</span>
-        <a href="#" class="script-toggle" onclick="toggleScript(this); return false;" style="color:var(--accent);text-decoration:none;font-size:12px;display:block;margin-top:6px">Show full script ▾</a>
-      </td>
-    </tr>
-    {% endfor %}
-  </table>
-  {% else %}
-  <div class="empty">No videos ingested for this channel yet.</div>
-  {% endif %}
-</div>
-{% endif %}
 {% endif %}
 
 {% if is_hybrid %}
@@ -137,6 +106,37 @@
   <div class="empty">No categorical / classified attributes yet — run the classification pass first.</div>
   {% endif %}
 </div>
+
+{% if not is_hybrid and not is_book %}
+<h2>Original inputs: channel videos</h2>
+<div class="sub" style="margin-top:-6px">
+  Every raw video this profile's fingerprint was built from — {{ videos|length }} total.
+  Summaries are plain-language soundbites explaining what each video covers — written, not quoted
+  from the script itself. Click a script preview to expand the full text in place.
+</div>
+<div class="card">
+  {% if videos %}
+  <table>
+    <tr><th>Source</th><th>Title</th><th>Words</th><th>Video length</th><th>Summary</th><th>Script</th></tr>
+    {% for v in videos %}
+    <tr>
+      <td>{% if v.url %}<a href="{{ v.url }}" target="_blank" rel="noopener">source ↗</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td><a href="{{ url_for('input_detail', video_id=v.video_id) }}" style="color:var(--text);font-weight:600;text-decoration:none">{{ v.title }}</a></td>
+      <td>{{ v.word_count if v.word_count is not none else '—' }}</td>
+      <td>{{ v.duration_label if v.duration_label is not none else '—' }}</td>
+      <td class="{{ 'muted' if not v.has_written_summary }}">{{ v.summary }}{% if not v.has_written_summary %}<div class="muted" style="font-size:11px;margin-top:4px">(auto, unwritten)</div>{% endif %}</td>
+      <td class="muted script-cell" style="max-width:280px">
+        <span class="script-preview">{{ v.script_preview }}</span><span class="script-full" style="display:none;white-space:pre-wrap">{{ v.script }}</span>
+        <a href="#" class="script-toggle" onclick="toggleScript(this); return false;" style="color:var(--accent);text-decoration:none;font-size:12px;display:block;margin-top:6px">Show full script ▾</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No videos ingested for this channel yet.</div>
+  {% endif %}
+</div>
+{% endif %}
 
 {% if is_book and (book_examples or book_terms) %}
 <h2>Book examples &amp; concepts</h2>

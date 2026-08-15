@@ -2254,6 +2254,31 @@ def _transform_inputs():
     return video_rows, book_rows, example_rows
 
 
+def _transform_input_options(video_rows, book_rows, example_rows):
+    """Flattens the same three row sets the <select id="source"> renders from
+    into one list the client-side search box can filter — labels mirror the
+    <option> text exactly so picking a search result and picking straight
+    from the dropdown always agree."""
+    options = []
+    for v in video_rows:
+        label = f"{v['media_type'] or 'Video'} — {v['channel_name']} — {v['title']}"
+        if v["word_count"]:
+            label += f" ({v['word_count']}w)"
+        options.append({"value": f"video:{v['video_id']}", "label": label, "kind": "Video"})
+    for b in book_rows:
+        label = f"Book — {b['author'] or 'Unknown'} — {b['title']}"
+        if b["word_count"]:
+            label += f" ({b['word_count']}w)"
+        options.append({"value": f"book:{b['book_id']}", "label": label, "kind": "Book"})
+    for e in example_rows:
+        title = e["example_title"] or f"Example #{e['example_id']}"
+        label = f"Example — {e['author'] or 'Unknown'} — {e['book_title']}: {title}"
+        options.append({"value": f"example:{e['example_id']}", "label": label, "kind": "Example"})
+    for o in options:
+        o["search"] = o["label"].lower()
+    return options
+
+
 @app.route("/transform", methods=["GET"])
 def transform_form():
     source = request.args.get("source", "").strip()
@@ -2264,6 +2289,7 @@ def transform_form():
     output_form = request.args.get("form", "").strip()
 
     video_rows, book_rows, example_rows = _transform_inputs()
+    input_options = _transform_input_options(video_rows, book_rows, example_rows)
 
     prompt_text = None
     selected_test_id = None
@@ -2330,7 +2356,8 @@ def transform_form():
 
     return render_template(
         "transform_form.html", active="transform",
-        video_rows=video_rows, book_rows=book_rows, example_rows=example_rows, profiles=_profiles(),
+        video_rows=video_rows, book_rows=book_rows, example_rows=example_rows,
+        input_options=input_options, profiles=_profiles(),
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=selected_test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,
@@ -2349,6 +2376,7 @@ def transform_generate():
     output_form = request.form.get("form", "").strip()
 
     video_rows, book_rows, example_rows = _transform_inputs()
+    input_options = _transform_input_options(video_rows, book_rows, example_rows)
 
     if not test_id or not profile:
         flash("Generate the prompt first (pick an input + target profile above).")
@@ -2378,7 +2406,8 @@ def transform_generate():
 
     return render_template(
         "transform_form.html", active="transform",
-        video_rows=video_rows, book_rows=book_rows, example_rows=example_rows, profiles=_profiles(),
+        video_rows=video_rows, book_rows=book_rows, example_rows=example_rows,
+        input_options=input_options, profiles=_profiles(),
         selected_source=source, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,

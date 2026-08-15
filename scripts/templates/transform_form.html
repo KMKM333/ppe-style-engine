@@ -7,9 +7,11 @@
 <div class="card">
   <form method="get" action="{{ url_for('transform_form') }}">
     <div class="flex">
-      <div>
-        <label for="source">Input</label>
-        <select id="source" name="source">
+      <div style="position:relative">
+        <label for="input-search">Input</label>
+        <input type="text" id="input-search" autocomplete="off" placeholder="Search videos, books, examples by title, channel, or author…">
+        <div id="input-search-results" class="input-search-results" style="display:none"></div>
+        <select id="source" name="source" style="margin-top:6px">
           <option value="">— choose an ingested input —</option>
           {% if video_rows %}
           <optgroup label="Videos">
@@ -155,4 +157,59 @@
   </div>
 </details>
 {% endif %}
+
+<script>
+(function () {
+  var OPTIONS = {{ input_options|tojson }};
+  var BY_VALUE = {};
+  OPTIONS.forEach(function (o) { BY_VALUE[o.value] = o; });
+
+  var searchBox = document.getElementById('input-search');
+  var resultsBox = document.getElementById('input-search-results');
+  var select = document.getElementById('source');
+
+  var preselected = BY_VALUE[select.value];
+  if (preselected) searchBox.value = preselected.label;
+
+  function renderResults(q) {
+    resultsBox.innerHTML = '';
+    var matches = OPTIONS.filter(function (o) { return o.search.indexOf(q) !== -1; }).slice(0, 40);
+    if (!matches.length) {
+      var empty = document.createElement('div');
+      empty.className = 'input-search-empty';
+      empty.textContent = 'No matches';
+      resultsBox.appendChild(empty);
+    } else {
+      matches.forEach(function (o) {
+        var row = document.createElement('div');
+        row.className = 'input-search-row';
+        row.innerHTML = '<span class="input-search-kind">' + o.kind + '</span>' + o.label;
+        row.addEventListener('click', function () {
+          select.value = o.value;
+          searchBox.value = o.label;
+          resultsBox.style.display = 'none';
+        });
+        resultsBox.appendChild(row);
+      });
+    }
+    resultsBox.style.display = '';
+  }
+
+  searchBox.addEventListener('input', function () {
+    var q = searchBox.value.trim().toLowerCase();
+    if (!q) { resultsBox.style.display = 'none'; return; }
+    renderResults(q);
+  });
+  searchBox.addEventListener('focus', function () {
+    if (searchBox.value.trim()) renderResults(searchBox.value.trim().toLowerCase());
+  });
+  select.addEventListener('change', function () {
+    var o = BY_VALUE[select.value];
+    searchBox.value = o ? o.label : '';
+  });
+  document.addEventListener('click', function (e) {
+    if (e.target !== searchBox && !resultsBox.contains(e.target)) resultsBox.style.display = 'none';
+  });
+})();
+</script>
 {% endblock %}

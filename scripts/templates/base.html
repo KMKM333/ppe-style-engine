@@ -136,6 +136,22 @@
     display:inline-block; margin-left:6px; padding:0 5px; border-radius:999px; font-size:10px;
     background: rgba(var(--accent-rgb),.25); color: var(--accent);
   }
+  .input-search-results {
+    position:absolute; z-index:20; top:100%; left:0; right:0; margin-top:2px; max-height:260px;
+    overflow-y:auto; background: var(--panel2); border:1px solid var(--border); border-radius:8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  }
+  .input-search-row {
+    padding:8px 10px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--border);
+  }
+  .input-search-row:last-child { border-bottom:none; }
+  .input-search-row:hover { background: rgba(var(--accent-rgb),.12); }
+  .input-search-kind {
+    display:inline-block; margin-right:6px; padding:1px 6px; border-radius:999px; font-size:10px;
+    font-weight:700; text-transform:uppercase; letter-spacing:.03em;
+    background: rgba(var(--accent-rgb),.18); color: var(--accent);
+  }
+  .input-search-empty { padding:10px; font-size:13px; color: var(--muted); }
   .score { font-weight:700; }
   .score.good { color: var(--good); }
   .score.mid { color: var(--mid); }

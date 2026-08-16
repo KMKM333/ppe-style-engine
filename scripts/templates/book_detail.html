@@ -38,16 +38,16 @@
   <code>python3 auto_process_book.py --book_id {{ book.book_id }}</code> to retry manually.
 </div>
 {% else %}
-{% if xlarge_fit %}
-<h2>X-Large style fit</h2>
+{% if macro_fit %}
+<h2>Attribute category fit</h2>
 <div class="sub" style="margin-top:-6px">
   How closely this book's classified attributes match its best-fitting author profile ({{ profile_scores[0].profile_code }}),
-  rolled up into the same five cross-media categories as the
+  rolled up into the same shared macro categories as the
   <a href="{{ url_for('attributes_page') }}">Attributes page</a> — comparable to a video creation's
-  X-Large fit scores, even though the underlying fields are completely different.
+  category fit scores, even though the underlying fields are completely different.
 </div>
 <div class="macros">
-  {% for name, score in xlarge_fit.items() %}
+  {% for name, score in macro_fit.items() %}
   <div class="macro-card">
     <h3>{{ name }}</h3>
     <div class="mpct score {{ 'good' if score >= 70 else ('mid' if score >= 40 else 'bad') }}">{{ score }}</div>

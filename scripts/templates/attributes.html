@@ -4,9 +4,11 @@
 <h1>Attributes</h1>
 <div class="sub">
   Every stylistic/structural attribute the engine tracks, from single fields up to media-wide categories.
-  Sub-micro attributes (distinct values, ranges, true/false) roll up into micro attributes like
-  <code>bias_assumptions</code>, which roll up into per-media macros like "Evidence &amp; Authority" —
-  and those macros roll up once more, below, into five X-Large groups spanning every medium.
+  Books and Instagram shorts are both organized under the same 14 macro categories — Diction, Rhetoric,
+  Content Taxonomy, Delivery, Thesis &amp; Purpose, Evidence &amp; Authority, Tone &amp; Voice, Structure &amp;
+  Organization, Target Audience, Bias &amp; Assumptions, Argument &amp; Reasoning, Context &amp; Positioning,
+  Style &amp; Craft, and Readability — so the two media can be cross-referenced macro-for-macro instead of
+  only approximately.
 </div>
 
 <h2 style="margin-top:0">Attribute field share by media type</h2>
@@ -36,20 +38,25 @@
 </div>
 {% endif %}
 
-<h2>X-Large Attributes</h2>
+<h2>Shared attribute categories</h2>
 <div class="sub" style="margin-top:-6px">
-  The level above per-media macros: Books' 9 macro groups and Instagram's 5 collapse into five shared
-  categories, each blending both media's qualitative coverage into a single score. This is the broadest
-  read on how consistently the engine is capturing style, across everything it currently ingests.
+  Books' and shorts' coverage side by side within each of the 14 shared macros. A 0% side isn't a bug — it
+  means that medium's rubric doesn't cover that dimension yet (books have no Delivery/CTA concept; video's
+  Auto/Class fields don't reach Style &amp; Craft's literary-craft depth yet).
 </div>
 
 <div class="macros">
-  {% for g in xlarge_groups %}
+  {% for m in shared_macros %}
   <div class="macro-card">
-    <h3>{{ g.name }}</h3>
-    <div class="mpct score {{ 'good' if g.avg_pct >= 80 else ('mid' if g.avg_pct >= 30 else 'bad') }}">{{ g.avg_pct }}%</div>
-    <div class="bar"><div class="bar-fill" style="width:{{ g.avg_pct }}%;background:{{ 'var(--good)' if g.avg_pct >= 80 else ('var(--mid)' if g.avg_pct >= 30 else 'var(--bad)') }}"></div></div>
-    <div class="mmeta">{{ g.desc }}</div>
+    <h3>{{ m.name }}</h3>
+    <div style="margin-top:8px">
+      <div class="mmeta" style="margin:0 0 3px">📚 Books &middot; {{ m.book.count }} field{{ '' if m.book.count == 1 else 's' }}</div>
+      <div class="bar"><div class="bar-fill" style="width:{{ m.book.avg_pct }}%;background:{{ 'var(--good)' if m.book.avg_pct >= 80 else ('var(--mid)' if m.book.avg_pct >= 30 else 'var(--bad)') }}"></div></div>
+      <div class="mpct score {{ 'good' if m.book.avg_pct >= 80 else ('mid' if m.book.avg_pct >= 30 else 'bad') }}" style="font-size:15px;margin:2px 0 10px">{{ m.book.avg_pct }}%</div>
+      <div class="mmeta" style="margin:0 0 3px">📱 Shorts &middot; {{ m.video.count }} field{{ '' if m.video.count == 1 else 's' }}</div>
+      <div class="bar"><div class="bar-fill" style="width:{{ m.video.avg_pct }}%;background:{{ 'var(--good)' if m.video.avg_pct >= 80 else ('var(--mid)' if m.video.avg_pct >= 30 else 'var(--bad)') }}"></div></div>
+      <div class="mpct score {{ 'good' if m.video.avg_pct >= 80 else ('mid' if m.video.avg_pct >= 30 else 'bad') }}" style="font-size:15px;margin:2px 0 0">{{ m.video.avg_pct }}%</div>
+    </div>
   </div>
   {% endfor %}
 </div>

@@ -45,15 +45,15 @@
 </div>
 {% endif %}
 
-<h2>X-Large style fit</h2>
+<h2>Attribute category fit</h2>
 <div class="sub" style="margin-top:-6px">
-  How well this creation fits {{ t.profile_code }}, rolled up into the same five cross-media categories
-  as the <a href="{{ url_for('attributes_page') }}">Attributes page</a> — comparable to a book's X-Large
-  fit scores on its own detail page, even though the underlying fields are completely different.
+  How well this creation fits {{ t.profile_code }}, rolled up into the same shared macro categories as
+  the <a href="{{ url_for('attributes_page') }}">Attributes page</a> — comparable to a book's category fit
+  scores on its own detail page, even though the underlying fields are completely different.
 </div>
-{% if xlarge_fit %}
+{% if macro_fit %}
 <div class="macros">
-  {% for name, score in xlarge_fit.items() %}
+  {% for name, score in macro_fit.items() %}
   <div class="macro-card">
     <h3>{{ name }}</h3>
     <div class="mpct score {{ 'good' if score >= 70 else ('mid' if score >= 40 else 'bad') }}">{{ score }}</div>

@@ -327,25 +327,47 @@ def workflow_save():
     )
 
 
+# 14 macro categories shared with BOOK_ATTRIBUTE_SECTIONS below (plus a
+# bookkeeping-only "Meta" bucket), so both media roll up into the exact same
+# vocabulary and can be cross-referenced macro-for-macro instead of only at
+# an approximate 5-bucket X-Large level. Video's old micro-sections (Title,
+# Length & pacing, Structure, Hook, Close, Engagement/CTA) don't survive as
+# separate groupings — their fields moved into whichever of the 14 fits best
+# (mostly Structure & Organization and Delivery). Diction, Rhetoric, Content
+# Taxonomy, and Delivery already existed as video sections under these near-
+# exact names; Thesis & Purpose / Evidence & Authority / Tone & Voice /
+# Target Audience / Bias & Assumptions / Argument & Reasoning / Context &
+# Positioning are new for video, seeded with whichever existing fields fit
+# best. Style & Craft has no video Auto/Class field yet (that's an honest
+# gap: video's rubric doesn't compute literary-craft fields the way the
+# book rubric's LLM classification pass does).
 ATTRIBUTE_SECTIONS = [
-    ("Title", ["title_format", "title_names_source", "title_word_count"]),
-    ("Length & pacing", ["word_count", "beat_count", "avg_sentence_len", "median_sentence_len",
-                          "sentence_len_variance", "sentence_rhythm_cv", "time_to_payoff_pct", "reveal_placement"]),
-    ("Structure", ["beat_sequence", "formula_explicit", "framework_marker_count",
-                   "closing_paragraph_ratio", "references_external_media"]),
-    ("Hook", ["hook_type", "hook_word_count", "hook_names_source", "hook_source_word_position",
-              "hook_ends_on_pivot", "hook_self_demonstrating"]),
-    ("Close", ["close_type", "ends_on_question", "callback_to_hook"]),
-    ("Diction", ["you_freq_per_100w", "i_freq_per_100w", "question_count", "emdash_count",
-                 "quote_count", "jargon_density", "colloquialism_density", "readability_score",
-                 "register_shift_at_cta", "filler_retention", "filler_count",
-                 "number_count", "instruction_verb_count", "lexical_diversity", "punctuation_density"]),
-    ("Rhetoric", ["citation_style", "analogy_count", "names_bias_or_law", "named_bias_or_law_term",
-                  "dialectic_structure", "certainty_register", "rule_of_three_present", "rule_of_three_count",
-                  "rhetorical_mode", "explanation_mechanism", "contrast_structure_count"]),
-    ("Content taxonomy", ["domain", "concept_type", "source_era", "framing", "named_entity_count"]),
-    ("Delivery", ["script_polish", "emphasis_markers_present", "humor_marker_count"]),
-    ("Engagement / CTA", ["has_cta", "cta_type", "cta_placement", "cta_count"]),
+    ("Diction", ["you_freq_per_100w", "emdash_count", "quote_count", "register_shift_at_cta",
+                 "filler_retention", "filler_count", "instruction_verb_count", "lexical_diversity",
+                 "punctuation_density"]),
+    ("Rhetoric", ["analogy_count", "rule_of_three_present", "rule_of_three_count",
+                  "explanation_mechanism", "contrast_structure_count"]),
+    ("Content Taxonomy", ["domain", "concept_type", "framing", "named_entity_count"]),
+    ("Delivery", ["script_polish", "emphasis_markers_present", "humor_marker_count",
+                  "has_cta", "cta_type", "cta_placement", "cta_count"]),
+    ("Thesis & Purpose", ["rhetorical_mode"]),
+    ("Evidence & Authority", ["citation_style", "number_count"]),
+    ("Tone & Voice", ["certainty_register", "i_freq_per_100w", "colloquialism_density"]),
+    ("Structure & Organization", ["title_format", "title_names_source", "title_word_count",
+                                   "word_count", "beat_count", "time_to_payoff_pct", "reveal_placement",
+                                   "beat_sequence", "formula_explicit", "framework_marker_count",
+                                   "closing_paragraph_ratio", "references_external_media",
+                                   "hook_type", "hook_word_count", "hook_names_source",
+                                   "hook_source_word_position", "hook_ends_on_pivot",
+                                   "hook_self_demonstrating", "close_type", "ends_on_question",
+                                   "callback_to_hook"]),
+    ("Target Audience", ["jargon_density"]),
+    ("Bias & Assumptions", ["names_bias_or_law", "named_bias_or_law_term"]),
+    ("Argument & Reasoning", ["dialectic_structure", "question_count"]),
+    ("Context & Positioning", ["source_era"]),
+    ("Style & Craft", []),
+    ("Readability", ["avg_sentence_len", "median_sentence_len", "sentence_len_variance",
+                      "sentence_rhythm_cv", "readability_score"]),
     ("Meta", ["classified_by", "classified_at"]),
 ]
 
@@ -458,17 +480,6 @@ FIELD_DESCRIPTIONS = {
     "cta_count": "Number of calls-to-action present.",
 }
 
-MACRO_GROUPS = [
-    ("Structure & Pacing", ["Title", "Length & pacing", "Structure", "Hook", "Close"]),
-    ("Voice & Diction", ["Diction"]),
-    ("Rhetoric & Persuasion", ["Rhetoric"]),
-    ("Content & Delivery", ["Content taxonomy", "Delivery"]),
-    ("Engagement & CTA", ["Engagement / CTA"]),
-]
-
-SECTION_TO_MACRO = {section: macro for macro, sections in MACRO_GROUPS for section in sections}
-
-
 def _fmt_num(v):
     if v is None:
         return "—"
@@ -507,13 +518,13 @@ def _auto_summary(script, max_chars=110):
 
 
 def _profile_macro_coverage(conn, profile_id):
-    """For a given profile, roll up all 50 tracked attributes into the 5
-    macro categories and report what share of each macro's attributes
-    actually made it into this profile's fingerprint (numeric or
-    categorical). An attribute can be missing either because no video has
-    been classified for it yet, or because profile_builder.py doesn't
-    fingerprint that field at all (e.g. the boolean flags) — both show up
-    the same way here: not yet part of the fingerprint."""
+    """For a given profile, roll up all tracked attributes into the shared
+    14 macro categories (see ATTRIBUTE_SECTIONS) and report what share of
+    each macro's attributes actually made it into this profile's fingerprint
+    (numeric or categorical). An attribute can be missing either because no
+    video has been classified for it yet, or because profile_builder.py
+    doesn't fingerprint that field at all (e.g. the boolean flags) — both
+    show up the same way here: not yet part of the fingerprint."""
     present = {
         r["attribute"] for r in conn.execute(
             "SELECT DISTINCT attribute FROM profile_fingerprint_numeric WHERE profile_id=?", (profile_id,)
@@ -525,11 +536,12 @@ def _profile_macro_coverage(conn, profile_id):
     }
 
     macros = []
-    for macro_name, sections in MACRO_GROUPS:
-        fields = [f for s in sections for f in dict(ATTRIBUTE_SECTIONS).get(s, [])]
+    for section_name, fields in ATTRIBUTE_SECTIONS:
+        if section_name == "Meta":
+            continue
         covered = sum(1 for f in fields if f in present)
         pct = round(covered / len(fields) * 100, 1) if fields else 0.0
-        macros.append({"name": macro_name, "count": len(fields), "covered": covered, "pct": pct})
+        macros.append({"name": section_name, "count": len(fields), "covered": covered, "pct": pct})
     return macros
 
 
@@ -627,8 +639,7 @@ def _video_attribute_field_rows(conn, media_type_filter):
                     extra = f"{distinct} distinct value{'s' if distinct != 1 else ''}"
 
             field_rows.append({
-                "name": field, "type": ftype, "section": section_name,
-                "macro": SECTION_TO_MACRO.get(section_name, "Other"),
+                "name": field, "type": ftype, "section": section_name, "macro": section_name,
                 "description": FIELD_DESCRIPTIONS.get(field, ""),
                 "populated": populated, "total": total, "pct": pct, "extra": extra,
             })
@@ -707,74 +718,30 @@ def _attribute_cards(conn):
     return cards
 
 
-def _xlarge_macro_cards(conn):
-    """The level above per-media macros: every macro group from every
-    implemented media type, combined into one flat list. Books and
-    Instagram each already roll their own micro attributes up into macros
-    (BOOK_ATTRIBUTE_SECTIONS / MACRO_GROUPS) — this just lines those two
-    macro sets up side by side rather than computing anything new."""
-    cards = []
-
+def _shared_macro_cards(conn):
+    """The 14 macro categories both media are now organized under (see
+    ATTRIBUTE_SECTIONS / BOOK_ATTRIBUTE_SECTIONS) — the tier where books and
+    shorts can be compared macro-for-macro, since both taxonomies already
+    use the same names instead of needing a separate X-Large rollup to
+    approximately line up two different macro sets. A macro with 0 fields on
+    one side (e.g. Content Taxonomy/Delivery for books, Style & Craft for
+    video) is an honest gap, not an error — that medium's rubric just
+    doesn't cover that dimension yet."""
     _, book_rows = _book_attribute_field_rows(conn)
-    for m in _macro_summary(book_rows, [name for name, _ in BOOK_ATTRIBUTE_SECTIONS]):
-        cards.append({**m, "media_slug": "books", "media_icon": "📚", "media_name": "Books"})
+    macro_names = [name for name, _ in ATTRIBUTE_SECTIONS if name != "Meta"]
+    book_macros = {m["name"]: m for m in _macro_summary(book_rows, macro_names)}
 
     _, video_rows = _video_attribute_field_rows(conn, "Instagram")
-    for m in _macro_summary(video_rows, [name for name, _ in MACRO_GROUPS]):
-        cards.append({**m, "media_slug": "instagram", "media_icon": "📱", "media_name": "Short videos, Instagram"})
+    video_macros = {m["name"]: m for m in _macro_summary(video_rows, macro_names)}
 
-    return cards
-
-
-# The 14 per-media macros collapsed one level further, into 5 cross-media
-# groups — the "X-Large" tier. Each entry: (group name, member macro names,
-# blurb). Member names are matched against the macro names already produced
-# by _xlarge_macro_cards (BOOK_ATTRIBUTE_SECTIONS / MACRO_GROUPS labels).
-XLARGE_GROUPS = [
-    ("Structure & Pacing", ["Structure & Organization", "Structure & Pacing"],
-     "How the piece is organized and paced."),
-    ("Voice & Diction", ["Tone & Voice", "Readability", "Voice & Diction", "Style & Craft"],
-     "Tone, readability, word choice, and literary craft."),
-    ("Argument & Evidence", ["Evidence & Authority", "Argument & Reasoning", "Bias & Assumptions", "Rhetoric & Persuasion"],
-     "Reasoning, evidence, bias, and persuasion."),
-    ("Audience & Context", ["Thesis & Purpose", "Target Audience", "Context & Positioning", "Content & Delivery"],
-     "Who it's for and how it's framed."),
-    ("Engagement & Delivery", ["Engagement & CTA"],
-     "Hooks, CTAs, and delivery mechanics."),
-]
-
-
-def _xlarge_groups(conn):
-    macro_cards = _xlarge_macro_cards(conn)
-    by_name = {m["name"]: m for m in macro_cards}
-
-    groups = []
-    for group_name, member_names, desc in XLARGE_GROUPS:
-        members = [by_name[n] for n in member_names if n in by_name]
-        total_count = sum(m["count"] for m in members)
-        avg_pct = round(sum(m["avg_pct"] * m["count"] for m in members) / total_count, 1) if total_count else 0.0
-        icons = []
-        for m in members:
-            if m["media_icon"] not in icons:
-                icons.append(m["media_icon"])
-        groups.append({
-            "name": group_name,
-            "desc": desc,
-            "icon": "".join(icons) or "🗂️",
-            "count": total_count,
-            "avg_pct": avg_pct,
-            "fully_populated": sum(m["fully_populated"] for m in members),
-            "empty": sum(m["empty"] for m in members),
-            "sources": members,
-        })
-    return groups
+    return [{"name": name, "book": book_macros.get(name), "video": video_macros.get(name)} for name in macro_names]
 
 
 @app.route("/attributes")
 def attributes_page():
     conn = get_conn()
     cards = _attribute_cards(conn)
-    xlarge_groups = _xlarge_groups(conn)
+    shared_macros = _shared_macro_cards(conn)
     conn.close()
     # Share of the total attribute FIELD CATALOG each implemented media type
     # contributes (45 book fields, 63 Instagram fields, etc) — reuses the same
@@ -783,7 +750,7 @@ def attributes_page():
     media_field_weight = {c["name"]: c["field_count"] for c in cards if c["implemented"] and c["field_count"]}
     attribute_media_share = _valuation_slices(media_field_weight)
     return render_template(
-        "attributes.html", active="attributes", cards=cards, xlarge_groups=xlarge_groups,
+        "attributes.html", active="attributes", cards=cards, shared_macros=shared_macros,
         attribute_media_share=attribute_media_share,
     )
 
@@ -804,11 +771,11 @@ def attribute_media_detail(slug):
     conn = get_conn()
     if slug == "instagram":
         total, field_rows = _video_attribute_field_rows(conn, "Instagram")
-        macro_names = [name for name, _ in MACRO_GROUPS]
+        macro_names = [name for name, _ in ATTRIBUTE_SECTIONS if name != "Meta"]
         macros = _macro_summary(field_rows, macro_names)
         sections_out = [
             (section_name, [r for r in field_rows if r["section"] == section_name])
-            for section_name, _ in ATTRIBUTE_SECTIONS if section_name != "Meta"
+            for section_name, fields in ATTRIBUTE_SECTIONS if section_name != "Meta" and fields
         ]
     else:  # books
         total, field_rows = _book_attribute_field_rows(conn)
@@ -816,7 +783,7 @@ def attribute_media_detail(slug):
         macros = _macro_summary(field_rows, macro_names)
         sections_out = [
             (section_name, [r for r in field_rows if r["section"] == section_name])
-            for section_name, _ in BOOK_ATTRIBUTE_SECTIONS
+            for section_name, fields in BOOK_ATTRIBUTE_SECTIONS if fields
         ]
     conn.close()
 
@@ -1342,15 +1309,16 @@ VALUATION_COLORS = [
 
 
 def _score_field_to_macro():
-    """Maps every scoreable attribute name to its macro category — video
-    fields roll up through ATTRIBUTE_SECTIONS -> SECTION_TO_MACRO the same
-    way the Attributes page does; book fields use their BOOK_ATTRIBUTE_SECTIONS
-    section directly, since book sections are already macro-sized."""
+    """Maps every scoreable attribute name to its macro category. Both
+    ATTRIBUTE_SECTIONS (video) and BOOK_ATTRIBUTE_SECTIONS (books) are
+    already organized under the same shared 14 macro names, so this is a
+    direct section->macro mapping for both — no separate rollup layer
+    needed (that used to go through video-only SECTION_TO_MACRO before the
+    two taxonomies were unified)."""
     field_to_macro = {}
     for section_name, fields in ATTRIBUTE_SECTIONS:
-        macro = SECTION_TO_MACRO.get(section_name, section_name)
         for f in fields:
-            field_to_macro[f] = macro
+            field_to_macro[f] = section_name
     for section_name, fields in BOOK_ATTRIBUTE_SECTIONS:
         for f in fields:
             field_to_macro.setdefault(f, section_name)
@@ -1414,24 +1382,6 @@ def _macro_subscore_from_breakdown(breakdown, field_to_macro):
     if not macro_scores:
         return None
     return {m: round(sum(vals) / len(vals), 1) for m, vals in macro_scores.items()}
-
-
-def _xlarge_subscores(macro_subscore):
-    """Rolls per-medium macro fit-scores up into the 5 shared XLARGE_GROUPS
-    buckets — the tier where cross-media comparison becomes valid, since
-    both books' 9 macros and Instagram's 5 already map into these same 5
-    names (see XLARGE_GROUPS). Each bucket's score is the plain average of
-    whichever member macros are present for this item's medium; a bucket
-    with none of its member macros present is simply omitted rather than
-    padded with a fake 0."""
-    if not macro_subscore:
-        return None
-    out = {}
-    for group_name, member_names, _desc in XLARGE_GROUPS:
-        vals = [macro_subscore[m] for m in member_names if m in macro_subscore]
-        if vals:
-            out[group_name] = round(sum(vals) / len(vals), 1)
-    return out or None
 
 
 def _creation_valuation(breakdown):
@@ -1502,11 +1452,10 @@ def creation_detail(transformation_id):
     breakdown = json.loads(target_score["score_breakdown"]) if target_score and target_score["score_breakdown"] else {}
     valuation = _creation_valuation(breakdown)
     macro_fit = _macro_subscore_from_breakdown(breakdown, _score_field_to_macro())
-    xlarge_fit = _xlarge_subscores(macro_fit) if macro_fit else None
 
     return render_template(
         "creation_detail.html", active="creations",
-        t=t, scores=scores, valuation=valuation, xlarge_fit=xlarge_fit,
+        t=t, scores=scores, valuation=valuation, macro_fit=macro_fit,
     )
 
 
@@ -1676,16 +1625,28 @@ def subject_detail(subject):
     return render_template("subject_detail.html", active="subjects", subject=subject, profiles=matched)
 
 
+# Same 14 shared macro names as ATTRIBUTE_SECTIONS above. Books' own rubric
+# already matched 10 of these almost verbatim; this just splits "diction"
+# and "syntax_pattern" out of the old Style & Craft grouping into their own
+# Diction bucket, and pulls rhetorical_appeal_balance into Rhetoric — moves
+# that make books line up with video's Diction/Rhetoric sections directly.
+# Content Taxonomy and Delivery have no book-rubric equivalent (books have
+# no subject-taxonomy or CTA/delivery-mechanic fields), so they're empty for
+# books — an honest gap, not a bug: those two buckets stay video-only.
 BOOK_ATTRIBUTE_SECTIONS = [
+    ("Diction", ["diction", "syntax_pattern"]),
+    ("Rhetoric", ["rhetorical_appeal_balance"]),
+    ("Content Taxonomy", []),
+    ("Delivery", []),
     ("Thesis & Purpose", ["thesis_statement", "primary_goal"]),
     ("Evidence & Authority", ["primary_evidence_type", "secondary_evidence_types", "citation_density"]),
-    ("Tone & Voice", ["tone", "rhetorical_appeal_balance", "emotional_register", "narrative_voice", "polemical_tone", "narrative_presence"]),
+    ("Tone & Voice", ["tone", "emotional_register", "narrative_voice", "polemical_tone", "narrative_presence"]),
     ("Structure & Organization", ["structure_style", "uses_visual_aids", "subheading_density", "thesis_consistency"]),
     ("Target Audience", ["target_audience", "vocabulary_complexity", "jargon_accessibility"]),
     ("Bias & Assumptions", ["bias_assumptions", "counter_argument_engagement", "ideological_positioning"]),
     ("Argument & Reasoning", ["argument_architecture", "prescriptiveness", "claim_falsifiability", "narrative_density", "argumentative_density", "abstraction_concreteness_balance", "hedging_vs_assertion", "rhetorical_questioning"]),
     ("Context & Positioning", ["temporal_orientation", "interdisciplinary_fields", "named_frameworks_coined", "comparative_positioning"]),
-    ("Style & Craft", ["diction", "syntax_pattern", "pacing", "sensory_language_density", "narrative_distance", "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain"]),
+    ("Style & Craft", ["pacing", "sensory_language_density", "narrative_distance", "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain"]),
     ("Readability", ["avg_sentence_len", "avg_syllables_per_word", "readability_score"]),
 ]
 
@@ -1883,17 +1844,20 @@ def book_detail(book_id):
     is_classified = attrs.get("classified_by") not in (None, "pending", "needs_review")
     attr_sections = []
     for name, fields in BOOK_ATTRIBUTE_SECTIONS:
+        if not fields:
+            continue
         attr_sections.append((name, [(BOOK_FIELD_LABELS[f], attrs.get(f)) for f in fields]))
 
-    # Best-fit author profiles + X-Large fit scores, the book-side counterpart
-    # to a video creation's profile ranking — only meaningful once classified,
-    # since it correlates this book's own rubric values against other book
-    # profiles' fingerprints.
+    # Best-fit author profiles + macro-level fit scores, the book-side
+    # counterpart to a video creation's profile ranking — only meaningful
+    # once classified, since it correlates this book's own rubric values
+    # against other book profiles' fingerprints. macro_fit uses the same 14
+    # shared macro names as ATTRIBUTE_SECTIONS/BOOK_ATTRIBUTE_SECTIONS, so
+    # it's directly comparable to a video creation's macro_fit.
     profile_scores = score_book_against_profiles(attrs) if is_classified else []
-    xlarge_fit = None
+    macro_fit = None
     if profile_scores:
         macro_fit = _macro_subscore_from_breakdown(profile_scores[0]["breakdown"], _score_field_to_macro())
-        xlarge_fit = _xlarge_subscores(macro_fit) if macro_fit else None
 
     source_file_url = None
     if book["source_file_path"]:
@@ -1903,7 +1867,7 @@ def book_detail(book_id):
         "book_detail.html", active="books", book=book, attr_sections=attr_sections,
         chapters=chapters, unsectioned_examples=unsectioned_examples, is_classified=is_classified,
         needs_review=needs_review, classification_error=attrs.get("classification_error"),
-        profile_scores=profile_scores, xlarge_fit=xlarge_fit,
+        profile_scores=profile_scores, macro_fit=macro_fit,
         source_file_url=source_file_url,
     )
 

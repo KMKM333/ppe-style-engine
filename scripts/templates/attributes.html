@@ -49,7 +49,7 @@
 
 <div class="macros">
   {% for m in shared_macros %}
-  <div class="macro-card">
+  <a class="macro-card" style="text-decoration:none;color:inherit;display:block;cursor:pointer" href="{{ url_for('attribute_category_detail', slug=m.slug) }}">
     <h3>{{ m.name }}</h3>
     <div style="margin-top:8px">
       <div class="mmeta" style="margin:0 0 3px">📚 Books &middot; {{ m.book.count }} field{{ '' if m.book.count == 1 else 's' }}</div>
@@ -59,7 +59,7 @@
       <div class="bar"><div class="bar-fill" style="width:{{ m.video.avg_pct }}%;background:{{ 'var(--good)' if m.video.avg_pct >= 80 else ('var(--mid)' if m.video.avg_pct >= 30 else 'var(--bad)') }}"></div></div>
       <div class="mpct score {{ 'good' if m.video.avg_pct >= 80 else ('mid' if m.video.avg_pct >= 30 else 'bad') }}" style="font-size:15px;margin:2px 0 0">{{ m.video.avg_pct }}%</div>
     </div>
-  </div>
+  </a>
   {% endfor %}
 </div>
 

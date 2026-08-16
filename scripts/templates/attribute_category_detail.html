@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.name }} — Attributes{% endblock %}
+{% block content %}
+<h1>{{ detail.name }}</h1>
+<div class="sub">{{ detail.blurb }}</div>
+
+<h2 style="margin-top:0">What it analyses</h2>
+<div class="sub" style="margin-top:-6px">
+  Every field from either medium that rolls up into this shared category — see
+  <a href="{{ url_for('attributes_page') }}">Attributes</a> for the full catalog.
+</div>
+<div class="card">
+  {% if detail.fields %}
+  <table>
+    <tr><th>Field</th><th>Medium</th><th>Description</th></tr>
+    {% for f in detail.fields %}
+    <tr>
+      <td><code>{{ f.field }}</code></td>
+      <td class="muted">{{ f.medium }}</td>
+      <td>{{ f.description }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No fields map to this category yet.</div>
+  {% endif %}
+</div>
+
+<h2>Most prominent profile styles</h2>
+<div class="sub" style="margin-top:-6px">
+  For each categorical field, the profile whose fingerprint leans hardest on one value — read directly
+  off the fingerprint tables, not curated by hand.
+</div>
+{% if detail.categorical_highlights %}
+<div class="card">
+  <table>
+    <tr><th>Field</th><th>Medium</th><th>Profile</th><th>Dominant value</th><th style="width:80px">Share</th><th>Seen in</th></tr>
+    {% for h in detail.categorical_highlights %}
+    <tr>
+      <td><code>{{ h.field }}</code></td>
+      <td class="muted">{{ h.medium }}</td>
+      <td><a href="{{ url_for('profile_detail', code=h.top_profile) }}"><strong>{{ h.top_profile }}</strong></a></td>
+      <td>{{ h.top_value }}</td>
+      <td class="check-pass">{{ h.top_share }}%</td>
+      <td>
+        {% for ex in h.examples %}
+        <a href="{{ ex.url }}">{{ ex.label }}</a>{{ ', ' if not loop.last }}
+        {% else %}
+        <span class="muted">—</span>
+        {% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+<div class="card"><div class="empty">No categorical fields with fingerprint data yet.</div></div>
+{% endif %}
+
+<h2>Numeric extremes</h2>
+<div class="sub" style="margin-top:-6px">
+  For each numeric field, the profile with the highest average value, and the actual ingested items
+  that score most extreme on it.
+</div>
+{% if detail.numeric_highlights %}
+<div class="card">
+  <table>
+    <tr><th>Field</th><th>Medium</th><th>Highest-averaging profile</th><th style="width:100px">Mean</th><th>Most extreme examples</th></tr>
+    {% for h in detail.numeric_highlights %}
+    <tr>
+      <td><code>{{ h.field }}</code></td>
+      <td class="muted">{{ h.medium }}</td>
+      <td><a href="{{ url_for('profile_detail', code=h.top_profile) }}"><strong>{{ h.top_profile }}</strong></a></td>
+      <td>{{ h.top_mean }}</td>
+      <td>
+        {% for ex in h.examples %}
+        <a href="{{ ex.url }}">{{ ex.label }}</a> <span class="muted">({{ ex.val }})</span>{{ ', ' if not loop.last }}
+        {% else %}
+        <span class="muted">—</span>
+        {% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+<div class="card"><div class="empty">No numeric fields with fingerprint data yet.</div></div>
+{% endif %}
+
+<h2>Cross-referencing</h2>
+<div class="card">
+  <p style="margin:0">
+    {{ detail.name }} is one of the 14 shared macro categories — books and shorts each map their own
+    native fields into it (see the table above), so even though the underlying vocabulary is completely
+    different, the resulting 0–100 fit score is directly comparable. You'll see this same category name on
+    a book's <strong>Attribute category fit</strong> section and a video creation's, and can eyeball one
+    against the other. For same-medium analysis instead — comparing one short against another, or one book
+    against another — use the medium's own native breakdown on its
+    <a href="{{ url_for('attribute_media_detail', slug='instagram') }}">Instagram</a> or
+    <a href="{{ url_for('attribute_media_detail', slug='books') }}">Books</a> attributes page, which groups
+    fields differently and isn't meant to be compared across media.
+  </p>
+</div>
+
+<a class="btn secondary" href="{{ url_for('attributes_page') }}">← All attributes</a>
+{% endblock %}

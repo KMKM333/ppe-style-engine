@@ -758,6 +758,152 @@ def _attribute_cards(conn):
     return cards
 
 
+def _macro_slug(name):
+    return name.lower().replace(" & ", "-").replace(" ", "-")
+
+
+# One or two sentences per shared macro, framed around what the category
+# actually captures across both media (not just a repeat of the field
+# names) — shown at the top of each category's detail page.
+SHARED_MACRO_BLURBS = {
+    "Diction": "Word-choice and phrasing mechanics — direct address, filler words, punctuation rhythm, "
+               "vocabulary richness, and (for books) formal diction and syntax register.",
+    "Rhetoric": "Persuasive technique — analogies, rule-of-three patterns, contrast structures, and how "
+                "hard an argument leans on logic versus emotion versus authority.",
+    "Content Taxonomy": "What the piece is actually about — subject domain, concept type, framing, and "
+                         "named entities referenced. Currently video-only; the book rubric doesn't tag "
+                         "subject taxonomy at the attribute level.",
+    "Delivery": "How the content is packaged and pushed toward action — production polish, emphasis "
+                "markers, humor, and calls-to-action. Currently video-only; books have no CTA/delivery "
+                "mechanic to capture.",
+    "Thesis & Purpose": "The piece's central claim and what it's trying to accomplish — inform, "
+                         "persuade, critique, or instruct.",
+    "Evidence & Authority": "What backs up the piece's claims — citation style, evidence type, and how "
+                             "much of the argument rests on cited sources versus bare assertion.",
+    "Tone & Voice": "The emotional/persuasive stance and narrator voice — how certain, personal, or "
+                    "polemical the piece reads.",
+    "Structure & Organization": "How the piece is built and paced — opening hooks, structural framework, "
+                                 "section/beat sequencing, and how it closes.",
+    "Target Audience": "Who the piece is written for — vocabulary complexity and how accessible its "
+                        "jargon is.",
+    "Bias & Assumptions": "Hidden viewpoints and unstated beliefs, and how directly the piece engages "
+                           "(or ignores) opposing views.",
+    "Argument & Reasoning": "The logical architecture underneath the claims — how they're built, how "
+                             "falsifiable they are, and how densely reasoned the piece is.",
+    "Context & Positioning": "How the piece situates itself in time and against other work — era, "
+                              "comparative references, and named frameworks it introduces.",
+    "Style & Craft": "Literary technique — sensory language, figurative language, narrative distance, "
+                      "and prose rhythm. Currently book-only; video's rubric doesn't reach this depth yet.",
+    "Readability": "How easy the piece is to read — sentence length and Flesch-Kincaid grade level.",
+}
+
+
+def _shared_macro_category_detail(conn, macro_name):
+    """Everything for one shared macro's cross-media detail page: its
+    constituent fields (both media), the profiles most characteristic of
+    each field (from the fingerprint tables, which already record "how
+    often does profile X use value Y" for categorical fields and mean/
+    extremes for numeric ones), and 1-2 real ingested items exemplifying
+    each of those — so "most prominent profile styles" and "examples where
+    it's applied most" are both read directly off real data, not curated
+    by hand."""
+    video_fields = dict(SHARED_ATTRIBUTE_SECTIONS).get(macro_name, [])
+    book_fields = dict(SHARED_BOOK_ATTRIBUTE_SECTIONS).get(macro_name, [])
+
+    fields = (
+        [{"field": f, "medium": "Short videos, Instagram", "type": FIELD_TYPES.get(f, "categorical"),
+          "description": FIELD_DESCRIPTIONS.get(f, "")} for f in video_fields]
+        + [{"field": f, "medium": "Books", "type": BOOK_FIELD_TYPES.get(f, "categorical"),
+            "description": BOOK_FIELD_LABELS.get(f, "")} for f in book_fields]
+    )
+
+    def _examples_for_value(field, value, medium):
+        if medium == "Short videos, Instagram":
+            rows = conn.execute(
+                f"""SELECT v.video_id AS id, v.title, c.channel_name AS source FROM video_attributes a
+                    JOIN videos v ON v.video_id = a.video_id JOIN channels c ON c.channel_id = v.channel_id
+                    WHERE a.{field} = ? LIMIT 2""",
+                (value,),
+            ).fetchall()
+            return [{"label": r["title"], "source": r["source"], "url": url_for("input_detail", video_id=r["id"])} for r in rows]
+        rows = conn.execute(
+            f"""SELECT b.book_id AS id, b.title, b.author AS source FROM book_attributes a
+                JOIN books b ON b.book_id = a.book_id WHERE a.{field} = ? LIMIT 2""",
+            (value,),
+        ).fetchall()
+        return [{"label": r["title"], "source": r["source"], "url": url_for("book_detail", book_id=r["id"])} for r in rows]
+
+    def _examples_for_extreme(field, medium, direction="DESC"):
+        if medium == "Short videos, Instagram":
+            rows = conn.execute(
+                f"""SELECT v.video_id AS id, v.title, c.channel_name AS source, a.{field} AS val FROM video_attributes a
+                    JOIN videos v ON v.video_id = a.video_id JOIN channels c ON c.channel_id = v.channel_id
+                    WHERE a.{field} IS NOT NULL ORDER BY a.{field} {direction} LIMIT 2""",
+            ).fetchall()
+            return [{"label": r["title"], "source": r["source"], "val": r["val"],
+                      "url": url_for("input_detail", video_id=r["id"])} for r in rows]
+        rows = conn.execute(
+            f"""SELECT b.book_id AS id, b.title, b.author AS source, a.{field} AS val FROM book_attributes a
+                JOIN books b ON b.book_id = a.book_id WHERE a.{field} IS NOT NULL ORDER BY a.{field} {direction} LIMIT 2""",
+        ).fetchall()
+        return [{"label": r["title"], "source": r["source"], "val": r["val"],
+                  "url": url_for("book_detail", book_id=r["id"])} for r in rows]
+
+    categorical_highlights = []
+    numeric_highlights = []
+    for finfo in fields:
+        field, medium, ftype = finfo["field"], finfo["medium"], finfo["type"]
+        if ftype in ("numeric",):
+            top = conn.execute(
+                """SELECT p.profile_code, p.media_type, fn.mean_val FROM profile_fingerprint_numeric fn
+                   JOIN style_profiles p ON p.profile_id = fn.profile_id
+                   WHERE fn.attribute = ? ORDER BY fn.mean_val DESC LIMIT 1""",
+                (field,),
+            ).fetchone()
+            if top:
+                numeric_highlights.append({
+                    "field": field, "description": finfo["description"], "medium": medium,
+                    "top_profile": top["profile_code"], "top_mean": round(top["mean_val"], 2),
+                    "examples": _examples_for_extreme(field, medium, "DESC"),
+                })
+        else:
+            top = conn.execute(
+                """SELECT p.profile_code, p.media_type, fc.value, fc.share_pct FROM profile_fingerprint_categorical fc
+                   JOIN style_profiles p ON p.profile_id = fc.profile_id
+                   WHERE fc.attribute = ? ORDER BY fc.share_pct DESC LIMIT 1""",
+                (field,),
+            ).fetchone()
+            if top:
+                categorical_highlights.append({
+                    "field": field, "description": finfo["description"], "medium": medium,
+                    "top_profile": top["profile_code"], "top_value": top["value"], "top_share": top["share_pct"],
+                    "examples": _examples_for_value(field, top["value"], medium),
+                })
+
+    categorical_highlights.sort(key=lambda h: h["top_share"], reverse=True)
+    return {
+        "name": macro_name,
+        "blurb": SHARED_MACRO_BLURBS.get(macro_name, ""),
+        "fields": fields,
+        "categorical_highlights": categorical_highlights,
+        "numeric_highlights": numeric_highlights,
+    }
+
+
+@app.route("/attributes/category/<slug>")
+def attribute_category_detail(slug):
+    shared_macro_names = [name for name, _ in SHARED_ATTRIBUTE_SECTIONS]
+    macro_name = next((n for n in shared_macro_names if _macro_slug(n) == slug), None)
+    if not macro_name:
+        flash(f"No such shared attribute category: {slug}")
+        return redirect(url_for("attributes_page"))
+
+    conn = get_conn()
+    detail = _shared_macro_category_detail(conn, macro_name)
+    conn.close()
+    return render_template("attribute_category_detail.html", active="attributes", detail=detail)
+
+
 def _shared_macro_cards(conn):
     """The 14 cross-media macro categories (SHARED_ATTRIBUTE_SECTIONS /
     SHARED_BOOK_ATTRIBUTE_SECTIONS) — the tier where books and shorts can be
@@ -787,7 +933,10 @@ def _shared_macro_cards(conn):
     video_rows_shared = [{**r, "macro": field_to_shared_macro.get(r["name"], "Other")} for r in video_rows]
     video_macros = {m["name"]: m for m in _macro_summary(video_rows_shared, shared_macro_names)}
 
-    return [{"name": name, "book": book_macros.get(name), "video": video_macros.get(name)} for name in shared_macro_names]
+    return [
+        {"name": name, "slug": _macro_slug(name), "book": book_macros.get(name), "video": video_macros.get(name)}
+        for name in shared_macro_names
+    ]
 
 
 @app.route("/attributes")

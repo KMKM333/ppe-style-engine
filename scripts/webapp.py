@@ -1611,6 +1611,18 @@ def _score_field_to_macro():
     return field_to_macro
 
 
+def _cross_media_shared_fields():
+    """The subset of field NAMES that literally appear in both
+    SHARED_ATTRIBUTE_SECTIONS (video) and SHARED_BOOK_ATTRIBUTE_SECTIONS
+    (book) — i.e. attributes scored the same way on a Short and on a book,
+    so a value on one side is directly comparable to a value on the other.
+    This is strictly smaller than _score_field_to_macro()'s domain, which
+    also covers each medium's native-only fields bucketed for display."""
+    video_fields = {f for _, fields in SHARED_ATTRIBUTE_SECTIONS for f in fields}
+    book_fields = {f for _, fields in SHARED_BOOK_ATTRIBUTE_SECTIONS for f in fields}
+    return video_fields & book_fields
+
+
 def _macro_weights_for_breakdown(breakdown, weights, field_to_macro):
     """Returns {macro: weight_sum} for one creation's score_breakdown dict
     ({attribute: subscore}) — each attribute present contributes its
@@ -1680,6 +1692,27 @@ def _creation_valuation(breakdown):
     return _valuation_slices(macro_weight) if macro_weight is not None else None
 
 
+def _creation_shared_valuation(breakdown):
+    """Like _creation_valuation, but restricted to the attributes this
+    creation was scored on that are also part of a book's rubric (see
+    _cross_media_shared_fields()) — the slice of the pie that could, in
+    principle, be benchmarked against a book profile on the exact same
+    dimensions. Returns (slices_or_None, n_shared, n_total)."""
+    if not breakdown or "content_match" in breakdown or "cross_media" in breakdown:
+        return None, 0, 0
+    shared_fields = _cross_media_shared_fields()
+    n_total = len(breakdown)
+    shared_breakdown = {k: v for k, v in breakdown.items() if k in shared_fields}
+    n_shared = len(shared_breakdown)
+    if not shared_breakdown:
+        return None, 0, n_total
+    conn = get_conn()
+    weights = {r["attribute"]: r["weight"] for r in conn.execute("SELECT attribute, weight FROM scoring_weights")}
+    conn.close()
+    macro_weight = _macro_weights_for_breakdown(shared_breakdown, weights, _score_field_to_macro())
+    return _valuation_slices(macro_weight), n_shared, n_total
+
+
 def _all_creations_valuation():
     """Aggregates every creation's target-profile score_breakdown into one
     combined valuation — the same macro-weight-share logic as a single
@@ -1738,10 +1771,12 @@ def creation_detail(transformation_id):
     breakdown = json.loads(target_score["score_breakdown"]) if target_score and target_score["score_breakdown"] else {}
     valuation = _creation_valuation(breakdown)
     macro_fit = _macro_subscore_from_breakdown(breakdown, _score_field_to_macro())
+    shared_valuation, n_shared, n_shared_total = _creation_shared_valuation(breakdown)
 
     return render_template(
         "creation_detail.html", active="creations",
         t=t, scores=scores, valuation=valuation, macro_fit=macro_fit,
+        shared_valuation=shared_valuation, n_shared=n_shared, n_shared_total=n_shared_total,
     )
 
 

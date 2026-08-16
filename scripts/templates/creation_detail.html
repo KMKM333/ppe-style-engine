@@ -45,6 +45,43 @@
 </div>
 {% endif %}
 
+<h2>Shared with books</h2>
+<div class="sub" style="margin-top:-6px">
+  Of this creation's {{ n_shared_total }} scored attributes, {{ n_shared }} are scored the exact same way on
+  a book (tone, pacing, rhetorical balance, etc. — see <a href="{{ url_for('attribute_category_detail', slug='diction') }}">cross-referencing</a>).
+  This pie shows only that shared slice, broken down by category — the part of this creation
+  that could be benchmarked directly against a book profile on identical dimensions.
+</div>
+{% if shared_valuation %}
+<div class="card" style="display:flex;gap:28px;align-items:center;flex-wrap:wrap">
+  <div class="valuation-pie" style="background: conic-gradient({% for s in shared_valuation %}{{ s.color }} {{ s.start_pct }}% {{ s.end_pct }}%{{ ', ' if not loop.last }}{% endfor %});"></div>
+  <div style="flex:1;min-width:240px">
+    <table>
+      <tr><th>Category</th><th style="width:80px">Share</th></tr>
+      {% for s in shared_valuation %}
+      <tr>
+        <td><span class="valuation-swatch" style="background:{{ s.color }}"></span>{{ s.macro }}</td>
+        <td>{{ s.pct }}%</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty">
+    {% if t.profile_code.startswith('BK.') %}
+    No mechanical valuation available — see above.
+    {% elif scores %}
+    This creation's input was an exact/near-duplicate corpus match, so no attribute-by-attribute
+    breakdown applies.
+    {% else %}
+    No scoring breakdown recorded for this creation.
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <h2>Attribute category fit</h2>
 <div class="sub" style="margin-top:-6px">
   How well this creation fits {{ t.profile_code }}, rolled up into the same shared macro categories as

@@ -1682,22 +1682,12 @@ def _macro_subscore_from_breakdown(breakdown, field_to_macro):
     return {m: round(sum(vals) / len(vals), 1) for m, vals in macro_scores.items()}
 
 
-def _creation_valuation(breakdown):
-    """Single-creation wrapper around _macro_weights_for_breakdown +
-    _valuation_slices, used by the per-creation dashboard."""
-    conn = get_conn()
-    weights = {r["attribute"]: r["weight"] for r in conn.execute("SELECT attribute, weight FROM scoring_weights")}
-    conn.close()
-    macro_weight = _macro_weights_for_breakdown(breakdown, weights, _score_field_to_macro())
-    return _valuation_slices(macro_weight) if macro_weight is not None else None
-
-
 def _creation_shared_valuation(breakdown):
-    """Like _creation_valuation, but restricted to the attributes this
-    creation was scored on that are also part of a book's rubric (see
-    _cross_media_shared_fields()) — the slice of the pie that could, in
-    principle, be benchmarked against a book profile on the exact same
-    dimensions. Returns (slices_or_None, n_shared, n_total)."""
+    """Restricts a creation's score_breakdown down to the attributes that
+    are also part of a book's rubric (see _cross_media_shared_fields()),
+    then buckets that shared slice by macro via _macro_weights_for_breakdown
+    + _valuation_slices — the single pie shown on the creation detail page.
+    Returns (slices_or_None, n_shared, n_total)."""
     if not breakdown or "content_match" in breakdown or "cross_media" in breakdown:
         return None, 0, 0
     shared_fields = _cross_media_shared_fields()
@@ -1769,13 +1759,12 @@ def creation_detail(transformation_id):
 
     target_score = next((s for s in scores if s["profile_id"] == t["target_profile_id"]), None)
     breakdown = json.loads(target_score["score_breakdown"]) if target_score and target_score["score_breakdown"] else {}
-    valuation = _creation_valuation(breakdown)
     macro_fit = _macro_subscore_from_breakdown(breakdown, _score_field_to_macro())
     shared_valuation, n_shared, n_shared_total = _creation_shared_valuation(breakdown)
 
     return render_template(
         "creation_detail.html", active="creations",
-        t=t, scores=scores, valuation=valuation, macro_fit=macro_fit,
+        t=t, scores=scores, macro_fit=macro_fit,
         shared_valuation=shared_valuation, n_shared=n_shared, n_shared_total=n_shared_total,
     )
 

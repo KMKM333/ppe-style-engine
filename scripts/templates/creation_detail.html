@@ -8,50 +8,12 @@
   &middot; {{ t.generated_at }}
 </div>
 
-<h2 style="margin-top:0">Attribute system valuation</h2>
-<div class="sub" style="margin-top:-6px">
-  How this creation's fit score against {{ t.profile_code }} was weighted across attribute categories —
-  a valuation of the rubric, not a read on how well it scored: each category's slice is its share of the
-  total scoring weight actually available for this creation, regardless of how well any one attribute matched.
-</div>
-{% if valuation %}
-<div class="card" style="display:flex;gap:28px;align-items:center;flex-wrap:wrap">
-  <div class="valuation-pie" style="background: conic-gradient({% for s in valuation %}{{ s.color }} {{ s.start_pct }}% {{ s.end_pct }}%{{ ', ' if not loop.last }}{% endfor %});"></div>
-  <div style="flex:1;min-width:240px">
-    <table>
-      <tr><th>Category</th><th style="width:80px">Share</th></tr>
-      {% for s in valuation %}
-      <tr>
-        <td><span class="valuation-swatch" style="background:{{ s.color }}"></span>{{ s.macro }}</td>
-        <td>{{ s.pct }}%</td>
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-</div>
-{% else %}
-<div class="card">
-  <div class="empty">
-    {% if t.profile_code.startswith('BK.') %}
-    {{ t.profile_code }} is a book profile, so only this creation's <a href="#shared-with-books">cross-media
-    shared attributes</a> can be scored against it — and none of those were populated for this creation
-    (it needs a Class-attribute classification pass to fill in tone, pacing, rhetorical balance, etc.).
-    {% elif scores %}
-    This creation's input was an exact/near-duplicate corpus match, so its score came from content
-    membership rather than attribute-by-attribute correlation — no valuation breakdown applies.
-    {% else %}
-    No scoring breakdown recorded for this creation.
-    {% endif %}
-  </div>
-</div>
-{% endif %}
-
-<h2 id="shared-with-books">Shared with books</h2>
+<h2 style="margin-top:0">Shared with books</h2>
 <div class="sub" style="margin-top:-6px">
   Of this creation's {{ n_shared_total }} scored attributes, {{ n_shared }} are scored the exact same way on
   a book (tone, pacing, rhetorical balance, etc. — see <a href="{{ url_for('attribute_category_detail', slug='diction') }}">cross-referencing</a>).
-  This pie shows only that shared slice, broken down by category — the part of this creation
-  that could be benchmarked directly against a book profile on identical dimensions.
+  This pie breaks that shared slice down by category — the part of this creation that could be
+  benchmarked directly against a book profile on identical dimensions.
 </div>
 {% if shared_valuation %}
 <div class="card" style="display:flex;gap:28px;align-items:center;flex-wrap:wrap">
@@ -72,10 +34,12 @@
 <div class="card">
   <div class="empty">
     {% if t.profile_code.startswith('BK.') %}
-    No mechanical valuation available — see above.
+    None of this creation's cross-media shared attributes (tone, pacing, rhetorical balance, etc.) are
+    populated — {{ t.profile_code }} is a book profile, so only those fields can be scored against it, and
+    this creation needs a Class-attribute classification pass to fill them in.
     {% elif scores %}
-    This creation's input was an exact/near-duplicate corpus match, so no attribute-by-attribute
-    breakdown applies.
+    This creation's input was an exact/near-duplicate corpus match, so its score came from content
+    membership rather than attribute-by-attribute correlation — no breakdown applies.
     {% else %}
     No scoring breakdown recorded for this creation.
     {% endif %}

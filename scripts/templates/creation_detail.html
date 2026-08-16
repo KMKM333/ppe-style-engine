@@ -33,8 +33,9 @@
 <div class="card">
   <div class="empty">
     {% if t.profile_code.startswith('BK.') %}
-    {{ t.profile_code }} is a book profile — video-script attributes (word count, hook type, CTA...)
-    have no shared rubric with a book's fingerprint, so no mechanical valuation applies here.
+    {{ t.profile_code }} is a book profile, so only this creation's <a href="#shared-with-books">cross-media
+    shared attributes</a> can be scored against it — and none of those were populated for this creation
+    (it needs a Class-attribute classification pass to fill in tone, pacing, rhetorical balance, etc.).
     {% elif scores %}
     This creation's input was an exact/near-duplicate corpus match, so its score came from content
     membership rather than attribute-by-attribute correlation — no valuation breakdown applies.
@@ -45,7 +46,7 @@
 </div>
 {% endif %}
 
-<h2>Shared with books</h2>
+<h2 id="shared-with-books">Shared with books</h2>
 <div class="sub" style="margin-top:-6px">
   Of this creation's {{ n_shared_total }} scored attributes, {{ n_shared }} are scored the exact same way on
   a book (tone, pacing, rhetorical balance, etc. — see <a href="{{ url_for('attribute_category_detail', slug='diction') }}">cross-referencing</a>).

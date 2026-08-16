@@ -45,6 +45,14 @@ CATEGORICAL_ATTRS = [
 
 BOOLEAN_ATTRS = ["uses_visual_aids", "curiosity_loop", "identity_framing", "rhythmic_repetition"]
 
+# Auto (regex-computed) numeric fields — the book-side counterparts of two
+# of video's cross-media shared fields (avg_sentence_len, readability_score
+# are the only Readability-bucket fields both media compute the same way).
+# Without a real fingerprint for these, a video creation scored against a
+# book profile can never populate the Readability slice of the cross-media
+# comparison in score_engine.score_against_profiles().
+NUMERIC_ATTRS = ["avg_sentence_len", "readability_score"]
+
 
 def get_or_create_author_channel(conn, author_name):
     row = conn.execute("SELECT channel_id FROM channels WHERE channel_name = ?", (author_name,)).fetchone()
@@ -105,6 +113,27 @@ def build_author_profile(author_name, profile_code, min_n=1):
     # full replace, same reasoning as profile_builder.build_profile
     conn.execute("DELETE FROM profile_fingerprint_numeric WHERE profile_id = ?", (profile_id,))
     conn.execute("DELETE FROM profile_fingerprint_categorical WHERE profile_id = ?", (profile_id,))
+
+    # real numeric fields (not just boolean share-true means) — same shape
+    # profile_builder.build_profile uses for video's NUMERIC_ATTRS.
+    for attr in NUMERIC_ATTRS:
+        vals = [r[attr] for r in rows if r[attr] is not None]
+        if not vals:
+            continue
+        mean_v = statistics.mean(vals)
+        std_v = statistics.pstdev(vals) if len(vals) > 1 else 0.0
+        sorted_vals = sorted(vals)
+        conn.execute(
+            """INSERT INTO profile_fingerprint_numeric
+               (profile_id, attribute, mean_val, std_val, min_val, max_val, median_val, values_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(profile_id, attribute) DO UPDATE SET
+                 mean_val=excluded.mean_val, std_val=excluded.std_val,
+                 min_val=excluded.min_val, max_val=excluded.max_val,
+                 median_val=excluded.median_val, values_json=excluded.values_json""",
+            (profile_id, attr, mean_v, std_v, min(vals), max(vals), statistics.median(vals),
+             json.dumps(sorted_vals)),
+        )
 
     # boolean attrs roll up as a numeric mean (share true) in the same table shape
     # profile_fingerprint_numeric already uses for video attributes.

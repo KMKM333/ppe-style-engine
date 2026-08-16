@@ -21,7 +21,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from db_init import get_conn
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
-from score_engine import rate_input, score_intrinsic, score_book_against_profiles
+from score_engine import rate_input, score_intrinsic, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
 from transform import build_transform_prompt, build_data_output_prompt, save_transformation, score_transformation, FORM_SPECS
 from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, LLMConfigError
@@ -1612,15 +1612,15 @@ def _score_field_to_macro():
 
 
 def _cross_media_shared_fields():
-    """The subset of field NAMES that literally appear in both
-    SHARED_ATTRIBUTE_SECTIONS (video) and SHARED_BOOK_ATTRIBUTE_SECTIONS
-    (book) — i.e. attributes scored the same way on a Short and on a book,
-    so a value on one side is directly comparable to a value on the other.
-    This is strictly smaller than _score_field_to_macro()'s domain, which
-    also covers each medium's native-only fields bucketed for display."""
-    video_fields = {f for _, fields in SHARED_ATTRIBUTE_SECTIONS for f in fields}
-    book_fields = {f for _, fields in SHARED_BOOK_ATTRIBUTE_SECTIONS for f in fields}
-    return video_fields & book_fields
+    """The field NAMES scored the same way on a Short and on a book (same
+    controlled vocabulary / numeric meaning), so a value on one side is
+    directly comparable to a value on the other — score_engine's
+    CROSS_MEDIA_SHARED_FIELDS is the single source of truth (it's also what
+    score_against_profiles() actually scores a video creation against a
+    book profile on), reused here so the pie can never drift from what was
+    actually scored. Strictly smaller than _score_field_to_macro()'s
+    domain, which also covers each medium's native-only fields."""
+    return set(CROSS_MEDIA_SHARED_FIELDS)
 
 
 def _macro_weights_for_breakdown(breakdown, weights, field_to_macro):

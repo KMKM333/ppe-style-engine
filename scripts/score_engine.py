@@ -56,6 +56,29 @@ CATEGORICAL_ATTRS_OPTIONAL = [
     "status_signaling", "niche_slang_usage",
 ]
 
+# The fields scored the SAME WAY on a video and a book — same field name,
+# same controlled vocabulary (or same numeric meaning), so a value on one
+# side can be looked up directly in the other side's fingerprint. This is
+# the field list score_against_profiles() uses for its cross-media branch
+# (video creation vs. a Book profile) and webapp._cross_media_shared_fields()
+# reuses it for the "Shared with books" pie so the two stay in sync by
+# construction rather than by two hand-maintained lists silently drifting.
+CROSS_MEDIA_SHARED_FIELDS = [
+    "syntax_pattern", "adjective_intensity", "punctuation_delivery",
+    "rhetorical_appeal_balance", "rhythmic_repetition",
+    "information_density",
+    "value_promise",
+    "tone", "emotional_register", "narrative_voice", "polemical_tone",
+    "narrative_presence", "vulnerability_depth", "condescension_vs_empowerment",
+    "curiosity_loop",
+    "relatability_factor", "identity_framing",
+    "counter_argument_engagement", "contrarian_positioning",
+    "narrative_density",
+    "prose_rhythm", "noun_verb_ratio_style", "pacing",
+    "avg_sentence_len", "readability_score",
+]
+CROSS_MEDIA_SHARED_NUMERIC = {"avg_sentence_len", "readability_score"}
+
 
 # ------------------------------------------------------------------
 # 1. INTRINSIC RULE-BASED RATING (no profile needed)
@@ -232,24 +255,57 @@ def score_against_profiles(features: dict, weights: dict | None = None, raw_text
             })
             continue
 
-        # --- book profiles: no shared field vocabulary with a video script ---
-        # NUMERIC_ATTRS/CATEGORICAL_ATTRS_OPTIONAL are entirely video-shaped
-        # (word_count, hook_type, cta_type...); a book profile's fingerprint
-        # is built from book_profile_builder's field list instead, which
-        # never overlaps. Scoring one against the other used to silently
-        # produce a meaningless floor score (every categorical field reads
-        # as "never seen" -> flat 20.0) instead of skipping honestly.
-        # total_score=None here signals "not mechanically comparable" — see
-        # score_book_against_profiles() for the book-side counterpart that
-        # scores a book's own attributes against other book profiles.
+        # --- book profiles: score only on the cross-media SHARED fields ---
+        # Most of NUMERIC_ATTRS/CATEGORICAL_ATTRS_OPTIONAL are video-shaped
+        # (word_count, hook_type, cta_type...) and genuinely have no book
+        # counterpart. But CROSS_MEDIA_SHARED_FIELDS (tone, pacing,
+        # rhetorical_appeal_balance, avg_sentence_len...) are scored with
+        # the exact same field name and controlled vocabulary on both sides,
+        # and a book profile's fingerprint now has entries for them (see
+        # book_profile_builder.CATEGORICAL_ATTRS/NUMERIC_ATTRS) — so those
+        # can be looked up directly via the same media-agnostic
+        # _numeric_subscore/_categorical_subscore helpers used below.
+        # total_score stays None (breakdown={"cross_media": ...}) only when
+        # this specific input has none of the shared fields populated (e.g.
+        # it was never run through classification), which still signals
+        # "not mechanically comparable" honestly rather than faking a score.
         if p["media_type"] == "Book":
-            results.append({
-                "profile_code": p["profile_code"], "profile_id": pid,
-                "n_videos_analysed": p["n_videos_analysed"], "status": p["status"],
-                "total_score": None,
-                "breakdown": {"cross_media": "Book profile — no shared attribute vocabulary with a video script"},
-                "is_corpus_member": False, "match_video_id": match_video_id, "match_similarity": match_sim,
-            })
+            cm_weighted_sum, cm_weight_total = 0.0, 0.0
+            cm_breakdown = {}
+            for attr in CROSS_MEDIA_SHARED_FIELDS:
+                if attr not in features or features[attr] is None:
+                    continue
+                if attr in CROSS_MEDIA_SHARED_NUMERIC:
+                    fp = conn.execute(
+                        "SELECT * FROM profile_fingerprint_numeric WHERE profile_id=? AND attribute=?", (pid, attr)
+                    ).fetchone()
+                    sub = _numeric_subscore(features[attr], fp) if fp else None
+                else:
+                    sub = _categorical_subscore(features[attr], pid, attr, conn)
+                if sub is None:
+                    continue
+                w = weights.get(attr, 1.0)
+                cm_breakdown[attr] = sub
+                cm_weighted_sum += sub * w
+                cm_weight_total += w
+
+            if cm_weight_total:
+                total = round(cm_weighted_sum / cm_weight_total, 1)
+                results.append({
+                    "profile_code": p["profile_code"], "profile_id": pid,
+                    "n_videos_analysed": p["n_videos_analysed"], "status": p["status"],
+                    "total_score": total, "breakdown": cm_breakdown,
+                    "is_corpus_member": False, "match_video_id": match_video_id, "match_similarity": match_sim,
+                })
+            else:
+                results.append({
+                    "profile_code": p["profile_code"], "profile_id": pid,
+                    "n_videos_analysed": p["n_videos_analysed"], "status": p["status"],
+                    "total_score": None,
+                    "breakdown": {"cross_media": "This input has none of the cross-media shared fields "
+                                                  "populated yet (needs a Class-attribute classification pass)"},
+                    "is_corpus_member": False, "match_video_id": match_video_id, "match_similarity": match_sim,
+                })
             continue
 
         # --- attribute correlation (structural/stylistic axis) ---

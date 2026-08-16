@@ -272,7 +272,10 @@ def score_transformation(transformation_id: int) -> dict:
     results = []
     for ps in post_scores:
         pre = pre_scores.get(ps["profile_id"])
-        delta = round(ps["total_score"] - pre, 1) if pre is not None else None
+        delta = (
+            round(ps["total_score"] - pre, 1)
+            if pre is not None and ps["total_score"] is not None else None
+        )
         is_target = ps["profile_id"] == tr["target_profile_id"]
         results.append({**ps, "is_target_profile": is_target, "pre_score_same_profile": pre, "score_delta": delta})
 
@@ -286,7 +289,7 @@ def score_transformation(transformation_id: int) -> dict:
 
     conn.commit()
     conn.close()
-    results.sort(key=lambda r: r["total_score"], reverse=True)
+    results.sort(key=lambda r: (r["total_score"] is not None, r["total_score"] or 0), reverse=True)
     return {"transformation_id": transformation_id, "target_profile": target_profile["profile_code"],
             "results": results}
 
@@ -297,7 +300,8 @@ def print_transform_result(result: dict):
     for r in result["results"]:
         marker = " <-- TARGET" if r["is_target_profile"] else ""
         delta_str = f"  delta vs pre-creation: {r['score_delta']:+.1f}" if r["score_delta"] is not None else ""
-        print(f"  #{r['rank']}  {r['profile_code']:6s}  post_score={r['total_score']:5.1f}{delta_str}{marker}")
+        score_str = f"{r['total_score']:5.1f}" if r["total_score"] is not None else "  n/a"
+        print(f"  #{r['rank']}  {r['profile_code']:6s}  post_score={score_str}{delta_str}{marker}")
 
 
 if __name__ == "__main__":

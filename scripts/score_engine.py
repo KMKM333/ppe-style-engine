@@ -222,6 +222,26 @@ def score_against_profiles(features: dict, weights: dict | None = None, raw_text
             })
             continue
 
+        # --- book profiles: no shared field vocabulary with a video script ---
+        # NUMERIC_ATTRS/CATEGORICAL_ATTRS_OPTIONAL are entirely video-shaped
+        # (word_count, hook_type, cta_type...); a book profile's fingerprint
+        # is built from book_profile_builder's field list instead, which
+        # never overlaps. Scoring one against the other used to silently
+        # produce a meaningless floor score (every categorical field reads
+        # as "never seen" -> flat 20.0) instead of skipping honestly.
+        # total_score=None here signals "not mechanically comparable" — see
+        # score_book_against_profiles() for the book-side counterpart that
+        # scores a book's own attributes against other book profiles.
+        if p["media_type"] == "Book":
+            results.append({
+                "profile_code": p["profile_code"], "profile_id": pid,
+                "n_videos_analysed": p["n_videos_analysed"], "status": p["status"],
+                "total_score": None,
+                "breakdown": {"cross_media": "Book profile — no shared attribute vocabulary with a video script"},
+                "is_corpus_member": False, "match_video_id": match_video_id, "match_similarity": match_sim,
+            })
+            continue
+
         # --- attribute correlation (structural/stylistic axis) ---
         weighted_sum, weight_total = 0.0, 0.0
 
@@ -259,7 +279,8 @@ def score_against_profiles(features: dict, weights: dict | None = None, raw_text
         })
 
     conn.close()
-    results.sort(key=lambda r: r["total_score"], reverse=True)
+    # None (book profiles, see above) sorts last; real scores descending
+    results.sort(key=lambda r: (r["total_score"] is not None, r["total_score"] or 0), reverse=True)
     for i, r in enumerate(results, 1):
         r["rank"] = i
     return results
@@ -395,7 +416,8 @@ def print_rating(result: dict):
     print("\nStyle-profile fit (PRE-CREATION, ranked):")
     for ps in result["profile_scores"]:
         tag = "CONTENT MATCH" if ps.get("is_corpus_member") else "attribute correlation"
-        print(f"  #{ps['rank']}  {ps['profile_code']:6s}  score={ps['total_score']:5.1f}  [{tag}]  "
+        score_str = f"{ps['total_score']:5.1f}" if ps["total_score"] is not None else "  n/a"
+        print(f"  #{ps['rank']}  {ps['profile_code']:6s}  score={score_str}  [{tag}]  "
               f"(n_analysed={ps['n_videos_analysed']}, status={ps['status']})")
     if result["profile_scores"]:
         top = result["profile_scores"][0]

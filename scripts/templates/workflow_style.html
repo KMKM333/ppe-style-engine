@@ -33,7 +33,11 @@
         <td><input type="radio" name="profile" value="{{ p.profile_code }}" required></td>
         <td><strong>{{ p.profile_code }}</strong></td>
         <td>{{ p.channel_name }}</td>
+        {% if p.total_score is none %}
+        <td class="muted">n/a</td>
+        {% else %}
         <td class="score {{ 'good' if p.total_score >= 70 else ('mid' if p.total_score >= 40 else 'bad') }}">{{ p.total_score }}</td>
+        {% endif %}
         <td><span class="pill {{ p.status }}">{{ p.status }}</span></td>
       </tr>
       {% endfor %}
@@ -53,7 +57,11 @@
         <td><input type="radio" name="profile" value="{{ p.profile_code }}" required></td>
         <td><strong>{{ p.profile_code }}</strong></td>
         <td>{{ p.channel_name }}</td>
+        {% if p.total_score is none %}
+        <td class="muted">n/a</td>
+        {% else %}
         <td class="score {{ 'good' if p.total_score >= 70 else ('mid' if p.total_score >= 40 else 'bad') }}">{{ p.total_score }}</td>
+        {% endif %}
         <td><span class="pill {{ p.status }}">{{ p.status }}</span></td>
       </tr>
       {% endfor %}
@@ -73,7 +81,11 @@
         <td><input type="radio" name="profile" value="{{ p.profile_code }}" required></td>
         <td><strong>{{ p.profile_code }}</strong></td>
         <td>{{ p.channel_name }}</td>
+        {% if p.total_score is none %}
+        <td class="muted">n/a</td>
+        {% else %}
         <td class="score {{ 'good' if p.total_score >= 70 else ('mid' if p.total_score >= 40 else 'bad') }}">{{ p.total_score }}</td>
+        {% endif %}
         <td><span class="pill {{ p.status }}">{{ p.status }}</span></td>
       </tr>
       {% endfor %}

@@ -31,8 +31,12 @@
     <tr class="{{ 'rank1' if ps.rank == 1 else '' }}">
       <td>#{{ ps.rank }}</td>
       <td><strong>{{ ps.profile_code }}</strong></td>
+      {% if ps.total_score is none %}
+      <td class="muted">n/a</td>
+      {% else %}
       <td class="score {{ 'good' if ps.total_score >= 70 else ('mid' if ps.total_score >= 40 else 'bad') }}">{{ ps.total_score }}</td>
-      <td>{{ 'CONTENT MATCH' if ps.is_corpus_member else 'attribute correlation' }}</td>
+      {% endif %}
+      <td>{{ 'CONTENT MATCH' if ps.is_corpus_member else ('cross-media, n/a' if ps.total_score is none else 'attribute correlation') }}</td>
       <td>{{ ps.n_videos_analysed }}</td>
       <td><span class="pill {{ ps.status }}">{{ ps.status }}</span></td>
     </tr>

@@ -32,7 +32,10 @@
 {% else %}
 <div class="card">
   <div class="empty">
-    {% if scores %}
+    {% if t.profile_code.startswith('BK.') %}
+    {{ t.profile_code }} is a book profile — video-script attributes (word count, hook type, CTA...)
+    have no shared rubric with a book's fingerprint, so no mechanical valuation applies here.
+    {% elif scores %}
     This creation's input was an exact/near-duplicate corpus match, so its score came from content
     membership rather than attribute-by-attribute correlation — no valuation breakdown applies.
     {% else %}
@@ -42,13 +45,13 @@
 </div>
 {% endif %}
 
-{% if xlarge_fit %}
 <h2>X-Large style fit</h2>
 <div class="sub" style="margin-top:-6px">
   How well this creation fits {{ t.profile_code }}, rolled up into the same five cross-media categories
   as the <a href="{{ url_for('attributes_page') }}">Attributes page</a> — comparable to a book's X-Large
   fit scores on its own detail page, even though the underlying fields are completely different.
 </div>
+{% if xlarge_fit %}
 <div class="macros">
   {% for name, score in xlarge_fit.items() %}
   <div class="macro-card">
@@ -57,6 +60,16 @@
     <div class="bar"><div class="bar-fill" style="width:{{ score }}%;background:{{ 'var(--good)' if score >= 70 else ('var(--mid)' if score >= 40 else 'var(--bad)') }}"></div></div>
   </div>
   {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div class="empty">
+    {% if t.profile_code.startswith('BK.') %}
+    No mechanical fit score available — {{ t.profile_code }} is a book profile, see above.
+    {% else %}
+    No scoring breakdown recorded for this creation.
+    {% endif %}
+  </div>
 </div>
 {% endif %}
 
@@ -83,7 +96,11 @@
     <tr class="{{ 'rank1' if r.rank == 1 else '' }}">
       <td>#{{ r.rank }}</td>
       <td><strong>{{ r.profile_code }}</strong></td>
+      {% if r.total_score is none %}
+      <td class="muted">n/a</td>
+      {% else %}
       <td class="score {{ 'good' if r.total_score >= 70 else ('mid' if r.total_score >= 40 else 'bad') }}">{{ r.total_score }}</td>
+      {% endif %}
       <td class="muted">{{ r.pre_score_same_profile if r.pre_score_same_profile is not none else '—' }}</td>
       <td class="{{ 'check-pass' if (r.score_delta or 0) > 0 else ('check-fail' if (r.score_delta or 0) < 0 else 'muted') }}">
         {{ '%+.1f' % r.score_delta if r.score_delta is not none else '—' }}

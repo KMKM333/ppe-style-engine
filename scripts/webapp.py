@@ -1362,7 +1362,7 @@ def _macro_weights_for_breakdown(breakdown, weights, field_to_macro):
     ({attribute: subscore}) — each attribute present contributes its
     scoring_weights weight to whichever macro it belongs to. Returns None
     for the content-match special case (no per-attribute entries to value)."""
-    if not breakdown or "content_match" in breakdown:
+    if not breakdown or "content_match" in breakdown or "cross_media" in breakdown:
         return None
     macro_weight = {}
     for attr in breakdown:
@@ -1403,7 +1403,7 @@ def _macro_subscore_from_breakdown(breakdown, field_to_macro):
     way. Works on any breakdown shaped {attribute: subscore}, whether it
     came from score_against_profiles() (video) or
     score_book_against_profiles() (book)."""
-    if not breakdown or "content_match" in breakdown:
+    if not breakdown or "content_match" in breakdown or "cross_media" in breakdown:
         return None
     macro_scores = {}
     for attr, sub in breakdown.items():

@@ -23,7 +23,11 @@
   <div class="flex" style="margin-top:18px">
     <div class="card" style="margin-bottom:0">
       <div class="muted">Post-creation score ({{ result.target_profile }})</div>
+      {% if target.total_score is none %}
+      <div style="font-size:16px;font-weight:600" class="muted">n/a — book profile, no shared rubric</div>
+      {% else %}
       <div style="font-size:28px;font-weight:700" class="score {{ 'good' if target.total_score >= 70 else ('mid' if target.total_score >= 40 else 'bad') }}">{{ target.total_score }}</div>
+      {% endif %}
     </div>
     <div class="card" style="margin-bottom:0">
       <div class="muted">Pre-creation score (original)</div>
@@ -47,7 +51,11 @@
     <tr class="{{ 'rank1' if r.rank == 1 else '' }}">
       <td>#{{ r.rank }}</td>
       <td><strong>{{ r.profile_code }}</strong></td>
+      {% if r.total_score is none %}
+      <td class="muted">n/a</td>
+      {% else %}
       <td class="score {{ 'good' if r.total_score >= 70 else ('mid' if r.total_score >= 40 else 'bad') }}">{{ r.total_score }}</td>
+      {% endif %}
       <td class="muted">{{ r.pre_score_same_profile if r.pre_score_same_profile is not none else '—' }}</td>
       <td class="{{ 'check-pass' if (r.score_delta or 0) > 0 else ('check-fail' if (r.score_delta or 0) < 0 else 'muted') }}">
         {{ '%+.1f' % r.score_delta if r.score_delta is not none else '—' }}

@@ -1101,6 +1101,8 @@ def inputs_list():
     ).fetchone()[0]
     n_long_videos = conn.execute("SELECT COUNT(*) FROM videos WHERE media_type = 'YouTube'").fetchone()[0]
     n_news = 0  # news article ingestion not built yet
+    # Matches the Dashboard's "Inputs ingested" count exactly: videos + books + book_examples.
+    n_all_inputs = n_short_videos + n_long_videos + n_books + n_news
     conn.close()
 
     return render_template(
@@ -1109,7 +1111,7 @@ def inputs_list():
         all_terms=all_terms, all_examples=all_examples,
         n_books=n_books, n_books_only=n_books_only, n_book_examples=n_book_examples,
         n_short_videos=n_short_videos, n_short_video_accounts=n_short_video_accounts,
-        n_long_videos=n_long_videos, n_news=n_news,
+        n_long_videos=n_long_videos, n_news=n_news, n_all_inputs=n_all_inputs,
         filters={
             "kind": kind, "channel_id": channel_id, "q": q, "title_format": title_format,
             "term": term, "example": example,

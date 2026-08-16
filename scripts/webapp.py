@@ -1682,25 +1682,49 @@ def _macro_subscore_from_breakdown(breakdown, field_to_macro):
     return {m: round(sum(vals) / len(vals), 1) for m, vals in macro_scores.items()}
 
 
+def _shared_field_macro_counts():
+    """Fixed field-COUNT share of the full CROSS_MEDIA_SHARED_FIELDS list per
+    macro category — e.g. Tone & Voice has 7 of the 25 shared fields, so it's
+    always 28% of this pie, regardless of how many of those 7 happen to be
+    populated for any one creation. This is what makes the pie represent
+    "share of influence from the [shared-attribute] list", not just whatever
+    thin subset a particular creation happened to get classified with."""
+    field_to_macro = _score_field_to_macro()
+    macro_counts = {}
+    for f in CROSS_MEDIA_SHARED_FIELDS:
+        macro = field_to_macro.get(f, "Other")
+        macro_counts[macro] = macro_counts.get(macro, 0) + 1
+    return macro_counts
+
+
 def _creation_shared_valuation(breakdown):
-    """Restricts a creation's score_breakdown down to the attributes that
-    are also part of a book's rubric (see _cross_media_shared_fields()),
-    then buckets that shared slice by macro via _macro_weights_for_breakdown
-    + _valuation_slices — the single pie shown on the creation detail page.
-    Returns (slices_or_None, n_shared, n_total)."""
-    if not breakdown or "content_match" in breakdown or "cross_media" in breakdown:
-        return None, 0, 0
+    """Pie slices sized by the FIXED share of the 25-field cross-media
+    taxonomy each macro occupies (_shared_field_macro_counts), annotated
+    with how many of that macro's shared fields are actually populated for
+    THIS creation — so "only 2 fields happened to get scored" shows up as
+    "2 of 2 scored" inside a slice that's still correctly sized at its true
+    8% share of the full list, instead of ballooning to look like 100% of
+    the comparison. Returns (slices_or_None, n_shared, n_shared_total)."""
+    macro_field_totals = _shared_field_macro_counts()
+    slices = _valuation_slices(macro_field_totals)
+
+    has_data = breakdown and "content_match" not in breakdown and "cross_media" not in breakdown
     shared_fields = _cross_media_shared_fields()
-    n_total = len(breakdown)
-    shared_breakdown = {k: v for k, v in breakdown.items() if k in shared_fields}
-    n_shared = len(shared_breakdown)
-    if not shared_breakdown:
-        return None, 0, n_total
-    conn = get_conn()
-    weights = {r["attribute"]: r["weight"] for r in conn.execute("SELECT attribute, weight FROM scoring_weights")}
-    conn.close()
-    macro_weight = _macro_weights_for_breakdown(shared_breakdown, weights, _score_field_to_macro())
-    return _valuation_slices(macro_weight), n_shared, n_total
+    scored_shared = {k for k in breakdown if k in shared_fields} if has_data else set()
+    n_shared = len(scored_shared)
+    n_shared_total = len(CROSS_MEDIA_SHARED_FIELDS)
+
+    if slices:
+        field_to_macro = _score_field_to_macro()
+        macro_scored_counts = {}
+        for f in scored_shared:
+            m = field_to_macro.get(f, "Other")
+            macro_scored_counts[m] = macro_scored_counts.get(m, 0) + 1
+        for s in slices:
+            s["field_total"] = macro_field_totals.get(s["macro"], 0)
+            s["field_scored"] = macro_scored_counts.get(s["macro"], 0)
+
+    return (slices if n_shared else None), n_shared, n_shared_total
 
 
 def _all_creations_valuation():

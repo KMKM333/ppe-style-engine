@@ -10,21 +10,24 @@
 
 <h2 style="margin-top:0">Shared with books</h2>
 <div class="sub" style="margin-top:-6px">
-  Of this creation's {{ n_shared_total }} scored attributes, {{ n_shared }} are scored the exact same way on
-  a book (tone, pacing, rhetorical balance, etc. — see <a href="{{ url_for('attribute_category_detail', slug='diction') }}">cross-referencing</a>).
-  This pie breaks that shared slice down by category — the part of this creation that could be
-  benchmarked directly against a book profile on identical dimensions.
+  There are {{ n_shared_total }} attributes scored the exact same way on a book (tone, pacing, rhetorical
+  balance, etc. — see <a href="{{ url_for('attribute_category_detail', slug='diction') }}">cross-referencing</a>);
+  {{ n_shared }} of them are populated for this creation. Each slice is sized by its fixed share of that
+  full {{ n_shared_total }}-attribute list, not by how much of it happens to be filled in — so a category
+  stays correctly small even when it's the only one with any data yet. "Scored" in the table is how many of
+  that category's own shared attributes this creation actually has.
 </div>
 {% if shared_valuation %}
 <div class="card" style="display:flex;gap:28px;align-items:center;flex-wrap:wrap">
   <div class="valuation-pie" style="background: conic-gradient({% for s in shared_valuation %}{{ s.color }} {{ s.start_pct }}% {{ s.end_pct }}%{{ ', ' if not loop.last }}{% endfor %});"></div>
-  <div style="flex:1;min-width:240px">
+  <div style="flex:1;min-width:280px">
     <table>
-      <tr><th>Category</th><th style="width:80px">Share</th></tr>
+      <tr><th>Category</th><th style="width:80px">Share</th><th style="width:90px">Scored</th></tr>
       {% for s in shared_valuation %}
       <tr>
         <td><span class="valuation-swatch" style="background:{{ s.color }}"></span>{{ s.macro }}</td>
         <td>{{ s.pct }}%</td>
+        <td class="{{ 'muted' if s.field_scored == 0 else '' }}">{{ s.field_scored }} / {{ s.field_total }}</td>
       </tr>
       {% endfor %}
     </table>

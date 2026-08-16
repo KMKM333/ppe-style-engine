@@ -78,6 +78,70 @@ with exactly these keys and allowed values. Do not add commentary outside the JS
 - cta_placement: one of ["Start", "Mid", "End", "None"]
 - cta_count: integer
 
+Ported from the book rubric (same fields, same allowed values, so a video and a book can be
+compared directly on these dimensions):
+- tone: one of ["Objective/neutral", "Passionate/advocacy", "Skeptical/critical", "Urgent/alarmist",
+  "Wry/ironic", "Reverent/admiring"]
+- emotional_register: one of ["Humorous/light", "Dark/somber", "Serious/grave", "Whimsical/playful",
+  "Melancholic", "Uplifting/inspiring", "Mixed/variable"]
+- narrative_voice: one of ["Distinct/idiosyncratic", "Neutral/generic", "Formal/detached narrator",
+  "Conversational/intimate narrator", "Multiple distinct voices"]
+- narrative_density: one of ["Story-led (mostly anecdote/narrative)", "Balanced", "Argument-led/abstract"]
+- counter_argument_engagement: one of ["Ignored", "Strawmanned", "Acknowledged briefly",
+  "Substantively engaged", "Steelmanned"]
+- rhetorical_appeal_balance: one of ["Primarily logical/data-driven", "Primarily emotional/narrative",
+  "Primarily credibility/authority-driven", "Balanced blend"]
+- prose_rhythm: one of ["Staccato/choppy", "Flowing/poetic", "Balanced/mixed cadence", "Monotonous/uniform"]
+- noun_verb_ratio_style: one of ["Verb-driven/dynamic", "Balanced", "Noun-heavy/nominalized (formal)",
+  "Heavily nominalized/dense academic"]
+- syntax_pattern: one of ["Short & simple, low variety", "Long & complex, low variety",
+  "Highly varied (short and long mixed)", "Fragmented/experimental"]
+- pacing: one of ["Fast/action-driven", "Slow/descriptive", "Balanced action & description",
+  "Variable/uneven pacing"]
+- polemical_tone: one of ["Polite/measured critique", "Firm but respectful", "Sharply critical",
+  "Aggressive/dismissive of opposing views"]
+- narrative_presence: one of ["Detached/impersonal (passive, third person)",
+  "Occasional first-person ('I argue')", "Consistently participatory ('we must')",
+  "Highly personal/confessional"]
+
+New shared fields (also present on the book rubric, so scored the same way there):
+- value_promise: one of ["Practical how-to/skill", "Surprising fact/reveal",
+  "Emotional payoff/relatability", "Entertainment/humor", "Social currency/talking point",
+  "Intellectual framework/mental model"] — what the piece implicitly promises the audience for
+  sticking with it
+- information_density: one of ["Fact-packed/dense", "Balanced", "Loose/lifestyle-focused"]
+- curiosity_loop: 0 or 1 — does the piece open a question/tease early that's only resolved later
+  or at the very end?
+- relatability_factor: one of ["Specific everyday pain point", "Broad universal experience",
+  "Niche/insider experience", "Abstract/impersonal, low relatability"]
+- identity_framing: 0 or 1 — does the language invite the audience to see themselves in it
+  (a "that's so me" framing), as opposed to describing a general/other case?
+- contrarian_positioning: one of ["Explicitly contrarian/against consensus", "Mildly unconventional",
+  "Aligned with mainstream view", "No clear positioning"]
+- adjective_intensity: one of ["Extreme/superlative modifiers", "Moderate descriptive language",
+  "Neutral/objective phrasing"]
+- punctuation_delivery: one of ["Frequent rhetorical questions", "Exclamation-heavy/enthusiastic",
+  "Trail-off/ellipsis-driven", "Measured/standard punctuation"]
+- rhythmic_repetition: 0 or 1 — does the piece use anaphora (deliberately reusing the same phrase
+  starter across consecutive lines/sentences for rhythmic effect)?
+- vulnerability_depth: one of ["High — shares mistakes/failures openly", "Moderate — some personal
+  admission", "Low/none — impersonal or purely authoritative"]
+- condescension_vs_empowerment: one of ["Empowering/collaborative ('helpful friend')",
+  "Neutral/informational", "Condescending/gatekeeping ('the guru')"]
+
+New video-only fields (no book-rubric equivalent):
+- structure_archetype: one of ["Problem to solution", "Listicle/numbered list", "Story-led narrative",
+  "Tutorial/how-to walkthrough", "Myth-bust/correction", "Comparison/versus", "Single-concept explainer"]
+- shareability_trigger: one of ["Highly opinionated take", "Saveable cheat-sheet/reference",
+  "Deeply validating statement", "Surprising/counterintuitive fact", "None/low shareability"]
+- product_placement: one of ["None", "Organic/subtle mention", "Explicit/obvious plug"]
+- core_value_reinforcement: 0 or 1 — does the script repeat/reinforce a consistent tagline,
+  catchphrase, or core message, as opposed to a one-off point?
+- status_signaling: one of ["None/low", "Implies sophistication/being ahead of the curve",
+  "Implies belonging/in-group membership", "Implies practical competence"]
+- niche_slang_usage: one of ["None/general audience language", "Light community jargon",
+  "Heavy in-group slang/jargon"]
+
 Return a JSON array, one object per video, each including "video_id" (matching the id given)
 plus all fields above.
 
@@ -127,6 +191,17 @@ CLASS_FIELDS = [
     "certainty_register", "rule_of_three_present", "rule_of_three_count",
     "rhetorical_mode", "explanation_mechanism", "domain", "concept_type", "source_era", "framing",
     "script_polish", "has_cta", "cta_type", "cta_placement", "cta_count",
+    # ported from the book rubric (same fields/values, for direct cross-media comparison)
+    "tone", "emotional_register", "narrative_voice", "narrative_density",
+    "counter_argument_engagement", "rhetorical_appeal_balance", "prose_rhythm",
+    "noun_verb_ratio_style", "syntax_pattern", "pacing", "polemical_tone", "narrative_presence",
+    # new shared fields (also on the book rubric)
+    "value_promise", "information_density", "curiosity_loop", "relatability_factor",
+    "identity_framing", "contrarian_positioning", "adjective_intensity", "punctuation_delivery",
+    "rhythmic_repetition", "vulnerability_depth", "condescension_vs_empowerment",
+    # new video-only fields
+    "structure_archetype", "shareability_trigger", "product_placement",
+    "core_value_reinforcement", "status_signaling", "niche_slang_usage",
 ]
 
 

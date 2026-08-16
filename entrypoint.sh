@@ -27,4 +27,8 @@ python3 backfill_cta_heuristic.py
 # classification attempt needed human review.
 python3 migrate_add_book_classification_error.py
 
+# Adds the cross-media attribute columns (video_attributes + book_attributes)
+# — same idempotent pattern, safe on every boot.
+python3 migrate_add_cross_media_attrs.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

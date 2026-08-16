@@ -288,6 +288,7 @@ def extract_auto_features(script_text: str, title_text: str = "") -> dict:
 
     you_count = len(re.findall(r"\byou(r|rs|self)?\b", text, re.I))
     i_count = len(re.findall(r"\bI\b", text))
+    we_count = len(re.findall(r"\bwe('re|'ll|'d|'ve)?\b", text, re.I))
     question_count = text.count("?")
     emdash_count = text.count("—") + text.count("--")
     # quotes: pairs of straight or curly single/double quotes
@@ -308,6 +309,15 @@ def extract_auto_features(script_text: str, title_text: str = "") -> dict:
     references_external_media = 1 if EXTERNAL_MEDIA_RE.search(text) else 0
     named_entity_count = len(set(NAMED_ENTITY_RE.findall(text)))
     humor_marker_count = len(HUMOR_MARKER_RE.findall(text)) + text.count("!")
+
+    # word economy: filler words per "high-value" word (instruction verbs,
+    # framework markers, numeric figures — the closest existing proxies for
+    # punchy/substantive content) — a ratio, not a bare filler count, so it
+    # reads as "how diluted is the substance" rather than just "how many
+    # filler words". Falls back to the raw filler count when there's no
+    # high-value word to divide by, rather than an undefined/inf ratio.
+    high_value_word_count = instruction_verb_count + framework_marker_count + number_count
+    word_economy_ratio = round(filler_count / high_value_word_count, 3) if high_value_word_count else float(filler_count)
 
     colloquial_hits = len(COLLOQUIAL_RE.findall(text))
     colloquialism_density = round(colloquial_hits / n_words * 100, 2) if n_words else 0.0
@@ -345,6 +355,7 @@ def extract_auto_features(script_text: str, title_text: str = "") -> dict:
         # diction (auto subset)
         "you_freq_per_100w": round(you_count / n_words * 100, 2) if n_words else 0,
         "i_freq_per_100w": round(i_count / n_words * 100, 2) if n_words else 0,
+        "we_freq_per_100w": round(we_count / n_words * 100, 2) if n_words else 0,
         "question_count": question_count,
         "emdash_count": emdash_count,
         "quote_count": quote_count,
@@ -353,6 +364,7 @@ def extract_auto_features(script_text: str, title_text: str = "") -> dict:
         "readability_score": flesch_kincaid_grade(text),
         "filler_retention": 1 if filler_count > 0 else 0,
         "filler_count": filler_count,
+        "word_economy_ratio": word_economy_ratio,
         "number_count": number_count,
         "instruction_verb_count": instruction_verb_count,
         "framework_marker_count": framework_marker_count,

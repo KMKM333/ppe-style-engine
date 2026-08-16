@@ -30,9 +30,9 @@ from book_profile_builder import BOOLEAN_ATTRS as BOOK_BOOLEAN_ATTRS, CATEGORICA
 
 NUMERIC_ATTRS = [
     "word_count", "beat_count", "avg_sentence_len", "median_sentence_len",
-    "sentence_len_variance", "you_freq_per_100w", "i_freq_per_100w",
+    "sentence_len_variance", "you_freq_per_100w", "i_freq_per_100w", "we_freq_per_100w",
     "question_count", "emdash_count", "quote_count", "jargon_density",
-    "readability_score", "filler_count", "title_word_count",
+    "readability_score", "filler_count", "word_economy_ratio", "title_word_count",
     "number_count", "instruction_verb_count", "framework_marker_count",
     "sentence_rhythm_cv", "closing_paragraph_ratio", "lexical_diversity",
     "punctuation_density", "colloquialism_density", "contrast_structure_count",
@@ -44,6 +44,16 @@ CATEGORICAL_ATTRS_OPTIONAL = [
     "certainty_register", "domain", "concept_type", "source_era",
     "framing", "script_polish", "cta_type", "cta_placement",
     "explanation_mechanism", "rhetorical_mode",
+    # ported from books
+    "tone", "emotional_register", "narrative_voice", "narrative_density",
+    "counter_argument_engagement", "rhetorical_appeal_balance", "prose_rhythm",
+    "noun_verb_ratio_style", "syntax_pattern", "pacing", "polemical_tone", "narrative_presence",
+    # new shared fields
+    "value_promise", "information_density", "relatability_factor", "contrarian_positioning",
+    "adjective_intensity", "punctuation_delivery", "vulnerability_depth", "condescension_vs_empowerment",
+    # new video-only fields
+    "structure_archetype", "shareability_trigger", "product_placement",
+    "status_signaling", "niche_slang_usage",
 ]
 
 

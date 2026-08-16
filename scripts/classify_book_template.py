@@ -149,6 +149,32 @@ Style & Craft
   "Combat/competition (battle, war, fight)", "Ecosystem/network", "Mixed/no dominant domain"] — the
   primary metaphorical domain used to explain systems or ideas
 
+Cross-media shared fields (also scored this way for short-form video, so a book and a video can be
+compared directly on these dimensions)
+- value_promise: one of ["Practical how-to/skill", "Surprising fact/reveal",
+  "Emotional payoff/relatability", "Entertainment/humor", "Social currency/talking point",
+  "Intellectual framework/mental model"] — what the book implicitly promises the reader for sticking
+  with it
+- information_density: one of ["Fact-packed/dense", "Balanced", "Loose/lifestyle-focused"]
+- curiosity_loop: 0 or 1 — does the book open a question/tease early (e.g. in the intro) that's only
+  resolved later or at the very end?
+- relatability_factor: one of ["Specific everyday pain point", "Broad universal experience",
+  "Niche/insider experience", "Abstract/impersonal, low relatability"]
+- identity_framing: 0 or 1 — does the language invite the reader to see themselves in it (a "that's
+  so me" framing), as opposed to describing a general/other case?
+- contrarian_positioning: one of ["Explicitly contrarian/against consensus", "Mildly unconventional",
+  "Aligned with mainstream view", "No clear positioning"]
+- adjective_intensity: one of ["Extreme/superlative modifiers", "Moderate descriptive language",
+  "Neutral/objective phrasing"]
+- punctuation_delivery: one of ["Frequent rhetorical questions", "Exclamation-heavy/enthusiastic",
+  "Trail-off/ellipsis-driven", "Measured/standard punctuation"]
+- rhythmic_repetition: 0 or 1 — does the book use anaphora (deliberately reusing the same phrase
+  starter across consecutive lines/sentences for rhythmic effect)?
+- vulnerability_depth: one of ["High — shares mistakes/failures openly", "Moderate — some personal
+  admission", "Low/none — impersonal or purely authoritative"]
+- condescension_vs_empowerment: one of ["Empowering/collaborative ('helpful friend')",
+  "Neutral/informational", "Condescending/gatekeeping ('the guru')"]
+
 Chapter/section breakdown
 - sections: array of objects, one per chapter or major section of the book, IN ORDER, each with:
   - section_number: integer — order within the book (1, 2, 3, ...)
@@ -249,6 +275,26 @@ BOOK_CLASS_ALLOWED_VALUES = {
         "Melancholic", "Uplifting/inspiring", "Mixed/variable"],
     "narrative_voice": ["Distinct/idiosyncratic", "Neutral/generic", "Formal/detached narrator",
         "Conversational/intimate narrator", "Multiple distinct voices"],
+    # cross-media shared fields
+    "value_promise": ["Practical how-to/skill", "Surprising fact/reveal",
+        "Emotional payoff/relatability", "Entertainment/humor", "Social currency/talking point",
+        "Intellectual framework/mental model"],
+    "information_density": ["Fact-packed/dense", "Balanced", "Loose/lifestyle-focused"],
+    "curiosity_loop": [0, 1],
+    "relatability_factor": ["Specific everyday pain point", "Broad universal experience",
+        "Niche/insider experience", "Abstract/impersonal, low relatability"],
+    "identity_framing": [0, 1],
+    "contrarian_positioning": ["Explicitly contrarian/against consensus", "Mildly unconventional",
+        "Aligned with mainstream view", "No clear positioning"],
+    "adjective_intensity": ["Extreme/superlative modifiers", "Moderate descriptive language",
+        "Neutral/objective phrasing"],
+    "punctuation_delivery": ["Frequent rhetorical questions", "Exclamation-heavy/enthusiastic",
+        "Trail-off/ellipsis-driven", "Measured/standard punctuation"],
+    "rhythmic_repetition": [0, 1],
+    "vulnerability_depth": ["High — shares mistakes/failures openly", "Moderate — some personal admission",
+        "Low/none — impersonal or purely authoritative"],
+    "condescension_vs_empowerment": ["Empowering/collaborative ('helpful friend')",
+        "Neutral/informational", "Condescending/gatekeeping ('the guru')"],
 }
 
 
@@ -335,6 +381,10 @@ BOOK_CLASS_FIELDS = [
     "hedging_vs_assertion", "rhetorical_questioning",
     "diction", "syntax_pattern", "pacing", "sensory_language_density", "narrative_distance",
     "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain",
+    # cross-media shared fields (also scored this way for video)
+    "value_promise", "information_density", "curiosity_loop", "relatability_factor",
+    "identity_framing", "contrarian_positioning", "adjective_intensity", "punctuation_delivery",
+    "rhythmic_repetition", "vulnerability_depth", "condescension_vs_empowerment",
 ]
 
 

@@ -38,9 +38,12 @@ CATEGORICAL_ATTRS = [
     "hedging_vs_assertion", "rhetorical_questioning",
     "diction", "syntax_pattern", "pacing", "sensory_language_density", "narrative_distance",
     "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain",
+    # cross-media shared fields (also on the video rubric)
+    "value_promise", "information_density", "relatability_factor", "contrarian_positioning",
+    "adjective_intensity", "punctuation_delivery", "vulnerability_depth", "condescension_vs_empowerment",
 ]
 
-BOOLEAN_ATTRS = ["uses_visual_aids"]
+BOOLEAN_ATTRS = ["uses_visual_aids", "curiosity_loop", "identity_framing", "rhythmic_repetition"]
 
 
 def get_or_create_author_channel(conn, author_name):

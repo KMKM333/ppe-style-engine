@@ -338,22 +338,33 @@ def workflow_save():
 ATTRIBUTE_SECTIONS = [
     ("Title", ["title_format", "title_names_source", "title_word_count"]),
     ("Length & pacing", ["word_count", "beat_count", "avg_sentence_len", "median_sentence_len",
-                          "sentence_len_variance", "sentence_rhythm_cv", "time_to_payoff_pct", "reveal_placement"]),
+                          "sentence_len_variance", "sentence_rhythm_cv", "time_to_payoff_pct", "reveal_placement",
+                          "pacing"]),
     ("Structure", ["beat_sequence", "formula_explicit", "framework_marker_count",
-                   "closing_paragraph_ratio", "references_external_media"]),
+                   "closing_paragraph_ratio", "references_external_media", "structure_archetype"]),
     ("Hook", ["hook_type", "hook_word_count", "hook_names_source", "hook_source_word_position",
               "hook_ends_on_pivot", "hook_self_demonstrating"]),
     ("Close", ["close_type", "ends_on_question", "callback_to_hook"]),
-    ("Diction", ["you_freq_per_100w", "i_freq_per_100w", "question_count", "emdash_count",
+    ("Diction", ["you_freq_per_100w", "i_freq_per_100w", "we_freq_per_100w", "question_count", "emdash_count",
                  "quote_count", "jargon_density", "colloquialism_density", "readability_score",
-                 "register_shift_at_cta", "filler_retention", "filler_count",
-                 "number_count", "instruction_verb_count", "lexical_diversity", "punctuation_density"]),
+                 "register_shift_at_cta", "filler_retention", "filler_count", "word_economy_ratio",
+                 "number_count", "instruction_verb_count", "lexical_diversity", "punctuation_density",
+                 "prose_rhythm", "noun_verb_ratio_style", "syntax_pattern",
+                 "adjective_intensity", "punctuation_delivery"]),
     ("Rhetoric", ["citation_style", "analogy_count", "names_bias_or_law", "named_bias_or_law_term",
                   "dialectic_structure", "certainty_register", "rule_of_three_present", "rule_of_three_count",
-                  "rhetorical_mode", "explanation_mechanism", "contrast_structure_count"]),
-    ("Content taxonomy", ["domain", "concept_type", "source_era", "framing", "named_entity_count"]),
-    ("Delivery", ["script_polish", "emphasis_markers_present", "humor_marker_count"]),
+                  "rhetorical_mode", "explanation_mechanism", "contrast_structure_count",
+                  "narrative_density", "counter_argument_engagement", "rhetorical_appeal_balance",
+                  "contrarian_positioning", "rhythmic_repetition"]),
+    ("Content taxonomy", ["domain", "concept_type", "source_era", "framing", "named_entity_count",
+                           "information_density", "niche_slang_usage"]),
+    ("Delivery", ["script_polish", "emphasis_markers_present", "humor_marker_count",
+                  "shareability_trigger", "product_placement", "core_value_reinforcement"]),
     ("Engagement / CTA", ["has_cta", "cta_type", "cta_placement", "cta_count"]),
+    ("Tone & Voice", ["tone", "emotional_register", "narrative_voice", "polemical_tone", "narrative_presence",
+                       "vulnerability_depth", "condescension_vs_empowerment"]),
+    ("Audience Engagement", ["value_promise", "curiosity_loop", "relatability_factor",
+                              "identity_framing", "status_signaling"]),
     ("Meta", ["classified_by", "classified_at"]),
 ]
 
@@ -361,10 +372,10 @@ ATTRIBUTE_SECTIONS = [
 # equivalent extra rollup (their sections are already macro-sized).
 MACRO_GROUPS = [
     ("Structure & Pacing", ["Title", "Length & pacing", "Structure", "Hook", "Close"]),
-    ("Voice & Diction", ["Diction"]),
+    ("Voice & Diction", ["Diction", "Tone & Voice"]),
     ("Rhetoric & Persuasion", ["Rhetoric"]),
     ("Content & Delivery", ["Content taxonomy", "Delivery"]),
-    ("Engagement & CTA", ["Engagement / CTA"]),
+    ("Engagement & CTA", ["Engagement / CTA", "Audience Engagement"]),
 ]
 
 SECTION_TO_MACRO = {section: macro for macro, sections in MACRO_GROUPS for section in sections}
@@ -384,15 +395,21 @@ SECTION_TO_MACRO = {section: macro for macro, sections in MACRO_GROUPS for secti
 SHARED_ATTRIBUTE_SECTIONS = [
     ("Diction", ["you_freq_per_100w", "emdash_count", "quote_count", "register_shift_at_cta",
                  "filler_retention", "filler_count", "instruction_verb_count", "lexical_diversity",
-                 "punctuation_density"]),
+                 "punctuation_density", "we_freq_per_100w", "word_economy_ratio",
+                 "syntax_pattern", "adjective_intensity", "punctuation_delivery"]),
     ("Rhetoric", ["analogy_count", "rule_of_three_present", "rule_of_three_count",
-                  "explanation_mechanism", "contrast_structure_count"]),
-    ("Content Taxonomy", ["domain", "concept_type", "framing", "named_entity_count"]),
+                  "explanation_mechanism", "contrast_structure_count",
+                  "rhetorical_appeal_balance", "rhythmic_repetition"]),
+    ("Content Taxonomy", ["domain", "concept_type", "framing", "named_entity_count",
+                           "information_density", "niche_slang_usage"]),
     ("Delivery", ["script_polish", "emphasis_markers_present", "humor_marker_count",
-                  "has_cta", "cta_type", "cta_placement", "cta_count"]),
-    ("Thesis & Purpose", ["rhetorical_mode"]),
+                  "has_cta", "cta_type", "cta_placement", "cta_count",
+                  "shareability_trigger", "product_placement", "core_value_reinforcement"]),
+    ("Thesis & Purpose", ["rhetorical_mode", "value_promise"]),
     ("Evidence & Authority", ["citation_style", "number_count"]),
-    ("Tone & Voice", ["certainty_register", "i_freq_per_100w", "colloquialism_density"]),
+    ("Tone & Voice", ["certainty_register", "i_freq_per_100w", "colloquialism_density",
+                       "tone", "emotional_register", "narrative_voice", "polemical_tone",
+                       "narrative_presence", "vulnerability_depth", "condescension_vs_empowerment"]),
     ("Structure & Organization", ["title_format", "title_names_source", "title_word_count",
                                    "word_count", "beat_count", "time_to_payoff_pct", "reveal_placement",
                                    "beat_sequence", "formula_explicit", "framework_marker_count",
@@ -400,12 +417,13 @@ SHARED_ATTRIBUTE_SECTIONS = [
                                    "hook_type", "hook_word_count", "hook_names_source",
                                    "hook_source_word_position", "hook_ends_on_pivot",
                                    "hook_self_demonstrating", "close_type", "ends_on_question",
-                                   "callback_to_hook"]),
-    ("Target Audience", ["jargon_density"]),
-    ("Bias & Assumptions", ["names_bias_or_law", "named_bias_or_law_term"]),
-    ("Argument & Reasoning", ["dialectic_structure", "question_count"]),
+                                   "callback_to_hook", "curiosity_loop", "structure_archetype"]),
+    ("Target Audience", ["jargon_density", "relatability_factor", "identity_framing", "status_signaling"]),
+    ("Bias & Assumptions", ["names_bias_or_law", "named_bias_or_law_term",
+                             "counter_argument_engagement", "contrarian_positioning"]),
+    ("Argument & Reasoning", ["dialectic_structure", "question_count", "narrative_density"]),
     ("Context & Positioning", ["source_era"]),
-    ("Style & Craft", []),
+    ("Style & Craft", ["prose_rhythm", "noun_verb_ratio_style", "pacing"]),
     ("Readability", ["avg_sentence_len", "median_sentence_len", "sentence_len_variance",
                       "sentence_rhythm_cv", "readability_score"]),
 ]
@@ -423,12 +441,15 @@ FIELD_TYPES = {
     "sentence_rhythm_cv": "numeric", "closing_paragraph_ratio": "numeric", "lexical_diversity": "numeric",
     "punctuation_density": "numeric", "contrast_structure_count": "numeric", "named_entity_count": "numeric",
     "humor_marker_count": "numeric",
+    "we_freq_per_100w": "numeric", "word_economy_ratio": "numeric",
     # boolean (0/1 flags)
     "title_names_source": "boolean", "formula_explicit": "boolean", "hook_names_source": "boolean",
     "hook_ends_on_pivot": "boolean", "hook_self_demonstrating": "boolean", "ends_on_question": "boolean",
     "callback_to_hook": "boolean", "register_shift_at_cta": "boolean", "filler_retention": "boolean",
     "names_bias_or_law": "boolean", "dialectic_structure": "boolean", "rule_of_three_present": "boolean",
     "emphasis_markers_present": "boolean", "has_cta": "boolean", "references_external_media": "boolean",
+    "curiosity_loop": "boolean", "identity_framing": "boolean", "rhythmic_repetition": "boolean",
+    "core_value_reinforcement": "boolean",
     # categorical
     "title_format": "categorical", "reveal_placement": "categorical", "beat_sequence": "categorical",
     "hook_type": "categorical", "close_type": "categorical", "citation_style": "categorical",
@@ -436,6 +457,20 @@ FIELD_TYPES = {
     "source_era": "categorical", "framing": "categorical", "script_polish": "categorical",
     "cta_type": "categorical", "cta_placement": "categorical", "explanation_mechanism": "categorical",
     "rhetorical_mode": "categorical",
+    # ported from books
+    "tone": "categorical", "emotional_register": "categorical", "narrative_voice": "categorical",
+    "narrative_density": "categorical", "counter_argument_engagement": "categorical",
+    "rhetorical_appeal_balance": "categorical", "prose_rhythm": "categorical",
+    "noun_verb_ratio_style": "categorical", "syntax_pattern": "categorical", "pacing": "categorical",
+    "polemical_tone": "categorical", "narrative_presence": "categorical",
+    # new shared fields
+    "value_promise": "categorical", "information_density": "categorical",
+    "relatability_factor": "categorical", "contrarian_positioning": "categorical",
+    "adjective_intensity": "categorical", "punctuation_delivery": "categorical",
+    "vulnerability_depth": "categorical", "condescension_vs_empowerment": "categorical",
+    # new video-only fields
+    "structure_archetype": "categorical", "shareability_trigger": "categorical",
+    "product_placement": "categorical", "status_signaling": "categorical", "niche_slang_usage": "categorical",
     # free text
     "named_bias_or_law_term": "text",
 }
@@ -517,6 +552,48 @@ FIELD_DESCRIPTIONS = {
     "cta_type": "Type of call-to-action used.",
     "cta_placement": "Where the call-to-action sits in the script.",
     "cta_count": "Number of calls-to-action present.",
+    "we_freq_per_100w": 'Rate of first-person-plural ("we") per 100 words.',
+    "word_economy_ratio": "Ratio of filler words to high-value words (instruction verbs, "
+                           "framework markers, numeric figures) — how diluted the substance is.",
+    # ported from books (same meaning as the book rubric's field of the same name)
+    "tone": "Overall persuasive stance — objective, advocacy, skeptical, urgent, wry, or reverent.",
+    "emotional_register": "The script's overall emotional feel, distinct from tone.",
+    "narrative_voice": "How the narrator/speaker sounds — distinct, generic, formal, conversational, or multi-voiced.",
+    "narrative_density": "How story-led versus argument-led the script is.",
+    "counter_argument_engagement": "How seriously the script engages views it disagrees with.",
+    "rhetorical_appeal_balance": "Whether the script leans on logic, emotion, authority, or a blend.",
+    "prose_rhythm": "Sentence cadence — staccato, flowing, balanced, or monotonous.",
+    "noun_verb_ratio_style": "Whether the script leans on nouns/nominalizations or stays verb-driven.",
+    "syntax_pattern": "Sentence length, variety, and grammar pattern, as a qualitative category.",
+    "pacing": "How fast or slow the script moves, as a qualitative category (distinct from the "
+              "numeric sentence-length proxies above).",
+    "polemical_tone": "How adversarial the language gets toward opposing views.",
+    "narrative_presence": "How much the speaker inserts themselves into the script.",
+    # new shared fields (also on the book rubric)
+    "value_promise": "What the script implicitly promises the viewer for sticking with it.",
+    "information_density": "How fact-packed versus loose/lifestyle-focused the script is.",
+    "curiosity_loop": "Whether the script opens a question/tease early that's only resolved later or at the end.",
+    "relatability_factor": "The kind of relatable hook used — specific pain point, universal experience, "
+                            "niche/insider experience, or none.",
+    "identity_framing": "Whether the language invites the viewer to see themselves in it "
+                         "(a \"that's so me\" framing).",
+    "contrarian_positioning": "How much the script positions itself against consensus/mainstream opinion.",
+    "adjective_intensity": "Whether modifiers are extreme/superlative or neutral/objective.",
+    "punctuation_delivery": "The qualitative punctuation pattern — rhetorical questions, exclamation-heavy, "
+                             "trail-off, or measured.",
+    "rhythmic_repetition": "Whether the script uses anaphora (deliberately reusing a phrase starter for "
+                            "rhythmic effect).",
+    "vulnerability_depth": "How openly the speaker shares mistakes/failures versus staying purely authoritative.",
+    "condescension_vs_empowerment": "Whether the script speaks down to the viewer or with them.",
+    # new video-only fields
+    "structure_archetype": "The short-form structural pattern used — problem/solution, listicle, story, "
+                            "tutorial, myth-bust, comparison, or single-concept explainer.",
+    "shareability_trigger": "What (if anything) makes the script save/share-worthy.",
+    "product_placement": "Whether the script mentions a product/service, and how overtly.",
+    "core_value_reinforcement": "Whether the script repeats/reinforces a consistent tagline or core message.",
+    "status_signaling": "Whether watching/sharing the script is framed as implying sophistication, "
+                         "belonging, or competence.",
+    "niche_slang_usage": "How much in-group/community-specific slang the script uses.",
 }
 
 def _fmt_num(v):
@@ -853,12 +930,19 @@ def _shared_macro_category_detail(conn, macro_name):
     numeric_highlights = []
     for finfo in fields:
         field, medium, ftype = finfo["field"], finfo["medium"], finfo["type"]
+        # Some field NAMES are now shared between media (e.g. "tone" exists in
+        # both video_attributes and book_attributes), so profile_fingerprint_*
+        # can hold rows for the same attribute name from BOTH a video profile
+        # and a book profile — filtering by style_profiles.media_type is
+        # required here, or a video field's "top profile" could silently
+        # surface a book profile's fingerprint row instead (and vice versa).
+        db_media_type = "Instagram" if medium == "Short videos, Instagram" else "Book"
         if ftype in ("numeric",):
             top = conn.execute(
-                """SELECT p.profile_code, p.media_type, fn.mean_val FROM profile_fingerprint_numeric fn
+                """SELECT p.profile_code, fn.mean_val FROM profile_fingerprint_numeric fn
                    JOIN style_profiles p ON p.profile_id = fn.profile_id
-                   WHERE fn.attribute = ? ORDER BY fn.mean_val DESC LIMIT 1""",
-                (field,),
+                   WHERE fn.attribute = ? AND p.media_type = ? ORDER BY fn.mean_val DESC LIMIT 1""",
+                (field, db_media_type),
             ).fetchone()
             if top:
                 numeric_highlights.append({
@@ -868,10 +952,10 @@ def _shared_macro_category_detail(conn, macro_name):
                 })
         else:
             top = conn.execute(
-                """SELECT p.profile_code, p.media_type, fc.value, fc.share_pct FROM profile_fingerprint_categorical fc
+                """SELECT p.profile_code, fc.value, fc.share_pct FROM profile_fingerprint_categorical fc
                    JOIN style_profiles p ON p.profile_id = fc.profile_id
-                   WHERE fc.attribute = ? ORDER BY fc.share_pct DESC LIMIT 1""",
-                (field,),
+                   WHERE fc.attribute = ? AND p.media_type = ? ORDER BY fc.share_pct DESC LIMIT 1""",
+                (field, db_media_type),
             ).fetchone()
             if top:
                 categorical_highlights.append({
@@ -1833,15 +1917,19 @@ def subject_detail(subject):
 # book's own attribute-catalog display. See SHARED_BOOK_ATTRIBUTE_SECTIONS
 # below for the cross-media-comparable taxonomy.
 BOOK_ATTRIBUTE_SECTIONS = [
-    ("Thesis & Purpose", ["thesis_statement", "primary_goal"]),
+    ("Thesis & Purpose", ["thesis_statement", "primary_goal", "value_promise"]),
     ("Evidence & Authority", ["primary_evidence_type", "secondary_evidence_types", "citation_density"]),
-    ("Tone & Voice", ["tone", "rhetorical_appeal_balance", "emotional_register", "narrative_voice", "polemical_tone", "narrative_presence"]),
-    ("Structure & Organization", ["structure_style", "uses_visual_aids", "subheading_density", "thesis_consistency"]),
-    ("Target Audience", ["target_audience", "vocabulary_complexity", "jargon_accessibility"]),
-    ("Bias & Assumptions", ["bias_assumptions", "counter_argument_engagement", "ideological_positioning"]),
-    ("Argument & Reasoning", ["argument_architecture", "prescriptiveness", "claim_falsifiability", "narrative_density", "argumentative_density", "abstraction_concreteness_balance", "hedging_vs_assertion", "rhetorical_questioning"]),
+    ("Tone & Voice", ["tone", "rhetorical_appeal_balance", "emotional_register", "narrative_voice", "polemical_tone",
+                       "narrative_presence", "vulnerability_depth", "condescension_vs_empowerment"]),
+    ("Structure & Organization", ["structure_style", "uses_visual_aids", "subheading_density", "thesis_consistency",
+                                   "curiosity_loop"]),
+    ("Target Audience", ["target_audience", "vocabulary_complexity", "jargon_accessibility", "relatability_factor",
+                          "identity_framing"]),
+    ("Bias & Assumptions", ["bias_assumptions", "counter_argument_engagement", "ideological_positioning",
+                             "contrarian_positioning"]),
+    ("Argument & Reasoning", ["argument_architecture", "prescriptiveness", "claim_falsifiability", "narrative_density", "argumentative_density", "abstraction_concreteness_balance", "hedging_vs_assertion", "rhetorical_questioning", "information_density"]),
     ("Context & Positioning", ["temporal_orientation", "interdisciplinary_fields", "named_frameworks_coined", "comparative_positioning"]),
-    ("Style & Craft", ["diction", "syntax_pattern", "pacing", "sensory_language_density", "narrative_distance", "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain"]),
+    ("Style & Craft", ["diction", "syntax_pattern", "pacing", "sensory_language_density", "narrative_distance", "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain", "adjective_intensity", "punctuation_delivery", "rhythmic_repetition"]),
     ("Readability", ["avg_sentence_len", "avg_syllables_per_word", "readability_score"]),
 ]
 
@@ -1856,16 +1944,20 @@ BOOK_ATTRIBUTE_SECTIONS = [
 # buckets stay video-only. Used ONLY for cross-media comparison, never for
 # same-media display (see BOOK_ATTRIBUTE_SECTIONS above for that).
 SHARED_BOOK_ATTRIBUTE_SECTIONS = [
-    ("Diction", ["diction", "syntax_pattern"]),
-    ("Rhetoric", ["rhetorical_appeal_balance"]),
-    ("Content Taxonomy", []),
+    ("Diction", ["diction", "syntax_pattern", "adjective_intensity", "punctuation_delivery"]),
+    ("Rhetoric", ["rhetorical_appeal_balance", "rhythmic_repetition"]),
+    ("Content Taxonomy", ["information_density"]),
     ("Delivery", []),
-    ("Thesis & Purpose", ["thesis_statement", "primary_goal"]),
+    ("Thesis & Purpose", ["thesis_statement", "primary_goal", "value_promise"]),
     ("Evidence & Authority", ["primary_evidence_type", "secondary_evidence_types", "citation_density"]),
-    ("Tone & Voice", ["tone", "emotional_register", "narrative_voice", "polemical_tone", "narrative_presence"]),
-    ("Structure & Organization", ["structure_style", "uses_visual_aids", "subheading_density", "thesis_consistency"]),
-    ("Target Audience", ["target_audience", "vocabulary_complexity", "jargon_accessibility"]),
-    ("Bias & Assumptions", ["bias_assumptions", "counter_argument_engagement", "ideological_positioning"]),
+    ("Tone & Voice", ["tone", "emotional_register", "narrative_voice", "polemical_tone", "narrative_presence",
+                       "vulnerability_depth", "condescension_vs_empowerment"]),
+    ("Structure & Organization", ["structure_style", "uses_visual_aids", "subheading_density", "thesis_consistency",
+                                   "curiosity_loop"]),
+    ("Target Audience", ["target_audience", "vocabulary_complexity", "jargon_accessibility", "relatability_factor",
+                          "identity_framing"]),
+    ("Bias & Assumptions", ["bias_assumptions", "counter_argument_engagement", "ideological_positioning",
+                             "contrarian_positioning"]),
     ("Argument & Reasoning", ["argument_architecture", "prescriptiveness", "claim_falsifiability", "narrative_density", "argumentative_density", "abstraction_concreteness_balance", "hedging_vs_assertion", "rhetorical_questioning"]),
     ("Context & Positioning", ["temporal_orientation", "interdisciplinary_fields", "named_frameworks_coined", "comparative_positioning"]),
     ("Style & Craft", ["pacing", "sensory_language_density", "narrative_distance", "figurative_language_density", "prose_rhythm", "noun_verb_ratio_style", "cognitive_metaphor_domain"]),
@@ -1897,6 +1989,17 @@ BOOK_FIELD_LABELS = {
     "noun_verb_ratio_style": "Noun-to-verb ratio", "cognitive_metaphor_domain": "Cognitive metaphors",
     "avg_sentence_len": "Average sentence length", "avg_syllables_per_word": "Average syllables per word",
     "readability_score": "Readability score (Flesch-Kincaid grade)",
+    "value_promise": "What the book implicitly promises the reader for sticking with it",
+    "information_density": "How fact-packed versus loose/lifestyle-focused the book is",
+    "curiosity_loop": "Opens a question/tease resolved only later",
+    "relatability_factor": "Kind of relatable hook used",
+    "identity_framing": "Invites the reader to see themselves in it",
+    "contrarian_positioning": "How much it positions against consensus",
+    "adjective_intensity": "Extreme vs. neutral modifiers",
+    "punctuation_delivery": "Qualitative punctuation pattern",
+    "rhythmic_repetition": "Uses anaphora (repeated phrase starter)",
+    "vulnerability_depth": "How openly mistakes/failures are shared",
+    "condescension_vs_empowerment": "Speaks down to vs. with the reader",
 }
 
 

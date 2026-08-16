@@ -186,7 +186,11 @@
       </td>
       <td>{{ r.word_count if r.word_count is not none else '—' }}</td>
       <td>{{ r.duration_label if r.duration_label is not none else '—' }}</td>
-      <td>{% if r.source_url %}<a href="{{ r.source_url }}" target="_blank" rel="noopener">{{ r.source_label }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>
+        {% if r.source_url %}<a href="{{ r.source_url }}" target="_blank" rel="noopener">{{ r.source_label }}</a>
+        {% elif r.source_text %}<span title="{{ r.source_text }}">{{ r.source_text|truncate(28) }}</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
       <td class="muted" style="white-space:nowrap">{{ r.ingested_at }}</td>
       <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ r.detail_url }}">View</a></td>
     </tr>

@@ -1269,7 +1269,8 @@ def inputs_list():
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
         book_rows = conn.execute(
-            f"""SELECT b.book_id, b.title, b.author, b.word_count, b.page_count, b.ingested_at, b.source_file_path,
+            f"""SELECT b.book_id, b.title, b.author, b.word_count, b.page_count, b.ingested_at,
+                       b.source_file_path, b.source_note,
                        COALESCE(a.classified_by, 'pending') AS classified_by, a.readability_score, p.profile_code
                 FROM books b
                 LEFT JOIN book_attributes a ON a.book_id = b.book_id
@@ -1280,6 +1281,11 @@ def inputs_list():
         ).fetchall()
         for b in book_rows:
             source_url = "file://" + quote(b["source_file_path"], safe="/") if b["source_file_path"] else None
+            # books ingested via the live API (instagram_transcriber bulk upload)
+            # never get a local file_path (there's no server-side file to point
+            # at), only a source_note describing where it came from — show that
+            # as plain text instead of silently falling back to "—".
+            source_text = None if source_url else b["source_note"]
             book_detail_url = url_for("book_detail", book_id=b["book_id"])
             example_rows = conn.execute(
                 """SELECT e.example_id, e.example_title, e.example_text, e.page_range, s.section_number
@@ -1315,6 +1321,7 @@ def inputs_list():
                 "readability_score": b["readability_score"],
                 "source_url": source_url,
                 "source_label": "original file ↗",
+                "source_text": source_text,
                 "status_pill": (
                     "needs_review" if b["classified_by"] == "needs_review"
                     else "pending" if b["classified_by"] in (None, "pending")

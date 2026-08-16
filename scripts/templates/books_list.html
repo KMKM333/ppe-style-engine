@@ -3,9 +3,9 @@
 {% block content %}
 <h1>Books</h1>
 <div class="sub">
-  Non-fiction books analysed against a 23-attribute qualitative rubric, cross-referenced against the same
-  subject taxonomy as style profiles. Ingest one with <code>ingest_book.py</code>, then classify it with
-  <code>classify_book_template.py</code>.
+  Non-fiction books analysed against a 42-attribute qualitative rubric, cross-referenced against the same
+  subject taxonomy as style profiles. Books imported from the Instagram Bulk Transcriber land here and
+  classify themselves automatically within a few minutes — no manual step needed.
 </div>
 <div class="card">
   {% if books %}
@@ -19,7 +19,15 @@
       <td>{{ b.publication_year or '—' }}</td>
       <td>{{ b.word_count or '—' }}</td>
       <td class="{{ 'muted' if not b.n_examples }}">{{ b.n_examples or '—' }}</td>
-      <td><span class="pill {{ 'confirmed' if b.classified_by not in ['pending', None] else 'draft' }}">{{ 'classified' if b.classified_by not in ['pending', None] else 'pending' }}</span></td>
+      <td>
+        {% if b.classified_by == 'needs_review' %}
+        <span class="pill bad" title="Automatic classification failed — see the book's page for the reason">needs review</span>
+        {% elif b.classified_by not in ['pending', None] %}
+        <span class="pill confirmed">classified</span>
+        {% else %}
+        <span class="pill draft">pending</span>
+        {% endif %}
+      </td>
       <td>
         <form method="post" action="{{ url_for('book_toggle_read', book_id=b.book_id) }}" style="margin:0">
           <button type="submit" class="pill {{ 'confirmed' if b.is_read else 'draft' }}" style="border:none;cursor:pointer;font:inherit">{{ 'Read' if b.is_read else 'Unread' }}</button>

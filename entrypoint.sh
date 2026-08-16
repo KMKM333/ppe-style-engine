@@ -22,4 +22,9 @@ python3 migrate_add_style_craft_attrs.py
 # classification.
 python3 backfill_cta_heuristic.py
 
+# Same idempotent-column-add pattern as migrate_add_style_craft_attrs.py,
+# for the column auto_process_book.py uses to record why an automatic
+# classification attempt needed human review.
+python3 migrate_add_book_classification_error.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

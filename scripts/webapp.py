@@ -11,10 +11,11 @@ import json
 import math
 import os
 import re
+import threading
 from collections import Counter
 from urllib.parse import quote
 
-from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, abort
+from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, abort, jsonify
 
 from db_init import get_conn
 from feature_extraction import extract_auto_features, _sentences
@@ -23,6 +24,15 @@ from score_engine import rate_input, score_intrinsic
 from transform import build_transform_prompt, build_data_output_prompt, save_transformation, score_transformation, FORM_SPECS
 from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, LLMConfigError
+from ingest_book import ingest_book_text
+from auto_process_book import classify_and_build_profile
+
+# Shared secret the Instagram Bulk Transcriber (a separate local app) sends
+# as the X-Ingest-Key header when POSTing to /api/ingest/book, so a freshly
+# imported book lands directly on the live site instead of needing a manual
+# local-DB export/import round trip. Set in the Render dashboard (see
+# render.yaml) and in the transcriber's own environment — never committed.
+INGEST_API_KEY = os.environ.get("INGEST_API_KEY")
 
 SUBJECTS = ["Economics", "Politics", "Philosophy", "Psychology", "Sustainability", "Science", "Technology"]
 SUBJECT_ICONS = {
@@ -1045,7 +1055,11 @@ def inputs_list():
                 "readability_score": b["readability_score"],
                 "source_url": source_url,
                 "source_label": "original file ↗",
-                "status_pill": None if b["classified_by"] not in (None, "pending") else "pending",
+                "status_pill": (
+                    "needs_review" if b["classified_by"] == "needs_review"
+                    else "pending" if b["classified_by"] in (None, "pending")
+                    else None
+                ),
                 "ingested_at": b["ingested_at"],
                 "detail_url": book_detail_url,
                 "examples": examples,
@@ -1691,6 +1705,38 @@ def channels_list():
     return render_template("channels_list.html", active="channels", channels=channels)
 
 
+@app.route("/api/ingest/book", methods=["POST"])
+def api_ingest_book():
+    """Lets the Instagram Bulk Transcriber (running locally, on a different
+    machine from this live service) hand a book straight to the live engine —
+    no local ingest + manual DB export/import round trip. Ingestion itself is
+    synchronous (just an INSERT), but classification is kicked off in a
+    background thread since reading a full book via the Anthropic API can
+    take several minutes; the caller gets book_id back immediately and the
+    book shows as 'pending' until that thread finishes."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+
+    data = request.get_json(silent=True) or {}
+    text = (data.get("text") or "").strip()
+    title = (data.get("title") or "").strip()
+    if not text or not title:
+        return jsonify({"ok": False, "error": "Both 'text' and 'title' are required."}), 400
+
+    book_id = ingest_book_text(
+        full_text=text,
+        title=title,
+        author=data.get("author") or None,
+        subject=data.get("subject") or None,
+        year=data.get("year") or None,
+        source_note=data.get("source_note") or None,
+    )
+
+    threading.Thread(target=classify_and_build_profile, args=(book_id,), daemon=True).start()
+
+    return jsonify({"ok": True, "book_id": book_id, "status": "ingested, classifying in the background"})
+
+
 @app.route("/books")
 def books_list():
     conn = get_conn()
@@ -1773,7 +1819,8 @@ def book_detail(book_id):
     conn.close()
 
     attrs = dict(attrs_row) if attrs_row else {}
-    is_classified = attrs.get("classified_by") not in (None, "pending")
+    needs_review = attrs.get("classified_by") == "needs_review"
+    is_classified = attrs.get("classified_by") not in (None, "pending", "needs_review")
     attr_sections = []
     for name, fields in BOOK_ATTRIBUTE_SECTIONS:
         attr_sections.append((name, [(BOOK_FIELD_LABELS[f], attrs.get(f)) for f in fields]))
@@ -1785,6 +1832,7 @@ def book_detail(book_id):
     return render_template(
         "book_detail.html", active="books", book=book, attr_sections=attr_sections,
         chapters=chapters, unsectioned_examples=unsectioned_examples, is_classified=is_classified,
+        needs_review=needs_review, classification_error=attrs.get("classification_error"),
         source_file_url=source_file_url,
     )
 

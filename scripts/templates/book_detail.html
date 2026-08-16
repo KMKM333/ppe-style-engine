@@ -7,7 +7,12 @@
   {% if book.subject %} &middot; {{ book.subject }}{% endif %}
   {% if book.publication_year %} &middot; {{ book.publication_year }}{% endif %}
   {% if book.word_count %} &middot; {{ book.word_count }} words{% endif %}
-  &middot; <span class="pill {{ 'confirmed' if is_classified else 'draft' }}">{{ 'classified' if is_classified else 'pending' }}</span>
+  &middot;
+  {% if needs_review %}
+  <span class="pill bad">needs review</span>
+  {% else %}
+  <span class="pill {{ 'confirmed' if is_classified else 'draft' }}">{{ 'classified' if is_classified else 'pending' }}</span>
+  {% endif %}
 </div>
 
 {% if source_file_url %}
@@ -20,11 +25,17 @@
 <div class="card">{{ book.summary }}</div>
 {% endif %}
 
-{% if not is_classified %}
+{% if needs_review %}
 <div class="empty">
-  This book hasn't been classified yet. Run
-  <code>python3 classify_book_template.py --export --book_id {{ book.book_id }}</code>
-  to get the rubric prompt, then merge the results with <code>--load results.json</code>.
+  Automatic classification failed for this book and needs review:
+  <div style="margin-top:8px;white-space:pre-wrap;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:13px">{{ classification_error }}</div>
+  To retry, run <code>python3 auto_process_book.py --book_id {{ book.book_id }}</code>.
+</div>
+{% elif not is_classified %}
+<div class="empty">
+  This book is still being classified — a background job kicked off automatically at import should finish
+  within a few minutes. If it's been longer than that, run
+  <code>python3 auto_process_book.py --book_id {{ book.book_id }}</code> to retry manually.
 </div>
 {% else %}
 {% for section_name, fields in attr_sections %}

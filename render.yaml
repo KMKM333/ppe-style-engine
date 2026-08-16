@@ -8,6 +8,8 @@ services:
     envVars:
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: INGEST_API_KEY
+        sync: false
       - key: PPE_DB_PATH
         value: /data/ppe_engine.db
     disk:

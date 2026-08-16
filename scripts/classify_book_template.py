@@ -178,6 +178,120 @@ BOOKS:
 """
 
 
+# Controlled-vocabulary allowed values for every enum field in
+# BOOK_CLASSIFICATION_PROMPT above — kept in sync with it by hand. Used by
+# validate_book_classification() to catch a model reply that hallucinates a
+# value outside the fixed rubric before it ever reaches the database.
+BOOK_CLASS_ALLOWED_VALUES = {
+    "primary_goal": ["Inform/Explain", "Persuade/Argue", "Critique/Deconstruct", "Instruct/Prescribe"],
+    "primary_evidence_type": ["Statistics/data", "Expert interviews", "Historical documents/archival",
+        "Personal anecdote/memoir", "Case studies", "Scientific studies/citations",
+        "Philosophical argument (no external evidence)", "Mixed/multiple"],
+    "tone": ["Objective/neutral", "Passionate/advocacy", "Skeptical/critical", "Urgent/alarmist",
+        "Wry/ironic", "Reverent/admiring"],
+    "structure_style": ["Linear/chronological", "Thematic (non-chronological)",
+        "Building framework (each chapter = one building block)", "Case-study anthology (loosely linked chapters)",
+        "Argument + rebuttal", "Problem -> mechanism -> solution"],
+    "uses_visual_aids": [0, 1],
+    "subheading_density": ["None/sparse", "Moderate", "Heavy/highly scannable"],
+    "target_audience": ["General public", "Educated lay reader", "Practitioners/professionals in the field",
+        "Academic/specialist", "Policy makers", "Students"],
+    "vocabulary_complexity": ["Plain language", "Some field terms, defined inline",
+        "Assumes prior domain knowledge", "Heavy jargon"],
+    "counter_argument_engagement": ["Ignored", "Strawmanned", "Acknowledged briefly",
+        "Substantively engaged", "Steelmanned"],
+    "argument_architecture": ["Deductive (general principle -> specific cases)",
+        "Inductive (specific cases -> general principle)", "Dialectical (thesis-antithesis-synthesis)",
+        "Narrative-driven", "Comparative/case-based", "Historical-chronological"],
+    "prescriptiveness": ["Purely descriptive", "Diagnostic with implied direction",
+        "Explicit prescriptions/policy recommendations", "How-to/practical playbook"],
+    "temporal_orientation": ["Backward-looking/historical", "Present-diagnostic",
+        "Forward-looking/predictive", "Cyclical (uses history to forecast)"],
+    "narrative_density": ["Story-led (mostly anecdote/narrative)", "Balanced", "Argument-led/abstract"],
+    "claim_falsifiability": ["Highly empirical/testable", "Mixed", "Primarily normative/philosophical"],
+    "rhetorical_appeal_balance": ["Primarily logical/data-driven", "Primarily emotional/narrative",
+        "Primarily credibility/authority-driven", "Balanced blend"],
+    "thesis_consistency": ["Tight and consistent throughout", "Expands but stays coherent",
+        "Drifts/loses focus by the end"],
+    "citation_density": ["Heavily footnoted/academic", "Moderately sourced", "Light/conversational sourcing",
+        "Essayistic/unsourced opinion"],
+    "argumentative_density": ["Low (few logical transitions)", "Moderate", "High (frequent transitions)",
+        "Very high/dense argumentation"],
+    "abstraction_concreteness_balance": ["Highly abstract, few concrete examples", "Balanced abstract & concrete",
+        "Highly concrete, grounded in examples", "Alternates deliberately between abstract and concrete"],
+    "hedging_vs_assertion": ["Highly hedged/speculative", "Balanced hedging and assertion",
+        "Assertive with occasional hedges", "Highly assertive/absolute"],
+    "rhetorical_questioning": ["Rare/absent", "Used to transition between ideas",
+        "Used to challenge reader's assumptions", "Frequent — both transitional and challenging"],
+    "diction": ["Simple/plain", "Moderate/accessible", "Complex/elevated", "Formal", "Old-fashioned/archaic"],
+    "syntax_pattern": ["Short & simple, low variety", "Long & complex, low variety",
+        "Highly varied (short and long mixed)", "Fragmented/experimental"],
+    "pacing": ["Fast/action-driven", "Slow/descriptive", "Balanced action & description", "Variable/uneven pacing"],
+    "sensory_language_density": ["Minimal/abstract", "Occasional sensory detail", "Rich/immersive sensory detail",
+        "Saturated with sensory imagery"],
+    "narrative_distance": ["Stream-of-consciousness/intimate", "Close/internal", "Moderate distance",
+        "Detached/observational", "Omniscient/distant"],
+    "figurative_language_density": ["Sparse/literal", "Occasional figurative language",
+        "Frequent figurative language", "Dense/highly figurative"],
+    "prose_rhythm": ["Staccato/choppy", "Flowing/poetic", "Balanced/mixed cadence", "Monotonous/uniform"],
+    "noun_verb_ratio_style": ["Verb-driven/dynamic", "Balanced", "Noun-heavy/nominalized (formal)",
+        "Heavily nominalized/dense academic"],
+    "jargon_accessibility": ["Plain, no jargon", "Light jargon, mostly defined", "Moderate jargon, some undefined",
+        "Heavy jargon, assumes expertise"],
+    "cognitive_metaphor_domain": ["Organic/biological (growth, health, decay)",
+        "Mechanical/engineering (gears, friction, leverage)", "Journey/spatial (path, direction, movement)",
+        "Combat/competition (battle, war, fight)", "Ecosystem/network", "Mixed/no dominant domain"],
+    "polemical_tone": ["Polite/measured critique", "Firm but respectful", "Sharply critical",
+        "Aggressive/dismissive of opposing views"],
+    "narrative_presence": ["Detached/impersonal (passive, third person)", "Occasional first-person ('I argue')",
+        "Consistently participatory ('we must')", "Highly personal/confessional"],
+    "emotional_register": ["Humorous/light", "Dark/somber", "Serious/grave", "Whimsical/playful",
+        "Melancholic", "Uplifting/inspiring", "Mixed/variable"],
+    "narrative_voice": ["Distinct/idiosyncratic", "Neutral/generic", "Formal/detached narrator",
+        "Conversational/intimate narrator", "Multiple distinct voices"],
+}
+
+
+def validate_book_classification(results):
+    """Checks a parsed classification reply (the JSON array Claude returns)
+    against BOOK_CLASS_ALLOWED_VALUES plus basic structural requirements on
+    `sections`. Returns a list of human-readable error strings — empty means
+    the reply is safe to merge with merge_book_classification_results()."""
+    errors = []
+    if not isinstance(results, list) or not results:
+        return ["Expected a non-empty JSON array of book classification objects."]
+
+    for r in results:
+        book_id = r.get("book_id", "?")
+        if not isinstance(r, dict):
+            errors.append(f"book_id {book_id}: entry is not a JSON object")
+            continue
+        if "book_id" not in r:
+            errors.append("entry missing book_id")
+
+        for field, allowed in BOOK_CLASS_ALLOWED_VALUES.items():
+            val = r.get(field)
+            if val is None:
+                errors.append(f"book_id {book_id}: missing {field}")
+            elif val not in allowed:
+                errors.append(f"book_id {book_id}: invalid {field}={val!r}, not in {allowed}")
+
+        sections = r.get("sections")
+        if not sections or not isinstance(sections, list):
+            errors.append(f"book_id {book_id}: missing or empty 'sections' array")
+            continue
+        for sec in sections:
+            if not sec.get("section_title"):
+                errors.append(f"book_id {book_id}: section missing section_title: {sec.get('section_number')}")
+            for ex in sec.get("examples", []):
+                if not ex.get("example_text") or not ex.get("reinforces_point"):
+                    errors.append(
+                        f"book_id {book_id}: incomplete example in section {sec.get('section_number')}: {ex}"
+                    )
+
+    return errors
+
+
 def build_book_prompt(rows):
     """rows: list of sqlite3.Row with book_id, title, author, full_text"""
     blocks = []
@@ -227,7 +341,13 @@ BOOK_CLASS_FIELDS = [
 def merge_book_classification(json_path):
     with open(json_path) as f:
         results = json.load(f)
+    return merge_book_classification_results(results)
 
+
+def merge_book_classification_results(results):
+    """Same as merge_book_classification(), but takes already-parsed JSON —
+    used by auto_process_book.py, which gets the classification straight
+    from the Anthropic API response instead of a file on disk."""
     conn = get_conn()
     n_books = n_sections = n_points = n_terms = n_examples = 0
     for r in results:

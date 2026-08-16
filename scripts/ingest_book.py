@@ -24,7 +24,15 @@ from db_init import get_conn, init_db
 def ingest_book(file_path, title, author, subject, year=None, source_note=None):
     with open(file_path, encoding="utf-8", errors="ignore") as f:
         full_text = f.read().strip()
+    return ingest_book_text(full_text, title, author, subject, year, source_note)
 
+
+def ingest_book_text(full_text, title, author, subject, year=None, source_note=None):
+    """Same as ingest_book(), but takes the book's text directly rather than
+    a local file path — used by the /api/ingest/book endpoint, since the
+    caller (the Instagram Bulk Transcriber, running on a different machine)
+    has no filesystem path the live server can read."""
+    full_text = full_text.strip()
     word_count = len(full_text.split())
 
     conn = get_conn()

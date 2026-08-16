@@ -9,7 +9,34 @@
   and those macros roll up once more, below, into five X-Large groups spanning every medium.
 </div>
 
-<h2 style="margin-top:0">X-Large Attributes</h2>
+<h2 style="margin-top:0">Attribute field share by media type</h2>
+
+<div class="sub" style="margin-top:-6px">
+  {% if attribute_media_share %}
+  Every field in the attribute catalog, split by which medium's rubric it belongs to — not weighted by
+  how many books or videos exist, just the size of each medium's schema.
+  {% else %}
+  No implemented media types with attribute fields yet.
+  {% endif %}
+</div>
+{% if attribute_media_share %}
+<div class="card" style="display:flex;gap:28px;align-items:center;flex-wrap:wrap">
+  <div class="valuation-pie" style="background: conic-gradient({% for s in attribute_media_share %}{{ s.color }} {{ s.start_pct }}% {{ s.end_pct }}%{{ ', ' if not loop.last }}{% endfor %});"></div>
+  <div style="flex:1;min-width:240px">
+    <table>
+      <tr><th>Media type</th><th style="width:80px">Share</th></tr>
+      {% for s in attribute_media_share %}
+      <tr>
+        <td><span class="valuation-swatch" style="background:{{ s.color }}"></span>{{ s.macro }}</td>
+        <td>{{ s.pct }}%</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<h2>X-Large Attributes</h2>
 <div class="sub" style="margin-top:-6px">
   The level above per-media macros: Books' 9 macro groups and Instagram's 5 collapse into five shared
   categories, each blending both media's qualitative coverage into a single score. This is the broadest

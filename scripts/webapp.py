@@ -776,8 +776,15 @@ def attributes_page():
     cards = _attribute_cards(conn)
     xlarge_groups = _xlarge_groups(conn)
     conn.close()
+    # Share of the total attribute FIELD CATALOG each implemented media type
+    # contributes (45 book fields, 63 Instagram fields, etc) — reuses the same
+    # {label: weight} -> pie-slices helper the Creations valuation pie uses,
+    # just keyed by media type instead of scoring macro.
+    media_field_weight = {c["name"]: c["field_count"] for c in cards if c["implemented"] and c["field_count"]}
+    attribute_media_share = _valuation_slices(media_field_weight)
     return render_template(
         "attributes.html", active="attributes", cards=cards, xlarge_groups=xlarge_groups,
+        attribute_media_share=attribute_media_share,
     )
 
 

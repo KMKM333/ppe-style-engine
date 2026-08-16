@@ -11,7 +11,8 @@ import json
 import math
 import os
 import re
-import threading
+import subprocess
+import sys
 from collections import Counter
 from urllib.parse import quote
 
@@ -25,7 +26,6 @@ from transform import build_transform_prompt, build_data_output_prompt, save_tra
 from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, LLMConfigError
 from ingest_book import ingest_book_text
-from auto_process_book import classify_and_build_profile
 
 # Shared secret the Instagram Bulk Transcriber (a separate local app) sends
 # as the X-Ingest-Key header when POSTing to /api/ingest/book, so a freshly
@@ -1710,10 +1710,16 @@ def api_ingest_book():
     """Lets the Instagram Bulk Transcriber (running locally, on a different
     machine from this live service) hand a book straight to the live engine —
     no local ingest + manual DB export/import round trip. Ingestion itself is
-    synchronous (just an INSERT), but classification is kicked off in a
-    background thread since reading a full book via the Anthropic API can
-    take several minutes; the caller gets book_id back immediately and the
-    book shows as 'pending' until that thread finishes."""
+    synchronous (just an INSERT), but classification is kicked off as a
+    detached subprocess (NOT an in-process thread) since reading a full book
+    via the Anthropic API can take several minutes: gunicorn's gthread
+    workers get recycled by the arbiter if they look unresponsive, and a
+    long GIL-bound background thread inside a worker can trigger exactly
+    that — which silently kills an in-process thread along with the worker,
+    with no error ever recorded. A separate process has its own PID, so it
+    survives that worker being recycled; only a full container restart
+    would interrupt it. The caller gets book_id back immediately and the
+    book shows as 'pending' until that subprocess finishes."""
     if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
         abort(403)
 
@@ -1732,7 +1738,11 @@ def api_ingest_book():
         source_note=data.get("source_note") or None,
     )
 
-    threading.Thread(target=classify_and_build_profile, args=(book_id,), daemon=True).start()
+    # stdout/stderr deliberately inherited (not DEVNULL'd) so classification
+    # errors/tracebacks still show up in Render's log stream even though the
+    # process is detached from this request.
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auto_process_book.py")
+    subprocess.Popen([sys.executable, script_path, "--book_id", str(book_id)], start_new_session=True)
 
     return jsonify({"ok": True, "book_id": book_id, "status": "ingested, classifying in the background"})
 

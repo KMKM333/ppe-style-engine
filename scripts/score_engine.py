@@ -26,6 +26,7 @@ import sqlite3
 from db_init import get_conn
 from feature_extraction import extract_auto_features
 from similarity import find_best_match
+from book_profile_builder import BOOLEAN_ATTRS as BOOK_BOOLEAN_ATTRS, CATEGORICAL_ATTRS as BOOK_CATEGORICAL_ATTRS
 
 NUMERIC_ATTRS = [
     "word_count", "beat_count", "avg_sentence_len", "median_sentence_len",
@@ -255,6 +256,78 @@ def score_against_profiles(features: dict, weights: dict | None = None, raw_text
             "n_videos_analysed": p["n_videos_analysed"], "status": p["status"],
             "total_score": total, "breakdown": breakdown,
             "is_corpus_member": False, "match_video_id": match_video_id, "match_similarity": match_sim,
+        })
+
+    conn.close()
+    results.sort(key=lambda r: r["total_score"], reverse=True)
+    for i, r in enumerate(results, 1):
+        r["rank"] = i
+    return results
+
+
+def score_book_against_profiles(book_attrs: dict, weights: dict | None = None):
+    """Book-side counterpart to score_against_profiles(): correlates a
+    classified book's own attribute values against every confirmed BOOK
+    style_profile fingerprint.
+
+    Reuses _numeric_subscore()/_categorical_subscore() as-is — both are
+    already media-agnostic (they just look up a profile_id/attribute/value
+    in profile_fingerprint_numeric/categorical, whatever the field name
+    means), so the only thing that changes here versus the video version is
+    which field list and which profile subset gets looped: book_profile_builder's
+    BOOLEAN_ATTRS/CATEGORICAL_ATTRS (the actual book rubric field names)
+    against style_profiles WHERE media_type='Book'. No content-membership
+    check here (unlike videos) — books have no raw-text corpus-matching
+    step, so this is pure attribute correlation throughout; a book scoring
+    near-100 against its own author's profile is expected (the profile was
+    built from that book), not a bug.
+    """
+    conn = get_conn()
+    profiles = conn.execute(
+        "SELECT * FROM style_profiles WHERE status = 'confirmed' AND media_type = 'Book'"
+    ).fetchall()
+    if not profiles:
+        profiles = conn.execute("SELECT * FROM style_profiles WHERE media_type = 'Book'").fetchall()
+
+    if weights is None:
+        weights = {}  # no dedicated book weighting scheme yet -> uniform (1.0 each)
+
+    results = []
+    for p in profiles:
+        pid = p["profile_id"]
+        breakdown = {}
+        weighted_sum, weight_total = 0.0, 0.0
+
+        for attr in BOOK_BOOLEAN_ATTRS:
+            fp = conn.execute(
+                "SELECT * FROM profile_fingerprint_numeric WHERE profile_id=? AND attribute=?", (pid, attr)
+            ).fetchone()
+            if not fp or attr not in book_attrs or book_attrs[attr] is None:
+                continue
+            sub = _numeric_subscore(book_attrs[attr], fp)
+            if sub is None:
+                continue
+            w = weights.get(attr, 1.0)
+            breakdown[attr] = sub
+            weighted_sum += sub * w
+            weight_total += w
+
+        for attr in BOOK_CATEGORICAL_ATTRS:
+            if attr not in book_attrs or book_attrs[attr] is None:
+                continue
+            sub = _categorical_subscore(book_attrs[attr], pid, attr, conn)
+            if sub is None:
+                continue
+            w = weights.get(attr, 1.0)
+            breakdown[attr] = sub
+            weighted_sum += sub * w
+            weight_total += w
+
+        total = round(weighted_sum / weight_total, 1) if weight_total else 0.0
+        results.append({
+            "profile_code": p["profile_code"], "profile_id": pid,
+            "n_videos_analysed": p["n_videos_analysed"], "status": p["status"],
+            "total_score": total, "breakdown": breakdown,
         })
 
     conn.close()

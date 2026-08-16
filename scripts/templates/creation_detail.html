@@ -42,6 +42,24 @@
 </div>
 {% endif %}
 
+{% if xlarge_fit %}
+<h2>X-Large style fit</h2>
+<div class="sub" style="margin-top:-6px">
+  How well this creation fits {{ t.profile_code }}, rolled up into the same five cross-media categories
+  as the <a href="{{ url_for('attributes_page') }}">Attributes page</a> — comparable to a book's X-Large
+  fit scores on its own detail page, even though the underlying fields are completely different.
+</div>
+<div class="macros">
+  {% for name, score in xlarge_fit.items() %}
+  <div class="macro-card">
+    <h3>{{ name }}</h3>
+    <div class="mpct score {{ 'good' if score >= 70 else ('mid' if score >= 40 else 'bad') }}">{{ score }}</div>
+    <div class="bar"><div class="bar-fill" style="width:{{ score }}%;background:{{ 'var(--good)' if score >= 70 else ('var(--mid)' if score >= 40 else 'var(--bad)') }}"></div></div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="flex" style="align-items:stretch">
   <div class="card" style="flex:1;min-width:320px">
     <h2 style="margin-top:0">Original script</h2>

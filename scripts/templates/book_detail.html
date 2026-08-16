@@ -38,6 +38,46 @@
   <code>python3 auto_process_book.py --book_id {{ book.book_id }}</code> to retry manually.
 </div>
 {% else %}
+{% if xlarge_fit %}
+<h2>X-Large style fit</h2>
+<div class="sub" style="margin-top:-6px">
+  How closely this book's classified attributes match its best-fitting author profile ({{ profile_scores[0].profile_code }}),
+  rolled up into the same five cross-media categories as the
+  <a href="{{ url_for('attributes_page') }}">Attributes page</a> — comparable to a video creation's
+  X-Large fit scores, even though the underlying fields are completely different.
+</div>
+<div class="macros">
+  {% for name, score in xlarge_fit.items() %}
+  <div class="macro-card">
+    <h3>{{ name }}</h3>
+    <div class="mpct score {{ 'good' if score >= 70 else ('mid' if score >= 40 else 'bad') }}">{{ score }}</div>
+    <div class="bar"><div class="bar-fill" style="width:{{ score }}%;background:{{ 'var(--good)' if score >= 70 else ('var(--mid)' if score >= 40 else 'var(--bad)') }}"></div></div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if profile_scores %}
+<h2>Best-fit author profiles</h2>
+<div class="sub" style="margin-top:-6px">
+  How this book's own classified attributes correlate against every book-author profile's fingerprint —
+  the book-side counterpart to how a video creation gets ranked against creator profiles.
+</div>
+<div class="card">
+  <table>
+    <tr><th>Rank</th><th>Profile</th><th>Fit score</th><th>Fields compared</th></tr>
+    {% for r in profile_scores[:10] %}
+    <tr class="{{ 'rank1' if r.rank == 1 else '' }}">
+      <td>#{{ r.rank }}</td>
+      <td><a href="{{ url_for('profile_detail', code=r.profile_code) }}"><strong>{{ r.profile_code }}</strong></a></td>
+      <td class="score {{ 'good' if r.total_score >= 70 else ('mid' if r.total_score >= 40 else 'bad') }}">{{ r.total_score }}</td>
+      <td class="muted">{{ r.breakdown|length }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
 {% for section_name, fields in attr_sections %}
 <h2>{{ section_name }}</h2>
 <div class="card">

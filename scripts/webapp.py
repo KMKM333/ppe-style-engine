@@ -21,7 +21,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from db_init import get_conn
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
-from score_engine import rate_input, score_intrinsic
+from score_engine import rate_input, score_intrinsic, score_book_against_profiles
 from transform import build_transform_prompt, build_data_output_prompt, save_transformation, score_transformation, FORM_SPECS
 from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, LLMConfigError
@@ -1393,6 +1393,47 @@ def _valuation_slices(macro_weight):
     return slices
 
 
+def _macro_subscore_from_breakdown(breakdown, field_to_macro):
+    """Like _macro_weights_for_breakdown, but averages the SUBSCORE (0-100,
+    'how well does this fit the profile') per macro instead of summing
+    scoring weight ('how much of the rubric is represented'). This is the
+    number that's actually comparable across media: a book's macro fields
+    and a video's macro fields mean completely different things field-by-
+    field, but 'average fit score for this macro' is a 0-100 number either
+    way. Works on any breakdown shaped {attribute: subscore}, whether it
+    came from score_against_profiles() (video) or
+    score_book_against_profiles() (book)."""
+    if not breakdown or "content_match" in breakdown:
+        return None
+    macro_scores = {}
+    for attr, sub in breakdown.items():
+        if not isinstance(sub, (int, float)):
+            continue
+        macro = field_to_macro.get(attr, "Other")
+        macro_scores.setdefault(macro, []).append(sub)
+    if not macro_scores:
+        return None
+    return {m: round(sum(vals) / len(vals), 1) for m, vals in macro_scores.items()}
+
+
+def _xlarge_subscores(macro_subscore):
+    """Rolls per-medium macro fit-scores up into the 5 shared XLARGE_GROUPS
+    buckets — the tier where cross-media comparison becomes valid, since
+    both books' 9 macros and Instagram's 5 already map into these same 5
+    names (see XLARGE_GROUPS). Each bucket's score is the plain average of
+    whichever member macros are present for this item's medium; a bucket
+    with none of its member macros present is simply omitted rather than
+    padded with a fake 0."""
+    if not macro_subscore:
+        return None
+    out = {}
+    for group_name, member_names, _desc in XLARGE_GROUPS:
+        vals = [macro_subscore[m] for m in member_names if m in macro_subscore]
+        if vals:
+            out[group_name] = round(sum(vals) / len(vals), 1)
+    return out or None
+
+
 def _creation_valuation(breakdown):
     """Single-creation wrapper around _macro_weights_for_breakdown +
     _valuation_slices, used by the per-creation dashboard."""
@@ -1460,10 +1501,12 @@ def creation_detail(transformation_id):
     target_score = next((s for s in scores if s["profile_id"] == t["target_profile_id"]), None)
     breakdown = json.loads(target_score["score_breakdown"]) if target_score and target_score["score_breakdown"] else {}
     valuation = _creation_valuation(breakdown)
+    macro_fit = _macro_subscore_from_breakdown(breakdown, _score_field_to_macro())
+    xlarge_fit = _xlarge_subscores(macro_fit) if macro_fit else None
 
     return render_template(
         "creation_detail.html", active="creations",
-        t=t, scores=scores, valuation=valuation,
+        t=t, scores=scores, valuation=valuation, xlarge_fit=xlarge_fit,
     )
 
 
@@ -1842,6 +1885,16 @@ def book_detail(book_id):
     for name, fields in BOOK_ATTRIBUTE_SECTIONS:
         attr_sections.append((name, [(BOOK_FIELD_LABELS[f], attrs.get(f)) for f in fields]))
 
+    # Best-fit author profiles + X-Large fit scores, the book-side counterpart
+    # to a video creation's profile ranking — only meaningful once classified,
+    # since it correlates this book's own rubric values against other book
+    # profiles' fingerprints.
+    profile_scores = score_book_against_profiles(attrs) if is_classified else []
+    xlarge_fit = None
+    if profile_scores:
+        macro_fit = _macro_subscore_from_breakdown(profile_scores[0]["breakdown"], _score_field_to_macro())
+        xlarge_fit = _xlarge_subscores(macro_fit) if macro_fit else None
+
     source_file_url = None
     if book["source_file_path"]:
         source_file_url = "file://" + quote(book["source_file_path"], safe="/")
@@ -1850,6 +1903,7 @@ def book_detail(book_id):
         "book_detail.html", active="books", book=book, attr_sections=attr_sections,
         chapters=chapters, unsectioned_examples=unsectioned_examples, is_classified=is_classified,
         needs_review=needs_review, classification_error=attrs.get("classification_error"),
+        profile_scores=profile_scores, xlarge_fit=xlarge_fit,
         source_file_url=source_file_url,
     )
 

@@ -47,9 +47,10 @@ def generate_transform(prompt_text: str, model: str = DEFAULT_MODEL) -> dict:
 
 def generate_json(prompt_text: str, model: str = DEFAULT_MODEL, max_tokens: int = 8192):
     """Sends a prompt that asks Claude to return a raw JSON array/object and parses it.
-    Tolerates a markdown code fence around the JSON, since models sometimes add one
-    even when told not to. Uses streaming since large max_tokens values can otherwise
-    exceed the SDK's non-streaming timeout."""
+    Tolerates a markdown code fence around the JSON — anywhere in the reply, not just
+    at the very start, since models sometimes preface it with commentary ("# Analysis:
+    ...") despite being told to return raw JSON. Uses streaming since large max_tokens
+    values can otherwise exceed the SDK's non-streaming timeout."""
     client = _client()
     reply_parts = []
     with client.messages.stream(
@@ -61,9 +62,9 @@ def generate_json(prompt_text: str, model: str = DEFAULT_MODEL, max_tokens: int 
             reply_parts.append(chunk)
     reply = "".join(reply_parts)
     text = reply.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
+    fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1)
     try:
         return json.loads(text, strict=False)
     except json.JSONDecodeError as e:

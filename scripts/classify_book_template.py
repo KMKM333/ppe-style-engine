@@ -298,6 +298,16 @@ BOOK_CLASS_ALLOWED_VALUES = {
 }
 
 
+def normalize_classification_results(results):
+    """Some replies come back as a single classification object instead of
+    the requested JSON array (one object was asked for — one book), which
+    validate_book_classification would otherwise reject outright. Wrap it
+    so a well-formed single-book reply doesn't need a manual re-run."""
+    if isinstance(results, dict):
+        return [results]
+    return results
+
+
 def validate_book_classification(results):
     """Checks a parsed classification reply (the JSON array Claude returns)
     against BOOK_CLASS_ALLOWED_VALUES plus basic structural requirements on
@@ -391,7 +401,7 @@ BOOK_CLASS_FIELDS = [
 def merge_book_classification(json_path):
     with open(json_path) as f:
         results = json.load(f)
-    return merge_book_classification_results(results)
+    return merge_book_classification_results(normalize_classification_results(results))
 
 
 def merge_book_classification_results(results):

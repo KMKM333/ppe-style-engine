@@ -66,6 +66,7 @@ def classify_and_build_profile(book_id):
         traceback.print_exc()
         return
 
+    results = cbt.normalize_classification_results(results)
     errors = cbt.validate_book_classification(results)
     if errors:
         _mark_needs_review(book_id, "Classification failed validation: " + "; ".join(errors[:10]))

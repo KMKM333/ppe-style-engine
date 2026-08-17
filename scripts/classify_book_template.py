@@ -409,7 +409,8 @@ def merge_book_classification_results(results):
         existing = conn.execute("SELECT book_id FROM book_attributes WHERE book_id = ?", (book_id,)).fetchone()
         if existing:
             conn.execute(
-                f"UPDATE book_attributes SET {set_clause}, classified_by = ?, classified_at = datetime('now') WHERE book_id = ?",
+                f"UPDATE book_attributes SET {set_clause}, classified_by = ?, classification_error = NULL, "
+                f"classified_at = datetime('now') WHERE book_id = ?",
                 (*values, "claude", book_id),
             )
         else:

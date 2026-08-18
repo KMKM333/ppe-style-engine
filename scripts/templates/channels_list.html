@@ -34,7 +34,9 @@
         <a href="{{ url_for('input_detail', video_id=v.video_id) }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ v.title }}</a>
         {% if v.word_count %}<span class="muted"> ({{ v.word_count }}w)</span>{% endif %}
       </td>
-      <td class="muted" colspan="3" style="white-space:nowrap">{{ v.ingested_at }}</td>
+      <td class="muted" style="white-space:nowrap">{{ v.duration_label or '—' }}</td>
+      <td>{% if v.url %}<a href="{{ v.url }}" target="_blank" rel="noopener">source ↗</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="muted" style="white-space:nowrap">{{ v.ingested_at }}</td>
       <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('input_detail', video_id=v.video_id) }}">View</a></td>
     </tr>
     {% else %}

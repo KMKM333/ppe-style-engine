@@ -6,6 +6,10 @@ computed automatically.
 
 Usage:
     python3 profile_builder.py --channel "Philosophyminis" --code A.1 --length_band A
+
+Profile code prefix follows length_band: A.* for short-form (Instagram),
+BK.* for books, C.* for long-form (YouTube) — e.g.:
+    python3 profile_builder.py --channel "Johnny Harris" --code C.1 --length_band C --min_n 1
 """
 import argparse
 import json
@@ -24,6 +28,10 @@ NUMERIC_ATTRS = [
     "sentence_rhythm_cv", "closing_paragraph_ratio", "lexical_diversity",
     "punctuation_density", "colloquialism_density", "contrast_structure_count",
     "named_entity_count", "humor_marker_count",
+    # long-form-only fields — always NULL/absent on short-form videos, so
+    # they simply never contribute to an Instagram (A.*) profile's fingerprint
+    "chapter_count", "intro_length_sec", "act_count", "re_engagement_hook_count",
+    "outro_cta_count", "topic_shift_count",
 ]
 
 CATEGORICAL_ATTRS = [
@@ -41,6 +49,8 @@ CATEGORICAL_ATTRS = [
     # new video-only fields
     "structure_archetype", "shareability_trigger", "product_placement",
     "status_signaling", "niche_slang_usage",
+    # long-form-only fields
+    "sponsor_segment_position", "outro_type", "pacing_arc",
 ]
 
 

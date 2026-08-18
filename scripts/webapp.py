@@ -2130,12 +2130,15 @@ def channels_list():
     ).fetchall()
     channels = []
     for c in rows:
-        video_rows = conn.execute(
-            """SELECT v.video_id, v.title, v.ingested_at, a.word_count
-               FROM videos v LEFT JOIN video_attributes a ON a.video_id = v.video_id
-               WHERE v.channel_id = ? ORDER BY v.ingested_at DESC""",
-            (c["channel_id"],),
-        ).fetchall()
+        video_rows = [
+            {**dict(v), "duration_label": _format_duration(v["duration_sec"])}
+            for v in conn.execute(
+                """SELECT v.video_id, v.title, v.ingested_at, v.duration_sec, v.url, a.word_count
+                   FROM videos v LEFT JOIN video_attributes a ON a.video_id = v.video_id
+                   WHERE v.channel_id = ? ORDER BY v.ingested_at DESC""",
+                (c["channel_id"],),
+            ).fetchall()
+        ]
         n_analysed = conn.execute(
             """SELECT COUNT(DISTINCT v.video_id) FROM videos v
                WHERE v.channel_id = ? AND v.video_id IN (

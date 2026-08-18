@@ -1199,8 +1199,9 @@ def tags_page():
 INPUT_KINDS = [
     ("", "All types"),
     ("video", "Instagram videos"),
+    ("youtube", "YouTube videos"),
     ("book", "Books"),
-    # YouTube videos and news articles will get their own kind here once ingestion exists for them.
+    # News articles will get their own kind here once ingestion exists for them.
 ]
 
 
@@ -1222,6 +1223,10 @@ def inputs_list():
 
     if kind != "book":
         where, params = [], []
+        if kind == "video":
+            where.append("v.media_type = 'Instagram'")
+        elif kind == "youtube":
+            where.append("v.media_type = 'YouTube'")
         if channel_id:
             where.append("v.channel_id = ?")
             params.append(channel_id)
@@ -1277,7 +1282,7 @@ def inputs_list():
                 "detail_url": url_for("input_detail", video_id=v["video_id"]),
             })
 
-    if kind != "video" and not title_format:
+    if kind not in ("video", "youtube") and not title_format:
         # title_format has no book equivalent, so it's still video-only; channel_id
         # now applies to books too, matched via the author->channel join below.
         where, params = [], []

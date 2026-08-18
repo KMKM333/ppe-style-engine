@@ -145,6 +145,22 @@ CREATE TABLE IF NOT EXISTS video_attributes (
     cta_placement                 TEXT,
     cta_count                      INTEGER,
 
+    -- Section 11: Long-form Structure — only meaningful for long-form
+    -- (YouTube, 20-40+ min) content; stays NULL forever on short-form
+    -- Instagram rows, same as every other media-specific field on this table.
+    chapter_count               INTEGER,  -- auto: from yt-dlp chapter metadata at ingest time
+    has_chapters                 INTEGER, -- auto: boolean 0/1
+    cold_open_present             INTEGER,-- class: boolean 0/1
+    intro_length_sec               REAL,  -- class: seconds before the main content/thesis starts
+    sponsor_segment_present          INTEGER, -- auto: boolean 0/1
+    sponsor_segment_position          TEXT,    -- auto: enum early/mid/late/none
+    act_count                          INTEGER, -- class: distinct large structural movements
+    re_engagement_hook_count            INTEGER, -- class: mid-video re-hooks fighting runtime drop-off
+    outro_cta_count                      INTEGER, -- auto: CTA phrases in the closing portion of the script
+    outro_type                            TEXT,   -- class: enum
+    pacing_arc                             TEXT,  -- class: enum, steady/accelerating/slows-then-quickens
+    topic_shift_count                       INTEGER, -- class: distinct sub-topics covered
+
     -- Meta
     classified_by              TEXT,   -- 'auto' / 'claude' / 'manual'
     classified_at               TEXT DEFAULT (datetime('now')),
@@ -152,13 +168,28 @@ CREATE TABLE IF NOT EXISTS video_attributes (
     FOREIGN KEY (video_id) REFERENCES videos(video_id)
 );
 
+-- Chapter/section layer for long-form video — mirrors book_sections. Only
+-- populated for long-form (YouTube) content; short-form Instagram videos
+-- have no rows here and their breakdown stays flat (section_id NULL below).
+CREATE TABLE IF NOT EXISTS video_sections (
+    section_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id          INTEGER REFERENCES videos(video_id),
+    section_number     INTEGER,
+    section_title       TEXT NOT NULL,
+    summary               TEXT,
+    topics                 TEXT,
+    created_at               TEXT DEFAULT (datetime('now'))
+);
+
 -- Content breakdown for a video — the qualitative counterpart to
 -- video_attributes' rubric scores, mirroring book_points/book_terms/
--- book_examples. A video is short enough to need no chapter/section layer
--- of its own (unlike books), so these hang directly off video_id.
+-- book_examples. section_id is NULL for short-form Instagram videos (no
+-- chapter layer needed for a 60-second clip); long-form videos scope each
+-- row to a video_sections row, same pattern book_examples uses.
 CREATE TABLE IF NOT EXISTS video_points (
     point_id      INTEGER PRIMARY KEY AUTOINCREMENT,
     video_id      INTEGER REFERENCES videos(video_id),
+    section_id    INTEGER REFERENCES video_sections(section_id),
     point_text     TEXT NOT NULL,
     created_at       TEXT DEFAULT (datetime('now'))
 );
@@ -166,6 +197,7 @@ CREATE TABLE IF NOT EXISTS video_points (
 CREATE TABLE IF NOT EXISTS video_terms (
     term_id       INTEGER PRIMARY KEY AUTOINCREMENT,
     video_id      INTEGER REFERENCES videos(video_id),
+    section_id    INTEGER REFERENCES video_sections(section_id),
     term            TEXT NOT NULL,
     definition        TEXT,      -- how the video defines/uses this term
     created_at           TEXT DEFAULT (datetime('now'))
@@ -174,6 +206,7 @@ CREATE TABLE IF NOT EXISTS video_terms (
 CREATE TABLE IF NOT EXISTS video_examples (
     example_id        INTEGER PRIMARY KEY AUTOINCREMENT,
     video_id          INTEGER REFERENCES videos(video_id),
+    section_id        INTEGER REFERENCES video_sections(section_id),
     example_title       TEXT,    -- short, Instagram-title-style label (3-7 words) for list views
     example_text          TEXT NOT NULL,
     reinforces_point         TEXT,   -- which point/claim of the video this example supports

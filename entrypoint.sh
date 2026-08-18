@@ -36,4 +36,14 @@ python3 migrate_add_cross_media_attrs.py
 # idempotent pattern, safe on every boot.
 python3 migrate_add_screenshot_page_num.py
 
+# Adds the video_sections chapter layer (+ optional section_id on
+# video_points/video_terms/video_examples), needed for long-form YouTube
+# content — same idempotent pattern, safe on every boot.
+python3 migrate_add_video_sections.py
+
+# Adds video_attributes columns specific to long-form structure (cold
+# opens, sponsor segments, act count, outro type, pacing arc...) — same
+# idempotent pattern, safe on every boot.
+python3 migrate_add_video_longform_fields.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

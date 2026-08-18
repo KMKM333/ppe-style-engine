@@ -225,6 +225,42 @@ def classify_cta(text):
     cta_placement = "Start" if frac < 1 / 3 else ("Mid" if frac < 2 / 3 else "End")
     return {"has_cta": 1, "cta_type": cta_type, "cta_placement": cta_placement, "cta_count": len(hits)}
 
+
+# Long-form-only heuristics (sponsor segments, outro CTA density) — a
+# 60-second Instagram short essentially never has either, so these will
+# almost always come back "none"/0 on short-form text, which is the correct
+# answer rather than a bug.
+_SPONSOR_RE = re.compile(
+    r"\b(sponsored by|brought to you by|today'?s sponsor|thanks to .{1,40} for sponsoring|"
+    r"paid partnership|in partnership with|use code|use my code|special discount|"
+    r"this episode is sponsored)\b", re.I,
+)
+
+
+def classify_sponsor_segment(text):
+    """Heuristic auto-classifier for sponsor_segment_present/position — same
+    keyword-pattern approach as classify_cta, over sponsor/ad-read phrasing."""
+    if not text or not text.strip():
+        return {"sponsor_segment_present": 0, "sponsor_segment_position": "none"}
+    hits = [m.start() for m in _SPONSOR_RE.finditer(text)]
+    if not hits:
+        return {"sponsor_segment_present": 0, "sponsor_segment_position": "none"}
+    frac = min(hits) / len(text)
+    position = "early" if frac < 1 / 3 else ("mid" if frac < 2 / 3 else "late")
+    return {"sponsor_segment_present": 1, "sponsor_segment_position": position}
+
+
+def classify_outro_cta(text):
+    """Count of CTA-pattern hits (same patterns as classify_cta) that fall
+    within the closing ~10% of the script — distinct from cta_count's
+    whole-script total, since long-form outros often stack several CTAs
+    (subscribe, related video, membership, comment prompt) back to back."""
+    if not text or not text.strip():
+        return {"outro_cta_count": 0}
+    cutoff = len(text) * 0.9
+    hits = sum(1 for _, pattern in _CTA_PATTERNS for m in pattern.finditer(text) if m.start() >= cutoff)
+    return {"outro_cta_count": hits}
+
 # a small general jargon list to seed jargon_density; extend per-domain as you go
 PPE_JARGON_SEED = [
     "epistemic", "ontology", "dialectic", "utilitarian", "deontological",
@@ -387,6 +423,8 @@ def extract_auto_features(script_text: str, title_text: str = "") -> dict:
         "classified_by": "auto",
     }
     features.update(classify_cta(text))
+    features.update(classify_sponsor_segment(text))
+    features.update(classify_outro_cta(text))
     return features
 
 

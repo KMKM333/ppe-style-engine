@@ -142,6 +142,28 @@ New video-only fields (no book-rubric equivalent):
 - niche_slang_usage: one of ["None/general audience language", "Light community jargon",
   "Heavy in-group slang/jargon"]
 
+Long-form-only fields — ONLY score these for long-form videos (roughly 15+ minutes runtime).
+For a short-form (under ~3 minute) script, return null for every field in this group; a
+60-second clip has no cold open, acts, or sponsor read to score:
+- cold_open_present: 0 or 1 — does the video open with a teaser/preview moment before its
+  real intro (e.g. a quick flash of the payoff or a dramatic clip) rather than starting
+  directly on the main content?
+- intro_length_sec: number or null — estimated seconds of runtime before the main content/
+  thesis actually starts (base this on word count and typical speaking pace, ~150 words/min,
+  since you only have the transcript, not the audio)
+- act_count: integer — number of distinct large structural movements/acts the video moves
+  through (NOT the same as beat_count's micro-beats — think "3 acts", not "12 paragraphs")
+- re_engagement_hook_count: integer — count of mid-video re-hooks ("but here's where it gets
+  interesting", "stick around because...", "and this is the part nobody talks about") used
+  to re-capture attention and fight drop-off partway through a long runtime
+- outro_type: one of ["Summary/recap", "CTA-stack (subscribe+like+comment chained together)",
+  "Cliffhanger/teaser for next video", "Soft/abrupt end", "Personal sign-off"]
+- pacing_arc: one of ["Steady throughout", "Accelerating toward the end", "Slows then quickens",
+  "Front-loaded then coasts", "Uneven/inconsistent"] — how pacing changes across the FULL
+  runtime, distinct from the "pacing" field above (which is a single overall qualitative read)
+- topic_shift_count: integer — number of distinct sub-topics the video covers (a tight
+  single-concept video scores 1; a wide-ranging essay covering many angles scores higher)
+
 Return a JSON array, one object per video, each including "video_id" (matching the id given)
 plus all fields above.
 
@@ -158,7 +180,11 @@ def build_prompt(rows):
     return CLASSIFICATION_PROMPT.format(videos_block="\n".join(blocks))
 
 
-def export_for_classification(channel_name=None, limit=20):
+def export_for_classification(channel_name=None, limit=20, media_type=None):
+    """limit defaults to 20, tuned for ~250-word Instagram scripts. A 30-40
+    minute YouTube transcript runs 4,000-6,000+ words, so batching 20 of
+    those into one prompt is impractical — pass a much smaller --limit
+    (1-3) when media_type='YouTube'."""
     conn = get_conn()
     q = """
         SELECT v.video_id, v.title, v.script
@@ -171,6 +197,9 @@ def export_for_classification(channel_name=None, limit=20):
     if channel_name:
         q += " AND c.channel_name = ?"
         params.append(channel_name)
+    if media_type:
+        q += " AND v.media_type = ?"
+        params.append(media_type)
     q += " LIMIT ?"
     params.append(limit)
     rows = conn.execute(q, params).fetchall()
@@ -202,6 +231,9 @@ CLASS_FIELDS = [
     # new video-only fields
     "structure_archetype", "shareability_trigger", "product_placement",
     "core_value_reinforcement", "status_signaling", "niche_slang_usage",
+    # long-form-only fields (null on short-form Instagram rows)
+    "cold_open_present", "intro_length_sec", "act_count", "re_engagement_hook_count",
+    "outro_type", "pacing_arc", "topic_shift_count",
 ]
 
 
@@ -231,11 +263,13 @@ if __name__ == "__main__":
     ap.add_argument("--export", action="store_true", help="print the prompt for un-classified videos")
     ap.add_argument("--channel", default=None)
     ap.add_argument("--limit", type=int, default=20)
+    ap.add_argument("--media_type", default=None, help="e.g. YouTube — filters to one media type, "
+                     "and you should pass a much smaller --limit alongside it (scripts run far longer)")
     ap.add_argument("--load", default=None, help="path to a JSON file of Claude's classification results")
     args = ap.parse_args()
 
     if args.export:
-        export_for_classification(args.channel, args.limit)
+        export_for_classification(args.channel, args.limit, args.media_type)
     elif args.load:
         merge_classification(args.load)
     else:

@@ -366,13 +366,21 @@ ATTRIBUTE_SECTIONS = [
                        "vulnerability_depth", "condescension_vs_empowerment"]),
     ("Audience Engagement", ["value_promise", "curiosity_loop", "relatability_factor",
                               "identity_framing", "status_signaling"]),
+    # Only meaningful for long-form (YouTube, 20-40+ min) content — every
+    # field here stays NULL forever on short-form Instagram rows, same as
+    # any other media-specific section (Hook/Close are the mirror image:
+    # short-form-only, NULL on long-form rows once those exist too).
+    ("Long-form Structure", ["chapter_count", "has_chapters", "cold_open_present", "intro_length_sec",
+                              "sponsor_segment_present", "sponsor_segment_position", "act_count",
+                              "re_engagement_hook_count", "outro_cta_count", "outro_type", "pacing_arc",
+                              "topic_shift_count"]),
     ("Meta", ["classified_by", "classified_at"]),
 ]
 
 # The level above ATTRIBUTE_SECTIONS, native to video only — books have no
 # equivalent extra rollup (their sections are already macro-sized).
 MACRO_GROUPS = [
-    ("Structure & Pacing", ["Title", "Length & pacing", "Structure", "Hook", "Close"]),
+    ("Structure & Pacing", ["Title", "Length & pacing", "Structure", "Hook", "Close", "Long-form Structure"]),
     ("Voice & Diction", ["Diction", "Tone & Voice"]),
     ("Rhetoric & Persuasion", ["Rhetoric"]),
     ("Content & Delivery", ["Content taxonomy", "Delivery"]),
@@ -443,6 +451,8 @@ FIELD_TYPES = {
     "punctuation_density": "numeric", "contrast_structure_count": "numeric", "named_entity_count": "numeric",
     "humor_marker_count": "numeric",
     "we_freq_per_100w": "numeric", "word_economy_ratio": "numeric",
+    "chapter_count": "numeric", "intro_length_sec": "numeric", "act_count": "numeric",
+    "re_engagement_hook_count": "numeric", "outro_cta_count": "numeric", "topic_shift_count": "numeric",
     # boolean (0/1 flags)
     "title_names_source": "boolean", "formula_explicit": "boolean", "hook_names_source": "boolean",
     "hook_ends_on_pivot": "boolean", "hook_self_demonstrating": "boolean", "ends_on_question": "boolean",
@@ -451,6 +461,7 @@ FIELD_TYPES = {
     "emphasis_markers_present": "boolean", "has_cta": "boolean", "references_external_media": "boolean",
     "curiosity_loop": "boolean", "identity_framing": "boolean", "rhythmic_repetition": "boolean",
     "core_value_reinforcement": "boolean",
+    "has_chapters": "boolean", "cold_open_present": "boolean", "sponsor_segment_present": "boolean",
     # categorical
     "title_format": "categorical", "reveal_placement": "categorical", "beat_sequence": "categorical",
     "hook_type": "categorical", "close_type": "categorical", "citation_style": "categorical",
@@ -472,6 +483,8 @@ FIELD_TYPES = {
     # new video-only fields
     "structure_archetype": "categorical", "shareability_trigger": "categorical",
     "product_placement": "categorical", "status_signaling": "categorical", "niche_slang_usage": "categorical",
+    # long-form-only fields
+    "sponsor_segment_position": "categorical", "outro_type": "categorical", "pacing_arc": "categorical",
     # free text
     "named_bias_or_law_term": "text",
 }
@@ -595,6 +608,21 @@ FIELD_DESCRIPTIONS = {
     "status_signaling": "Whether watching/sharing the script is framed as implying sophistication, "
                          "belonging, or competence.",
     "niche_slang_usage": "How much in-group/community-specific slang the script uses.",
+    # long-form-only fields (YouTube, 20-40+ min) — always NULL on short-form Instagram rows
+    "chapter_count": "Number of chapters, from YouTube's own chapter markers (when present).",
+    "has_chapters": "Whether the video has YouTube chapter markers at all.",
+    "cold_open_present": "Whether the video opens with a teaser/preview before its main intro.",
+    "intro_length_sec": "Seconds before the main content/thesis actually starts.",
+    "sponsor_segment_present": "Whether the script contains a sponsor/ad-read segment.",
+    "sponsor_segment_position": "Where the sponsor segment sits in the runtime: early, mid, late, or none.",
+    "act_count": "Number of distinct large structural movements (not micro-beats) the video moves through.",
+    "re_engagement_hook_count": 'Count of mid-video re-hooks ("but here\'s where it gets interesting"-style) '
+                                 "used to fight viewer drop-off over a long runtime.",
+    "outro_cta_count": "Count of calls-to-action in the closing portion of the script "
+                        "(subscribe/bell, related video, membership, comment prompt).",
+    "outro_type": "How the video wraps up — e.g. summary, CTA-stack, cliffhanger/teaser for next video.",
+    "pacing_arc": "How pacing changes across the full runtime: steady, accelerating, or slows-then-quickens.",
+    "topic_shift_count": "Number of distinct sub-topics the video covers.",
 }
 
 def _fmt_num(v):
@@ -1419,17 +1447,42 @@ def input_detail(video_id):
 
     attrs_row = conn.execute("SELECT * FROM video_attributes WHERE video_id = ?", (video_id,)).fetchone()
 
+    # Long-form (YouTube) videos get a chapter breakdown, same pattern as
+    # book_detail(); short-form (Instagram) videos have no video_sections
+    # rows at all, so `chapters` stays empty and the template falls back to
+    # the flat points/terms/examples lists below (unchanged from before).
+    section_rows = conn.execute(
+        "SELECT * FROM video_sections WHERE video_id = ? ORDER BY section_number, section_id", (video_id,)
+    ).fetchall()
+    chapters = []
+    for s in section_rows:
+        sec_points = conn.execute(
+            "SELECT point_text FROM video_points WHERE section_id = ? ORDER BY point_id", (s["section_id"],)
+        ).fetchall()
+        sec_terms = conn.execute(
+            "SELECT term_id, term, definition FROM video_terms WHERE section_id = ? ORDER BY term_id", (s["section_id"],)
+        ).fetchall()
+        sec_examples = conn.execute(
+            "SELECT example_id, example_title, example_text, reinforces_point FROM video_examples "
+            "WHERE section_id = ? ORDER BY example_id", (s["section_id"],)
+        ).fetchall()
+        chapters.append({
+            "section": s,
+            "topics": [t.strip() for t in s["topics"].split(",")] if s["topics"] else [],
+            "points": sec_points, "terms": sec_terms, "examples": sec_examples,
+        })
+
     points = conn.execute(
-        "SELECT point_text FROM video_points WHERE video_id = ? ORDER BY point_id", (video_id,)
+        "SELECT point_text FROM video_points WHERE video_id = ? AND section_id IS NULL ORDER BY point_id", (video_id,)
     ).fetchall()
     terms = conn.execute(
-        "SELECT term, definition FROM video_terms WHERE video_id = ? ORDER BY term_id", (video_id,)
+        "SELECT term, definition FROM video_terms WHERE video_id = ? AND section_id IS NULL ORDER BY term_id", (video_id,)
     ).fetchall()
     examples = conn.execute(
         "SELECT example_id, example_title, example_text, reinforces_point FROM video_examples "
-        "WHERE video_id = ? ORDER BY example_id", (video_id,)
+        "WHERE video_id = ? AND section_id IS NULL ORDER BY example_id", (video_id,)
     ).fetchall()
-    has_breakdown = bool(points or terms or examples)
+    has_breakdown = bool(points or terms or examples or chapters)
     conn.close()
 
     attrs = dict(attrs_row) if attrs_row else {}
@@ -1438,7 +1491,7 @@ def input_detail(video_id):
         sections.append((name, [(f, attrs.get(f)) for f in fields]))
 
     return render_template(
-        "input_detail.html", active="inputs", video=video, sections=sections,
+        "input_detail.html", active="inputs", video=video, sections=sections, chapters=chapters,
         points=points, terms=terms, examples=examples, has_breakdown=has_breakdown,
     )
 

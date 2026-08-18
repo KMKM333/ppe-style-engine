@@ -71,6 +71,7 @@ def ingest_file(file_path, channel_name, platform, length_band):
         url = row.get("URL") if "URL" in df.columns else None
         duration = row.get("Duration") if "Duration" in df.columns else None
         posted_at = row.get("PostedAt") if "PostedAt" in df.columns else None
+        chapter_count = row.get("ChapterCount") if "ChapterCount" in df.columns else None
 
         cur = conn.execute(
             "INSERT INTO videos (channel_id, title, script, url, duration_sec, posted_at, content_hash, media_type) "
@@ -80,6 +81,13 @@ def ingest_file(file_path, channel_name, platform, length_band):
         video_id = cur.lastrowid
 
         feats = extract_auto_features(script, title)
+        # chapter_count/has_chapters come from YouTube's own chapter
+        # metadata (via yt-dlp), not the script text — extract_auto_features
+        # can't compute them, so they're threaded through as an optional
+        # CSV column instead.
+        if chapter_count is not None and pd.notna(chapter_count):
+            feats["chapter_count"] = int(chapter_count)
+            feats["has_chapters"] = 1 if int(chapter_count) > 0 else 0
         cols = ", ".join(feats.keys())
         placeholders = ", ".join(["?"] * len(feats))
         conn.execute(

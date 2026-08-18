@@ -19,7 +19,7 @@ from urllib.parse import quote
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, abort, jsonify
 
-from db_init import get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR
+from db_init import get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR, VIDEO_VISUALS_DIR
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
 from score_engine import rate_input, score_intrinsic, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
@@ -27,6 +27,7 @@ from transform import build_transform_prompt, build_data_output_prompt, save_tra
 from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, LLMConfigError
 from ingest_book import ingest_book_text
+from ingest_video import ingest_video_row
 
 # Shared secret the Instagram Bulk Transcriber (a separate local app) sends
 # as the X-Ingest-Key header when POSTing to /api/ingest/book, so a freshly
@@ -1486,6 +1487,11 @@ def input_detail(video_id):
         "WHERE video_id = ? AND section_id IS NULL ORDER BY example_id", (video_id,)
     ).fetchall()
     has_breakdown = bool(points or terms or examples or chapters)
+
+    visuals = conn.execute(
+        "SELECT visual_id, timestamp_sec, caption, recreated_svg, screenshot_captured FROM video_visuals "
+        "WHERE video_id = ? ORDER BY timestamp_sec", (video_id,)
+    ).fetchall()
     conn.close()
 
     attrs = dict(attrs_row) if attrs_row else {}
@@ -1495,7 +1501,9 @@ def input_detail(video_id):
 
     return render_template(
         "input_detail.html", active="inputs", video=video, sections=sections, chapters=chapters,
-        points=points, terms=terms, examples=examples, has_breakdown=has_breakdown,
+        points=points, terms=terms, examples=examples, has_breakdown=has_breakdown, visuals=visuals,
+        needs_review=attrs.get("classified_by") == "needs_review",
+        classification_error=attrs.get("classification_error"),
     )
 
 
@@ -2199,6 +2207,125 @@ def api_ingest_book():
     subprocess.Popen([sys.executable, script_path, "--book_id", str(book_id)], start_new_session=True)
 
     return jsonify({"ok": True, "book_id": book_id, "status": "ingested, classifying in the background"})
+
+
+@app.route("/api/ingest/video", methods=["POST"])
+def api_ingest_video():
+    """Video counterpart to /api/ingest/book — lets the Instagram Bulk
+    Transcriber hand one long-form YouTube video straight to the live
+    engine. Ingestion is synchronous (an INSERT + local feature extraction),
+    but classification/breakdown/visual-detection run in a detached
+    subprocess, same rationale as api_ingest_book: a multi-minute LLM call
+    inside an in-process thread risks gunicorn's arbiter recycling the
+    worker mid-call, silently killing the thread with it."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    script = (data.get("script") or "").strip()
+    channel = (data.get("channel") or "").strip()
+    if not title or not script or not channel:
+        return jsonify({"ok": False, "error": "'title', 'script', and 'channel' are required."}), 400
+
+    video_id = ingest_video_row(
+        title=title,
+        script=script,
+        channel=channel,
+        platform=data.get("platform") or "YouTube",
+        url=data.get("url") or None,
+        duration_sec=data.get("duration_sec") or None,
+        posted_at=data.get("posted_at") or None,
+        chapter_count=data.get("chapter_count"),
+        timed_transcript=data.get("timed_transcript") or None,
+        length_band=data.get("length_band") or "C",
+    )
+
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auto_process_video.py")
+    subprocess.Popen([sys.executable, script_path, "--video_id", str(video_id)], start_new_session=True)
+
+    return jsonify({"ok": True, "video_id": video_id, "status": "ingested, classifying in the background"})
+
+
+@app.route("/api/videos/<int:video_id>/status")
+def api_video_status(video_id):
+    """Lets the transcriber poll for classification completion after
+    /api/ingest/video, the same way _auto_finish_book_import polls
+    /api/books — 'claude' or 'needs_review' are both terminal states."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT a.classified_by, a.classification_error, p.profile_code
+           FROM videos v LEFT JOIN video_attributes a ON a.video_id = v.video_id
+           LEFT JOIN channels c ON c.channel_id = v.channel_id
+           LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+           WHERE v.video_id = ?""",
+        (video_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"ok": False, "error": "no such video"}), 404
+    done = row["classified_by"] in ("claude", "needs_review")
+    return jsonify({
+        "ok": True, "video_id": video_id, "done": done,
+        "classified_by": row["classified_by"], "classification_error": row["classification_error"],
+        "profile_code": row["profile_code"],
+    })
+
+
+@app.route("/api/videos/<int:video_id>/visuals")
+def api_video_visuals(video_id):
+    """Lets the transcriber (which has access to the actual video) fetch
+    the list of LLM-flagged chart/graph/table moments needing a real
+    screenshot, so it knows which timestamps to grab a frame at."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT visual_id, timestamp_sec, caption, screenshot_captured FROM video_visuals "
+        "WHERE video_id = ? ORDER BY timestamp_sec", (video_id,)
+    ).fetchall()
+    conn.close()
+    return jsonify({"ok": True, "video_id": video_id, "visuals": [dict(r) for r in rows]})
+
+
+@app.route("/api/videos/<int:video_id>/visuals/<int:visual_id>/screenshot", methods=["POST"])
+def api_set_visual_screenshot(video_id, visual_id):
+    """Receives one real video-frame screenshot grabbed locally by the
+    transcriber and stores it on the persistent disk, mirroring
+    api_set_example_screenshot for book pages."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    image_b64 = data.get("image_base64")
+    if not image_b64:
+        return jsonify({"ok": False, "error": "'image_base64' is required"}), 400
+
+    conn = get_conn()
+    visual = conn.execute(
+        "SELECT visual_id FROM video_visuals WHERE visual_id = ? AND video_id = ?", (visual_id, video_id)
+    ).fetchone()
+    if not visual:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such visual on this video"}), 404
+
+    video_dir = VIDEO_VISUALS_DIR / str(video_id)
+    video_dir.mkdir(parents=True, exist_ok=True)
+    (video_dir / f"visual_{visual_id}.png").write_bytes(base64.b64decode(image_b64))
+
+    conn.execute("UPDATE video_visuals SET screenshot_captured = 1 WHERE visual_id = ?", (visual_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "video_id": video_id, "visual_id": visual_id})
+
+
+@app.route("/videos/<int:video_id>/visual/<int:visual_id>.png")
+def video_visual_image(video_id, visual_id):
+    image_path = VIDEO_VISUALS_DIR / str(video_id) / f"visual_{visual_id}.png"
+    if not image_path.is_file():
+        abort(404)
+    return send_file(image_path, mimetype="image/png")
 
 
 @app.route("/books")

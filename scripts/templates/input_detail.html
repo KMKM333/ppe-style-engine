@@ -13,12 +13,46 @@
   {% if video.posted_at %} &middot; posted {{ video.posted_at }}{% endif %}
   &middot; ingested {{ video.ingested_at }}
   {% if video.url %} &middot; <a href="{{ video.url }}" target="_blank" rel="noopener">source link</a>{% endif %}
+  {% if needs_review %} &middot; <span class="pill bad">needs review</span>{% endif %}
 </div>
+
+{% if needs_review %}
+<div class="empty">
+  Automatic classification failed for this video and needs review:
+  <div style="margin-top:8px;white-space:pre-wrap;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;font-size:13px">{{ classification_error }}</div>
+  To retry, run <code>python3 auto_process_video.py --video_id {{ video.video_id }}</code>.
+</div>
+{% endif %}
 
 <h2 style="margin-top:0">Script</h2>
 <div class="card">
   <textarea class="mono" readonly onclick="this.select()" style="min-height:280px">{{ video.script }}</textarea>
 </div>
+
+{% if visuals %}
+<h2>Visuals</h2>
+<div class="sub" style="margin-top:-6px">
+  Charts, graphs, or tables this video references on screen — a real frame grabbed from the
+  video where a confident moment was found, or an LLM recreation otherwise.
+</div>
+<div class="flex" style="flex-wrap:wrap">
+  {% for v in visuals %}
+  <div class="card" style="flex:0 0 320px">
+    {% if v.screenshot_captured %}
+    <img src="{{ url_for('video_visual_image', video_id=video.video_id, visual_id=v.visual_id) }}"
+         alt="{{ v.caption or 'video screenshot' }}" style="width:100%;border-radius:6px">
+    {% elif v.recreated_svg %}
+    <div style="background:var(--bg-alt, rgba(127,127,127,.04));border-radius:6px;padding:8px">{{ v.recreated_svg|safe }}</div>
+    {% endif %}
+    <div class="muted" style="font-size:12px;margin-top:8px">
+      {{ '%02d:%02d'|format(v.timestamp_sec // 60, v.timestamp_sec % 60) if v.timestamp_sec is not none else '' }}
+      {% if not v.screenshot_captured %}&middot; recreated{% endif %}
+    </div>
+    {% if v.caption %}<div style="margin-top:4px">{{ v.caption }}</div>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 <h2>Analysis</h2>
 <div class="sub" style="margin-top:-6px">

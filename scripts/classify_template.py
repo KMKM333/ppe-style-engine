@@ -180,6 +180,144 @@ def build_prompt(rows):
     return CLASSIFICATION_PROMPT.format(videos_block="\n".join(blocks))
 
 
+# Controlled-vocabulary allowed values for every enum/boolean field in
+# CLASSIFICATION_PROMPT above — kept in sync with it by hand, same convention
+# as classify_book_template.py's BOOK_CLASS_ALLOWED_VALUES. Used by
+# validate_classification() to catch a model reply that hallucinates a value
+# outside the fixed rubric before it ever reaches the database.
+CLASS_ALLOWED_VALUES = {
+    "hook_type": ["Rhetorical question", "Relatable scenario", "Thought experiment", "Name-drop claim",
+        "Definition cold-open", "Bold/contrarian claim", "Credibility/I-did-the-work",
+        "Interactive challenge/demo", "Other"],
+    "hook_names_source": [0, 1],
+    "hook_ends_on_pivot": [0, 1],
+    "hook_self_demonstrating": [0, 1],
+    "close_type": ["Direct question", "Rhetorical mic-drop", "Practical takeaway", "Soft/light remark", "CTA-only"],
+    "callback_to_hook": [0, 1],
+    "citation_style": ["Named philosopher + direct quote", "Named study/data", "Anecdote only", "Unsourced assertion"],
+    "names_bias_or_law": [0, 1],
+    "dialectic_structure": [0, 1],
+    "certainty_register": ["Hedged", "Assertive", "Mixed"],
+    "rule_of_three_present": [0, 1],
+    "rhetorical_mode": ["Story-led", "Advice-led", "Opinion-led", "Question-led/Exploratory"],
+    "explanation_mechanism": ["Physical demonstration/experiment", "Statistic/data-led", "Analogy-led",
+        "Historical/anecdotal example", "Direct definition", "Thought experiment", "Case-study breakdown"],
+    "domain": ["Philosophy", "Politics", "Economics", "Psychology-adjacent", "Science/Mathematics",
+        "Communication/Rhetoric", "Technology", "Interdisciplinary"],
+    "concept_type": ["Thought experiment", "Named bias/effect/law", "Historical anecdote",
+        "Direct quote explainer", "Current-events application", "Scientific/mathematical phenomenon",
+        "Practical framework/how-to"],
+    "source_era": ["Ancient", "Early modern", "Modern", "Contemporary", "No named source"],
+    "framing": ["Practical/actionable", "Purely descriptive"],
+    "script_polish": ["Tightly edited", "Conversational/raw"],
+    "has_cta": [0, 1],
+    "cta_type": ["Comment-bait question", "Follow/subscribe", "Newsletter/product plug", "None"],
+    "cta_placement": ["Start", "Mid", "End", "None"],
+    "formula_explicit": [0, 1],
+    "tone": ["Objective/neutral", "Passionate/advocacy", "Skeptical/critical", "Urgent/alarmist",
+        "Wry/ironic", "Reverent/admiring"],
+    "emotional_register": ["Humorous/light", "Dark/somber", "Serious/grave", "Whimsical/playful",
+        "Melancholic", "Uplifting/inspiring", "Mixed/variable"],
+    "narrative_voice": ["Distinct/idiosyncratic", "Neutral/generic", "Formal/detached narrator",
+        "Conversational/intimate narrator", "Multiple distinct voices"],
+    "narrative_density": ["Story-led (mostly anecdote/narrative)", "Balanced", "Argument-led/abstract"],
+    "counter_argument_engagement": ["Ignored", "Strawmanned", "Acknowledged briefly",
+        "Substantively engaged", "Steelmanned"],
+    "rhetorical_appeal_balance": ["Primarily logical/data-driven", "Primarily emotional/narrative",
+        "Primarily credibility/authority-driven", "Balanced blend"],
+    "prose_rhythm": ["Staccato/choppy", "Flowing/poetic", "Balanced/mixed cadence", "Monotonous/uniform"],
+    "noun_verb_ratio_style": ["Verb-driven/dynamic", "Balanced", "Noun-heavy/nominalized (formal)",
+        "Heavily nominalized/dense academic"],
+    "syntax_pattern": ["Short & simple, low variety", "Long & complex, low variety",
+        "Highly varied (short and long mixed)", "Fragmented/experimental"],
+    "pacing": ["Fast/action-driven", "Slow/descriptive", "Balanced action & description", "Variable/uneven pacing"],
+    "polemical_tone": ["Polite/measured critique", "Firm but respectful", "Sharply critical",
+        "Aggressive/dismissive of opposing views"],
+    "narrative_presence": ["Detached/impersonal (passive, third person)", "Occasional first-person ('I argue')",
+        "Consistently participatory ('we must')", "Highly personal/confessional"],
+    "value_promise": ["Practical how-to/skill", "Surprising fact/reveal", "Emotional payoff/relatability",
+        "Entertainment/humor", "Social currency/talking point", "Intellectual framework/mental model"],
+    "information_density": ["Fact-packed/dense", "Balanced", "Loose/lifestyle-focused"],
+    "curiosity_loop": [0, 1],
+    "relatability_factor": ["Specific everyday pain point", "Broad universal experience",
+        "Niche/insider experience", "Abstract/impersonal, low relatability"],
+    "identity_framing": [0, 1],
+    "contrarian_positioning": ["Explicitly contrarian/against consensus", "Mildly unconventional",
+        "Aligned with mainstream view", "No clear positioning"],
+    "adjective_intensity": ["Extreme/superlative modifiers", "Moderate descriptive language",
+        "Neutral/objective phrasing"],
+    "punctuation_delivery": ["Frequent rhetorical questions", "Exclamation-heavy/enthusiastic",
+        "Trail-off/ellipsis-driven", "Measured/standard punctuation"],
+    "rhythmic_repetition": [0, 1],
+    "vulnerability_depth": ["High — shares mistakes/failures openly", "Moderate — some personal admission",
+        "Low/none — impersonal or purely authoritative"],
+    "condescension_vs_empowerment": ["Empowering/collaborative ('helpful friend')",
+        "Neutral/informational", "Condescending/gatekeeping ('the guru')"],
+    "structure_archetype": ["Problem to solution", "Listicle/numbered list", "Story-led narrative",
+        "Tutorial/how-to walkthrough", "Myth-bust/correction", "Comparison/versus", "Single-concept explainer"],
+    "shareability_trigger": ["Highly opinionated take", "Saveable cheat-sheet/reference",
+        "Deeply validating statement", "Surprising/counterintuitive fact", "None/low shareability"],
+    "product_placement": ["None", "Organic/subtle mention", "Explicit/obvious plug"],
+    "core_value_reinforcement": [0, 1],
+    "status_signaling": ["None/low", "Implies sophistication/being ahead of the curve",
+        "Implies belonging/in-group membership", "Implies practical competence"],
+    "niche_slang_usage": ["None/general audience language", "Light community jargon",
+        "Heavy in-group slang/jargon"],
+}
+
+# Long-form-only fields: the prompt explicitly instructs the model to return
+# null for these on a short-form (under ~3 min) script, so validation must
+# accept None here without treating it as a missing/invalid value.
+LONGFORM_ONLY_FIELDS = {
+    "cold_open_present": [0, 1],
+    "outro_type": ["Summary/recap", "CTA-stack (subscribe+like+comment chained together)",
+        "Cliffhanger/teaser for next video", "Soft/abrupt end", "Personal sign-off"],
+    "pacing_arc": ["Steady throughout", "Accelerating toward the end", "Slows then quickens",
+        "Front-loaded then coasts", "Uneven/inconsistent"],
+}
+
+
+def normalize_classification_results(results):
+    """Some replies come back as a single classification object instead of
+    the requested JSON array (one object was asked for — one video), which
+    validate_classification would otherwise reject outright."""
+    if isinstance(results, dict):
+        return [results]
+    return results
+
+
+def validate_classification(results):
+    """Checks a parsed classification reply against CLASS_ALLOWED_VALUES
+    (required, non-null) and LONGFORM_ONLY_FIELDS (allowed to be null).
+    Returns a list of human-readable error strings — empty means the reply
+    is safe to merge with merge_classification_results()."""
+    errors = []
+    if not isinstance(results, list) or not results:
+        return ["Expected a non-empty JSON array of video classification objects."]
+
+    for r in results:
+        video_id = r.get("video_id", "?")
+        if not isinstance(r, dict):
+            errors.append(f"video_id {video_id}: entry is not a JSON object")
+            continue
+        if "video_id" not in r:
+            errors.append("entry missing video_id")
+
+        for field, allowed in CLASS_ALLOWED_VALUES.items():
+            val = r.get(field)
+            if val is None:
+                errors.append(f"video_id {video_id}: missing {field}")
+            elif val not in allowed:
+                errors.append(f"video_id {video_id}: invalid {field}={val!r}, not in {allowed}")
+
+        for field, allowed in LONGFORM_ONLY_FIELDS.items():
+            val = r.get(field)
+            if val is not None and val not in allowed:
+                errors.append(f"video_id {video_id}: invalid {field}={val!r}, not in {allowed} (or null)")
+
+    return errors
+
+
 def export_for_classification(channel_name=None, limit=20, media_type=None):
     """limit defaults to 20, tuned for ~250-word Instagram scripts. A 30-40
     minute YouTube transcript runs 4,000-6,000+ words, so batching 20 of
@@ -240,17 +378,25 @@ CLASS_FIELDS = [
 def merge_classification(json_path):
     with open(json_path) as f:
         results = json.load(f)
+    return merge_classification_results(normalize_classification_results(results))
 
+
+def merge_classification_results(results):
+    """Same as merge_classification(), but takes already-parsed JSON — used
+    by auto_process_video.py, which gets the classification straight from
+    the Anthropic API response instead of a file on disk. Also clears any
+    stale classification_error/needs_review state on a successful merge,
+    same convention as merge_book_classification_results()."""
     conn = get_conn()
     n = 0
     for r in results:
         video_id = r["video_id"]
         set_clause = ", ".join([f"{k} = ?" for k in CLASS_FIELDS if k in r])
         values = [r[k] for k in CLASS_FIELDS if k in r]
-        values.append("claude")  # classified_by
         conn.execute(
-            f"UPDATE video_attributes SET {set_clause}, classified_by = ? WHERE video_id = ?",
-            (*values, video_id),
+            f"UPDATE video_attributes SET {set_clause}, classified_by = ?, classification_error = NULL, "
+            f"classified_at = datetime('now') WHERE video_id = ?",
+            (*values, "claude", video_id),
         )
         n += 1
     conn.commit()

@@ -54,6 +54,32 @@ CATEGORICAL_ATTRS = [
 ]
 
 
+def get_or_assign_profile_code(conn, channel_id, prefix="C"):
+    """Returns the channel's existing style_profiles.profile_code if it
+    already has one, otherwise assigns the next unused '{prefix}.N' code
+    (e.g. C.1, C.2, C.3...) — the same period-separated convention already
+    established for A.* (Instagram) and BK.* (books). Lets the automated
+    video pipeline build a profile without a human picking a code by hand,
+    the way the first YouTube channel's C.1 was assigned manually."""
+    row = conn.execute(
+        "SELECT profile_code FROM style_profiles WHERE channel_id = ?", (channel_id,)
+    ).fetchone()
+    if row:
+        return row["profile_code"]
+
+    existing_codes = [
+        r["profile_code"] for r in conn.execute(
+            "SELECT profile_code FROM style_profiles WHERE profile_code LIKE ?", (f"{prefix}.%",)
+        ).fetchall()
+    ]
+    max_n = 0
+    for code in existing_codes:
+        suffix = code.split(".", 1)[1]
+        if suffix.isdigit():
+            max_n = max(max_n, int(suffix))
+    return f"{prefix}.{max_n + 1}"
+
+
 def get_or_create_profile(conn, code, channel_id, length_band):
     row = conn.execute("SELECT profile_id FROM style_profiles WHERE profile_code = ?", (code,)).fetchone()
     if row:

@@ -21,6 +21,12 @@ BOOK_PAGES_DIR = DB_PATH.parent / "book_pages"
 # Layout: BOOK_FILES_DIR/<book_id>.pdf
 BOOK_FILES_DIR = DB_PATH.parent / "book_files"
 
+# Real screenshots of on-screen charts/graphs/tables, captured locally by
+# the Instagram Bulk Transcriber (the only place with access to the actual
+# video) and uploaded here — same disk/persistence story as BOOK_PAGES_DIR.
+# Layout: VIDEO_VISUALS_DIR/<video_id>/visual_<visual_id>.png
+VIDEO_VISUALS_DIR = DB_PATH.parent / "video_visuals"
+
 
 def get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

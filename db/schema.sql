@@ -46,6 +46,9 @@ CREATE TABLE IF NOT EXISTS videos (
     content_hash    TEXT,              -- normalized-text hash, for exact/near-duplicate membership checks
     summary         TEXT,              -- plain-language soundbite explanation of the video (human/Claude-written,
                                         -- not extracted from the script's own wording)
+    timed_transcript_json TEXT,        -- JSON [{"start": float, "text": str}, ...] cue-level timing, captured for
+                                        -- long-form YouTube videos only — lets classification/visual-detection
+                                        -- point at an approximate on-screen moment without re-transcribing
     ingested_at     TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_videos_content_hash ON videos(content_hash);
@@ -162,8 +165,10 @@ CREATE TABLE IF NOT EXISTS video_attributes (
     topic_shift_count                       INTEGER, -- class: distinct sub-topics covered
 
     -- Meta
-    classified_by              TEXT,   -- 'auto' / 'claude' / 'manual'
+    classified_by              TEXT,   -- 'auto' / 'claude' / 'manual' / 'needs_review'
     classified_at               TEXT DEFAULT (datetime('now')),
+    classification_error        TEXT,  -- set when auto_process_video.py's classification pass fails, so a video
+                                        -- never looks silently mis-classified (mirrors book_attributes' field)
 
     FOREIGN KEY (video_id) REFERENCES videos(video_id)
 );
@@ -211,6 +216,24 @@ CREATE TABLE IF NOT EXISTS video_examples (
     example_text          TEXT NOT NULL,
     reinforces_point         TEXT,   -- which point/claim of the video this example supports
     created_at                  TEXT DEFAULT (datetime('now'))
+);
+
+-- Significant on-screen graphs/charts/tables a long-form video references
+-- (e.g. "as you can see in this chart..."). recreated_svg is always filled
+-- in at classification time (an LLM recreation from the surrounding
+-- transcript, same spirit as book_sections.diagram_svg); screenshot_captured
+-- flips to 1 once the local transcriber has grabbed and uploaded the real
+-- video frame at timestamp_sec, which then takes display priority over the
+-- recreation. Never populated for short-form Instagram videos.
+CREATE TABLE IF NOT EXISTS video_visuals (
+    visual_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id             INTEGER REFERENCES videos(video_id),
+    section_id           INTEGER REFERENCES video_sections(section_id),
+    timestamp_sec        REAL,
+    caption              TEXT,
+    recreated_svg        TEXT,
+    screenshot_captured  INTEGER DEFAULT 0,
+    created_at           TEXT DEFAULT (datetime('now'))
 );
 
 -- ============================================================

@@ -46,4 +46,10 @@ python3 migrate_add_video_sections.py
 # idempotent pattern, safe on every boot.
 python3 migrate_add_video_longform_fields.py
 
+# Adds video_attributes.classification_error, videos.timed_transcript_json,
+# and the video_visuals table (screenshots/recreated SVGs of on-screen
+# charts/graphs/tables) for the automated long-form video pipeline — same
+# idempotent pattern, safe on every boot.
+python3 migrate_add_video_visuals.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

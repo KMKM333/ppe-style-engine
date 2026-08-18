@@ -18,8 +18,25 @@ import json
 
 from db_init import get_conn, init_db
 from feature_extraction import extract_auto_features
-from ingest import get_or_create_channel
 from similarity import normalize_hash
+
+# get_or_create_channel is duplicated from ingest.py rather than imported —
+# ingest.py imports pandas at module level (for its CSV/XLSX batch path),
+# which isn't installed in production (webapp.py's environment), so pulling
+# it in here would break every /api/ingest/video request with an
+# ImportError the moment this module loads.
+
+
+def get_or_create_channel(conn, name, platform, length_band):
+    row = conn.execute("SELECT channel_id FROM channels WHERE channel_name = ?", (name,)).fetchone()
+    if row:
+        return row["channel_id"]
+    cur = conn.execute(
+        "INSERT INTO channels (channel_name, platform, typical_length_band) VALUES (?, ?, ?)",
+        (name, platform, length_band),
+    )
+    conn.commit()
+    return cur.lastrowid
 
 
 def ingest_video_row(title, script, channel, platform="YouTube", url=None, duration_sec=None,

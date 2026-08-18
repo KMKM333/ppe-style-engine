@@ -12,6 +12,11 @@ from pathlib import Path
 DB_PATH = Path(os.environ.get("PPE_DB_PATH", str(Path(__file__).parent.parent / "db" / "ppe_engine.db")))
 SCHEMA_PATH = Path(__file__).parent.parent / "db" / "schema.sql"
 
+# Page screenshots for book examples live alongside the DB on the same disk
+# (the Render persistent disk in production, db/ locally) so they survive
+# deploys the same way the DB does. Layout: BOOK_PAGES_DIR/<book_id>/page_0042.png
+BOOK_PAGES_DIR = DB_PATH.parent / "book_pages"
+
 
 def get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

@@ -7,6 +7,7 @@ Usage:
     python3 webapp.py
     (then open http://127.0.0.1:5050 )
 """
+import base64
 import json
 import math
 import os
@@ -18,7 +19,7 @@ from urllib.parse import quote
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, abort, jsonify
 
-from db_init import get_conn
+from db_init import get_conn, BOOK_PAGES_DIR
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
 from score_engine import rate_input, score_intrinsic, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
@@ -2168,16 +2169,79 @@ def book_toggle_read(book_id):
 
 @app.route("/books/<int:book_id>/page/<int:page_num>.png")
 def book_page_image(book_id, page_num):
+    # Screenshots matched to examples live on the same persistent disk as the
+    # DB (see match_book_screenshots.py) — this is the primary location and
+    # works the same in local dev and production.
+    image_path = BOOK_PAGES_DIR / str(book_id) / f"page_{page_num:04d}.png"
+    if image_path.is_file():
+        return send_file(image_path, mimetype="image/png")
+
+    # Fall back to the older convention (a "pages" dir next to the book's own
+    # local file), which only ever resolves when this is run on the same
+    # machine the original PDF was uploaded from.
     conn = get_conn()
     book = conn.execute("SELECT source_file_path FROM books WHERE book_id = ?", (book_id,)).fetchone()
     conn.close()
     if not book or not book["source_file_path"]:
         abort(404)
-    pages_dir = os.path.join(os.path.dirname(book["source_file_path"]), "pages")
-    image_path = os.path.join(pages_dir, f"page_{page_num:04d}.png")
-    if not os.path.isfile(image_path):
+    legacy_path = os.path.join(os.path.dirname(book["source_file_path"]), "pages", f"page_{page_num:04d}.png")
+    if not os.path.isfile(legacy_path):
         abort(404)
-    return send_file(image_path, mimetype="image/png")
+    return send_file(legacy_path, mimetype="image/png")
+
+
+@app.route("/api/books/<int:book_id>/examples")
+def api_book_examples(book_id):
+    """Lets match_book_screenshots.py (run locally, where the original PDF
+    and its rendered page images live) fetch a book's examples from the live
+    engine so it can match each one to a page number without needing direct
+    DB access."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    book = conn.execute("SELECT book_id, title FROM books WHERE book_id = ?", (book_id,)).fetchone()
+    if not book:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such book"}), 404
+    rows = conn.execute(
+        "SELECT example_id, example_title, example_text, reinforces_point, screenshot_page_num "
+        "FROM book_examples WHERE book_id = ? ORDER BY example_id", (book_id,)
+    ).fetchall()
+    conn.close()
+    return jsonify({"ok": True, "book_id": book_id, "title": book["title"],
+                     "examples": [dict(r) for r in rows]})
+
+
+@app.route("/api/books/<int:book_id>/examples/<int:example_id>/screenshot", methods=["POST"])
+def api_set_example_screenshot(book_id, example_id):
+    """Receives one matched page image from match_book_screenshots.py and
+    stores it on the persistent disk + records the page number against the
+    example, so book_detail can render it inline."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    page_num = data.get("page_num")
+    image_b64 = data.get("image_base64")
+    if not page_num or not image_b64:
+        return jsonify({"ok": False, "error": "'page_num' and 'image_base64' are required"}), 400
+
+    conn = get_conn()
+    ex = conn.execute(
+        "SELECT example_id FROM book_examples WHERE example_id = ? AND book_id = ?", (example_id, book_id)
+    ).fetchone()
+    if not ex:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such example on this book"}), 404
+
+    book_dir = BOOK_PAGES_DIR / str(book_id)
+    book_dir.mkdir(parents=True, exist_ok=True)
+    image_path = book_dir / f"page_{int(page_num):04d}.png"
+    image_path.write_bytes(base64.b64decode(image_b64))
+
+    conn.execute("UPDATE book_examples SET screenshot_page_num = ? WHERE example_id = ?", (int(page_num), example_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "book_id": book_id, "example_id": example_id, "page_num": page_num})
 
 
 @app.route("/books/<int:book_id>")
@@ -2202,7 +2266,8 @@ def book_detail(book_id):
             "SELECT term, definition FROM book_terms WHERE section_id = ? ORDER BY term_id", (s["section_id"],)
         ).fetchall()
         examples = conn.execute(
-            "SELECT example_id, example_title, example_text, reinforces_point FROM book_examples WHERE section_id = ? ORDER BY example_id",
+            "SELECT example_id, example_title, example_text, reinforces_point, screenshot_page_num "
+            "FROM book_examples WHERE section_id = ? ORDER BY example_id",
             (s["section_id"],),
         ).fetchall()
         chapters.append({
@@ -2214,8 +2279,8 @@ def book_detail(book_id):
     # examples/points/terms not attributed to any registered section (e.g. from
     # an older flat classification) still need somewhere to show up
     unsectioned_examples = conn.execute(
-        "SELECT example_id, example_title, example_text, reinforces_point, chapter_or_location FROM book_examples "
-        "WHERE book_id = ? AND section_id IS NULL ORDER BY example_id", (book_id,)
+        "SELECT example_id, example_title, example_text, reinforces_point, chapter_or_location, screenshot_page_num "
+        "FROM book_examples WHERE book_id = ? AND section_id IS NULL ORDER BY example_id", (book_id,)
     ).fetchall()
     conn.close()
 

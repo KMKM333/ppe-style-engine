@@ -142,7 +142,13 @@
     <tr><th>Example</th><th>Reinforces</th></tr>
     {% for ex in ch.examples %}
     <tr id="example-{{ ex.example_id }}">
-      <td>{% if ex.example_title %}<a class="tag-link" href="{{ url_for('inputs_list', example=ex.example_title) }}">{{ ex.example_title }}</a><br>{% endif %}{{ ex.example_text }}</td>
+      <td>{% if ex.example_title %}<a class="tag-link" href="{{ url_for('inputs_list', example=ex.example_title) }}">{{ ex.example_title }}</a><br>{% endif %}{{ ex.example_text }}
+        {% if ex.screenshot_page_num %}
+        <br><a href="{{ url_for('book_page_image', book_id=book.book_id, page_num=ex.screenshot_page_num) }}" target="_blank" rel="noopener">
+          <img src="{{ url_for('book_page_image', book_id=book.book_id, page_num=ex.screenshot_page_num) }}" alt="Book page {{ ex.screenshot_page_num }}" style="max-width:220px;margin-top:8px;border:1px solid var(--border, #333);border-radius:4px;display:block">
+        </a>
+        {% endif %}
+      </td>
       <td class="muted">{{ ex.reinforces_point or '—' }}</td>
     </tr>
     {% endfor %}
@@ -162,7 +168,13 @@
     <tr><th>Example</th><th>Reinforces</th><th>Location</th></tr>
     {% for ex in unsectioned_examples %}
     <tr id="example-{{ ex.example_id }}">
-      <td>{% if ex.example_title %}<a class="tag-link" href="{{ url_for('inputs_list', example=ex.example_title) }}">{{ ex.example_title }}</a><br>{% endif %}{{ ex.example_text }}</td>
+      <td>{% if ex.example_title %}<a class="tag-link" href="{{ url_for('inputs_list', example=ex.example_title) }}">{{ ex.example_title }}</a><br>{% endif %}{{ ex.example_text }}
+        {% if ex.screenshot_page_num %}
+        <br><a href="{{ url_for('book_page_image', book_id=book.book_id, page_num=ex.screenshot_page_num) }}" target="_blank" rel="noopener">
+          <img src="{{ url_for('book_page_image', book_id=book.book_id, page_num=ex.screenshot_page_num) }}" alt="Book page {{ ex.screenshot_page_num }}" style="max-width:220px;margin-top:8px;border:1px solid var(--border, #333);border-radius:4px;display:block">
+        </a>
+        {% endif %}
+      </td>
       <td class="muted">{{ ex.reinforces_point or '—' }}</td>
       <td class="muted" style="white-space:nowrap">{{ ex.chapter_or_location or '—' }}</td>
     </tr>

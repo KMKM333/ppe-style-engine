@@ -31,4 +31,9 @@ python3 migrate_add_book_classification_error.py
 # — same idempotent pattern, safe on every boot.
 python3 migrate_add_cross_media_attrs.py
 
+# Adds book_examples.screenshot_page_num, used to render a matched PDF page
+# image inline on an example (see match_book_screenshots.py) — same
+# idempotent pattern, safe on every boot.
+python3 migrate_add_screenshot_page_num.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

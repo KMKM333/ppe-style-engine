@@ -481,6 +481,8 @@ CREATE TABLE IF NOT EXISTS book_examples (
     example_title            TEXT,           -- short, Instagram-title-style label (3-7 words) for list views
     reinforces_point          TEXT,          -- which argument/point of the book this example supports
     chapter_or_location        TEXT,         -- fallback free-text location, if not tied to a registered section
-    page_range                  TEXT,        -- e.g. "47-48" — page(s) in the source PDF where this example appears
+    page_range                  TEXT,        -- e.g. "47-48" — legacy free-text page(s), unused by current pipeline
+    screenshot_page_num          INTEGER,    -- matched PDF page (single int) for the inline example screenshot,
+                                              -- see match_book_screenshots.py
     created_at                   TEXT DEFAULT (datetime('now'))
 );

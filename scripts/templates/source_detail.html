@@ -25,6 +25,7 @@
       {% else %}
       <th>Posted</th>
       <th>Duration</th>
+      <th>Script</th>
       {% endif %}
       <th>Source</th>
     </tr>
@@ -38,6 +39,7 @@
       {% else %}
       <td class="muted" style="white-space:nowrap">{{ r.posted_at or '—' }}</td>
       <td class="muted">{{ r.duration_label or '—' }}</td>
+      <td><a href="{{ r.detail_url }}" target="_blank" rel="noopener">view script ↗</a></td>
       {% endif %}
       <td>
         {% if r.file_url %}<a href="{{ r.file_url }}" target="_blank" rel="noopener">{{ r.file_label }}</a>

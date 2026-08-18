@@ -135,7 +135,7 @@
   <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;margin-top:12px">Terms</div>
   <dl class="terms-list">
     {% for t in ch.terms %}
-    <dt><a class="tag-link" href="{{ url_for('inputs_list', term=t.term) }}">{{ t.term }}</a></dt>
+    <dt id="term-{{ t.term_id }}"><a class="tag-link" href="{{ url_for('inputs_list', term=t.term) }}">{{ t.term }}</a></dt>
     <dd>{{ t.definition or '—' }}</dd>
     {% endfor %}
   </dl>

@@ -2347,12 +2347,29 @@ def source_media_detail(slug):
         ).fetchall()
         for b in book_rows:
             has_pdf = (BOOK_FILES_DIR / f"{b['book_id']}.pdf").is_file()
+            book_detail_url = url_for("book_detail", book_id=b["book_id"])
+            example_rows = conn.execute(
+                "SELECT example_id, example_title, example_text FROM book_examples "
+                "WHERE book_id = ? ORDER BY example_id", (b["book_id"],),
+            ).fetchall()
+            term_rows = conn.execute(
+                "SELECT term_id, term FROM book_terms WHERE book_id = ? ORDER BY term_id", (b["book_id"],),
+            ).fetchall()
             rows.append({
                 "author_or_channel": b["author"], "title": b["title"],
-                "detail_url": url_for("book_detail", book_id=b["book_id"]),
+                "detail_url": book_detail_url,
                 "word_count": b["word_count"], "ingested_at": b["ingested_at"],
                 "file_url": url_for("book_pdf", book_id=b["book_id"]) if has_pdf else None,
                 "file_label": "source PDF ↗", "source_text": b["source_note"],
+                "examples": [
+                    {"label": ex["example_title"] or _trim(ex["example_text"], 90),
+                     "detail_url": f"{book_detail_url}#example-{ex['example_id']}"}
+                    for ex in example_rows
+                ],
+                "terms": [
+                    {"label": t["term"], "detail_url": f"{book_detail_url}#term-{t['term_id']}"}
+                    for t in term_rows
+                ],
             })
     else:  # instagram
         video_rows = conn.execute(
@@ -2390,7 +2407,7 @@ def book_detail(book_id):
             "SELECT point_text FROM book_points WHERE section_id = ? ORDER BY point_id", (s["section_id"],)
         ).fetchall()
         terms = conn.execute(
-            "SELECT term, definition FROM book_terms WHERE section_id = ? ORDER BY term_id", (s["section_id"],)
+            "SELECT term_id, term, definition FROM book_terms WHERE section_id = ? ORDER BY term_id", (s["section_id"],)
         ).fetchall()
         examples = conn.execute(
             "SELECT example_id, example_title, example_text, reinforces_point, screenshot_page_num "

@@ -47,6 +47,22 @@
         {% else %}<span class="muted">—</span>{% endif %}
       </td>
     </tr>
+    {% if media.slug == 'books' %}
+    {% for ex in r.examples %}
+    <tr style="background:var(--bg-alt, rgba(127,127,127,.04))">
+      <td class="muted" style="white-space:nowrap;padding-left:22px">Example</td>
+      <td colspan="3"><a href="{{ ex.detail_url }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ ex.label }}</a></td>
+      <td class="muted">—</td>
+    </tr>
+    {% endfor %}
+    {% for t in r.terms %}
+    <tr style="background:var(--bg-alt, rgba(127,127,127,.04))">
+      <td class="muted" style="white-space:nowrap;padding-left:22px">Term</td>
+      <td colspan="3"><a href="{{ t.detail_url }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ t.label }}</a></td>
+      <td class="muted">—</td>
+    </tr>
+    {% endfor %}
+    {% endif %}
     {% endfor %}
   </table>
   {% else %}

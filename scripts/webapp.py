@@ -2246,18 +2246,24 @@ def api_set_example_screenshot(book_id, example_id):
 
 @app.route("/api/books")
 def api_books_list():
-    """Lets a local sync script (upload_book_pdfs.py) look up every book's id
-    and title without direct DB access, so it can match filenames to books
-    and skip any that already have a PDF stored."""
+    """Lets local sync scripts (upload_book_pdfs.py, match_book_screenshots.py,
+    and the transcriber's auto-finish poller) look up every book's id, title,
+    and readiness without direct DB access — has_pdf so upload can skip what's
+    already stored, classified so the screenshot matcher (which needs
+    book_examples to exist) knows when a freshly-ingested book is ready."""
     if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
         abort(403)
     conn = get_conn()
-    rows = conn.execute("SELECT book_id, title, author FROM books ORDER BY book_id").fetchall()
+    rows = conn.execute(
+        "SELECT b.book_id, b.title, b.author, a.classified_by "
+        "FROM books b LEFT JOIN book_attributes a ON a.book_id = b.book_id ORDER BY b.book_id"
+    ).fetchall()
     conn.close()
     books = []
     for r in rows:
-        d = dict(r)
+        d = {"book_id": r["book_id"], "title": r["title"], "author": r["author"]}
         d["has_pdf"] = (BOOK_FILES_DIR / f"{r['book_id']}.pdf").is_file()
+        d["classified"] = r["classified_by"] not in (None, "pending", "needs_review")
         books.append(d)
     return jsonify({"ok": True, "books": books})
 

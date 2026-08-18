@@ -14,6 +14,11 @@ every PDF page by how many of those tokens appear on it — the page with the
 highest score wins. Examples are LLM paraphrases of the book's own text, so
 this is deliberately not exact-substring matching.
 
+Candidate pages are restricted to ones that actually contain an embedded
+image (a real chart/photo, per PyMuPDF's get_images()) — plain-text pages
+are excluded even if their prose scores well on tokens, since a wall of text
+isn't a useful screenshot next to an example.
+
 Usage:
     export PPE_INGEST_API_KEY=...   # same key the transcriber uses
     python3 match_book_screenshots.py --book_id 32 \
@@ -41,9 +46,15 @@ STOPWORDS = {
 
 
 def extract_page_texts(pdf_path):
+    """Returns {page_num: text} for pages that contain at least one embedded
+    image — a real chart/photo — so text-only pages never become candidates."""
     import fitz  # PyMuPDF
     doc = fitz.open(pdf_path)
-    return {i: page.get_text() for i, page in enumerate(doc, start=1)}
+    return {
+        i: page.get_text()
+        for i, page in enumerate(doc, start=1)
+        if page.get_images(full=True)
+    }
 
 
 def weighted_tokens(text):

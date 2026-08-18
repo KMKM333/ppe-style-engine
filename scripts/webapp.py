@@ -725,9 +725,10 @@ ATTRIBUTE_MEDIA_TYPES = [
                 "diction rubric — hook, close, pacing, CTA, and everything in between.",
     },
     {
-        "slug": "youtube", "name": "Long videos, YouTube", "icon": "▶️", "implemented": False,
-        "desc": "Long-form YouTube scripts will use the same structural rubric as Instagram once ingestion "
-                "is wired up for this media type.",
+        "slug": "youtube", "name": "Long videos, YouTube", "icon": "▶️", "implemented": True,
+        "desc": "Long-form YouTube scripts, scored per video against the same structural rubric as "
+                "Instagram, plus a Long-form Structure section (cold opens, sponsor segments, act count, "
+                "pacing arc) and a chapter-by-chapter breakdown for videos long enough to need one.",
     },
     {
         "slug": "news", "name": "News Articles", "icon": "📰", "implemented": False,
@@ -855,6 +856,8 @@ def _attribute_cards(conn):
             continue
         if mt["slug"] == "instagram":
             total, field_rows = _video_attribute_field_rows(conn, "Instagram")
+        elif mt["slug"] == "youtube":
+            total, field_rows = _video_attribute_field_rows(conn, "YouTube")
         elif mt["slug"] == "books":
             total, field_rows = _book_attribute_field_rows(conn)
         else:
@@ -1084,8 +1087,8 @@ def attribute_media_detail(slug):
         )
 
     conn = get_conn()
-    if slug == "instagram":
-        total, field_rows = _video_attribute_field_rows(conn, "Instagram")
+    if slug in ("instagram", "youtube"):
+        total, field_rows = _video_attribute_field_rows(conn, "Instagram" if slug == "instagram" else "YouTube")
         macro_names = [name for name, _ in MACRO_GROUPS]
         macros = _macro_summary(field_rows, macro_names)
         sections_out = [
@@ -2361,14 +2364,15 @@ def _source_cards(conn):
         if mt["slug"] == "books":
             total = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
             with_file = sum(1 for _ in BOOK_FILES_DIR.glob("*.pdf")) if BOOK_FILES_DIR.is_dir() else 0
-        elif mt["slug"] == "instagram":
+        elif mt["slug"] in ("instagram", "youtube"):
+            platform = "Instagram" if mt["slug"] == "instagram" else "YouTube"
             total = conn.execute(
                 "SELECT COUNT(*) FROM videos v JOIN channels c ON c.channel_id = v.channel_id "
-                "WHERE c.platform = 'Instagram'"
+                "WHERE c.platform = ?", (platform,)
             ).fetchone()[0]
             with_file = conn.execute(
                 "SELECT COUNT(*) FROM videos v JOIN channels c ON c.channel_id = v.channel_id "
-                "WHERE c.platform = 'Instagram' AND v.url IS NOT NULL AND v.url != ''"
+                "WHERE c.platform = ? AND v.url IS NOT NULL AND v.url != ''", (platform,)
             ).fetchone()[0]
         else:
             total, with_file = 0, 0
@@ -2424,11 +2428,12 @@ def source_media_detail(slug):
                     for t in term_rows
                 ],
             })
-    else:  # instagram
+    else:  # instagram or youtube — same shape, filtered by platform
+        platform = "Instagram" if slug == "instagram" else "YouTube"
         video_rows = conn.execute(
             "SELECT v.video_id, v.title, v.url, v.posted_at, v.duration_sec, c.channel_name "
             "FROM videos v JOIN channels c ON c.channel_id = v.channel_id "
-            "WHERE c.platform = 'Instagram' ORDER BY v.ingested_at DESC"
+            "WHERE c.platform = ? ORDER BY v.ingested_at DESC", (platform,)
         ).fetchall()
         for v in video_rows:
             rows.append({

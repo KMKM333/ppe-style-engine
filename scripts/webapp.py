@@ -2117,14 +2117,16 @@ BOOK_FIELD_LABELS = {
 
 @app.route("/channels")
 def channels_list():
+    platform = request.args.get("platform", "Instagram")
     conn = get_conn()
     rows = conn.execute(
         """SELECT c.channel_id, c.channel_name, p.profile_code, p.subject, p.status, p.n_videos_analysed,
                   (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id) AS n_videos
            FROM channels c
            LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
-           WHERE c.platform = 'Instagram'
-           ORDER BY c.channel_name"""
+           WHERE c.platform = ?
+           ORDER BY c.channel_name""",
+        (platform,),
     ).fetchall()
     channels = []
     for c in rows:
@@ -2150,7 +2152,8 @@ def channels_list():
             "is_analysed": is_analysed, "analysed_pct": analysed_pct,
         })
     conn.close()
-    return render_template("channels_list.html", active="channels", channels=channels)
+    active = "channels" if platform == "Instagram" else "channels-youtube"
+    return render_template("channels_list.html", active=active, channels=channels, platform=platform)
 
 
 @app.route("/api/ingest/book", methods=["POST"])

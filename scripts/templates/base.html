@@ -337,7 +337,7 @@
         <a href="{{ url_for('inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='inputs' else '' }}">Library</a>
         <a href="{{ url_for('books_list') }}" class="nav-item {{ 'active' if active=='books' else '' }}"><span class="nav-icon">{{ icon('book') }}</span>Books</a>
         <a href="{{ url_for('channels_list') }}" class="nav-item {{ 'active' if active=='channels' else '' }}"><span class="nav-icon">{{ icon('instagram') }}</span>Short Videos, Instagram</a>
-        <span class="nav-item disabled"><span class="nav-icon">{{ icon('youtube') }}</span>Long videos, Youtube</span>
+        <a href="{{ url_for('channels_list', platform='YouTube') }}" class="nav-item {{ 'active' if active=='channels-youtube' else '' }}"><span class="nav-icon">{{ icon('youtube') }}</span>Long videos, Youtube</a>
         <span class="nav-item disabled"><span class="nav-icon">{{ icon('news') }}</span>News</span>
       </div>
 

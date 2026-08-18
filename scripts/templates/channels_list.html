@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Channels — PPE Engine{% endblock %}
+{% block title %}{{ platform }} Channels — PPE Engine{% endblock %}
 {% block content %}
-<h1>Instagram Channels</h1>
+<h1>{{ platform }} Channels</h1>
 <div class="sub">
-  Every Instagram creator with ingested videos, each fingerprinted into its own style profile.
+  Every {{ platform }} creator with ingested videos, each fingerprinted into its own style profile.
 </div>
 <div class="card">
   {% if channels %}
@@ -45,7 +45,7 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No Instagram channels ingested yet.</div>
+  <div class="empty">No {{ platform }} channels ingested yet.</div>
   {% endif %}
 </div>
 <script>

@@ -17,6 +17,10 @@ SCHEMA_PATH = Path(__file__).parent.parent / "db" / "schema.sql"
 # deploys the same way the DB does. Layout: BOOK_PAGES_DIR/<book_id>/page_0042.png
 BOOK_PAGES_DIR = DB_PATH.parent / "book_pages"
 
+# Full source PDFs, same disk/persistence story as BOOK_PAGES_DIR above.
+# Layout: BOOK_FILES_DIR/<book_id>.pdf
+BOOK_FILES_DIR = DB_PATH.parent / "book_files"
+
 
 def get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

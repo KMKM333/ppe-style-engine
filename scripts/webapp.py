@@ -19,7 +19,7 @@ from urllib.parse import quote
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, abort, jsonify
 
-from db_init import get_conn, BOOK_PAGES_DIR
+from db_init import get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
 from score_engine import rate_input, score_intrinsic, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
@@ -2244,6 +2244,127 @@ def api_set_example_screenshot(book_id, example_id):
     return jsonify({"ok": True, "book_id": book_id, "example_id": example_id, "page_num": page_num})
 
 
+@app.route("/api/books")
+def api_books_list():
+    """Lets a local sync script (upload_book_pdfs.py) look up every book's id
+    and title without direct DB access, so it can match filenames to books
+    and skip any that already have a PDF stored."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    rows = conn.execute("SELECT book_id, title, author FROM books ORDER BY book_id").fetchall()
+    conn.close()
+    books = []
+    for r in rows:
+        d = dict(r)
+        d["has_pdf"] = (BOOK_FILES_DIR / f"{r['book_id']}.pdf").is_file()
+        books.append(d)
+    return jsonify({"ok": True, "books": books})
+
+
+@app.route("/api/books/<int:book_id>/pdf", methods=["POST"])
+def api_set_book_pdf(book_id):
+    """Receives the source PDF from upload_book_pdfs.py (run locally, where
+    the PPE Books desktop folder lives) and stores it on the persistent disk
+    so it survives deploys and can be served/downloaded from the live site."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    pdf_b64 = data.get("pdf_base64")
+    if not pdf_b64:
+        return jsonify({"ok": False, "error": "'pdf_base64' is required"}), 400
+
+    conn = get_conn()
+    book = conn.execute("SELECT book_id FROM books WHERE book_id = ?", (book_id,)).fetchone()
+    conn.close()
+    if not book:
+        return jsonify({"ok": False, "error": "no such book"}), 404
+
+    BOOK_FILES_DIR.mkdir(parents=True, exist_ok=True)
+    (BOOK_FILES_DIR / f"{book_id}.pdf").write_bytes(base64.b64decode(pdf_b64))
+    return jsonify({"ok": True, "book_id": book_id})
+
+
+@app.route("/books/<int:book_id>/pdf")
+def book_pdf(book_id):
+    pdf_path = BOOK_FILES_DIR / f"{book_id}.pdf"
+    if not pdf_path.is_file():
+        abort(404)
+    return send_file(pdf_path, mimetype="application/pdf")
+
+
+def _source_cards(conn):
+    cards = []
+    for mt in ATTRIBUTE_MEDIA_TYPES:
+        if not mt["implemented"]:
+            cards.append({**mt, "item_count": 0, "with_file_count": 0})
+            continue
+        if mt["slug"] == "books":
+            total = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
+            with_file = sum(1 for _ in BOOK_FILES_DIR.glob("*.pdf")) if BOOK_FILES_DIR.is_dir() else 0
+        elif mt["slug"] == "instagram":
+            total = conn.execute(
+                "SELECT COUNT(*) FROM videos v JOIN channels c ON c.channel_id = v.channel_id "
+                "WHERE c.platform = 'Instagram'"
+            ).fetchone()[0]
+            with_file = conn.execute(
+                "SELECT COUNT(*) FROM videos v JOIN channels c ON c.channel_id = v.channel_id "
+                "WHERE c.platform = 'Instagram' AND v.url IS NOT NULL AND v.url != ''"
+            ).fetchone()[0]
+        else:
+            total, with_file = 0, 0
+        cards.append({**mt, "item_count": total, "with_file_count": with_file})
+    return cards
+
+
+@app.route("/sources")
+def sources_page():
+    conn = get_conn()
+    cards = _source_cards(conn)
+    conn.close()
+    return render_template("sources.html", active="sources", cards=cards)
+
+
+@app.route("/sources/<slug>")
+def source_media_detail(slug):
+    mt = next((m for m in ATTRIBUTE_MEDIA_TYPES if m["slug"] == slug), None)
+    if not mt or not mt["implemented"]:
+        flash(f"No such source category: {slug}")
+        return redirect(url_for("sources_page"))
+
+    conn = get_conn()
+    rows = []
+    if slug == "books":
+        book_rows = conn.execute(
+            "SELECT book_id, title, author, word_count, ingested_at, source_note "
+            "FROM books ORDER BY ingested_at DESC"
+        ).fetchall()
+        for b in book_rows:
+            has_pdf = (BOOK_FILES_DIR / f"{b['book_id']}.pdf").is_file()
+            rows.append({
+                "author_or_channel": b["author"], "title": b["title"],
+                "detail_url": url_for("book_detail", book_id=b["book_id"]),
+                "word_count": b["word_count"], "ingested_at": b["ingested_at"],
+                "file_url": url_for("book_pdf", book_id=b["book_id"]) if has_pdf else None,
+                "file_label": "source PDF ↗", "source_text": b["source_note"],
+            })
+    else:  # instagram
+        video_rows = conn.execute(
+            "SELECT v.video_id, v.title, v.url, v.posted_at, v.duration_sec, c.channel_name "
+            "FROM videos v JOIN channels c ON c.channel_id = v.channel_id "
+            "WHERE c.platform = 'Instagram' ORDER BY v.ingested_at DESC"
+        ).fetchall()
+        for v in video_rows:
+            rows.append({
+                "author_or_channel": v["channel_name"], "title": v["title"],
+                "detail_url": url_for("input_detail", video_id=v["video_id"]),
+                "posted_at": v["posted_at"], "duration_label": _format_duration(v["duration_sec"]),
+                "file_url": v["url"] or None, "file_label": "original post ↗", "source_text": None,
+            })
+    conn.close()
+    return render_template("source_detail.html", active="sources", media=mt, rows=rows)
+
+
 @app.route("/books/<int:book_id>")
 def book_detail(book_id):
     conn = get_conn()
@@ -2309,13 +2430,14 @@ def book_detail(book_id):
     source_file_url = None
     if book["source_file_path"]:
         source_file_url = "file://" + quote(book["source_file_path"], safe="/")
+    has_pdf = (BOOK_FILES_DIR / f"{book_id}.pdf").is_file()
 
     return render_template(
         "book_detail.html", active="books", book=book, attr_sections=attr_sections,
         chapters=chapters, unsectioned_examples=unsectioned_examples, is_classified=is_classified,
         needs_review=needs_review, classification_error=attrs.get("classification_error"),
         profile_scores=profile_scores, macro_fit=macro_fit,
-        source_file_url=source_file_url,
+        source_file_url=source_file_url, has_pdf=has_pdf,
     )
 
 

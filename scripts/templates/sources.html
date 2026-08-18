@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Sources — PPE Engine{% endblock %}
+{% block content %}
+<h1>Sources</h1>
+<div class="sub">
+  Every input's original source material — book PDFs and Instagram video links — one place to browse
+  or open what the engine's analysis is actually drawn from, by media type.
+</div>
+
+<div class="attributes-grid">
+  {% for c in cards %}
+  <a class="attr-card {{ 'empty-attr' if not c.implemented }}" href="{{ url_for('source_media_detail', slug=c.slug) if c.implemented else '#' }}">
+    <div>
+      <div class="aicon">{{ c.icon }}</div>
+      <div class="aname">{{ c.name }}</div>
+      <div class="adesc">{{ c.desc }}</div>
+    </div>
+    <div class="afoot">
+      {% if c.implemented %}
+      <div class="acount">{{ c.item_count }}<span>{{ " source" if c.item_count == 1 else " sources" }} &middot; {{ c.with_file_count }} with a stored file/link</span></div>
+      {% else %}
+      <div class="acount">—<span>coming soon</span></div>
+      {% endif %}
+      <div class="aarrow">→</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

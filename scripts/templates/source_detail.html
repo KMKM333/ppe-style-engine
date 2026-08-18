@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ media.name }} — Sources{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>{{ media.icon }} {{ media.name }}</h1>
+<div class="sub">{{ rows|length }} source{{ '' if rows|length == 1 else 's' }}.
+  {% if media.slug == 'books' %}
+  A book's source is its original PDF — uploaded from the local PPE Books folder via
+  <code>upload_book_pdfs.py</code> — and survives on the engine's own disk, not just this machine.
+  {% else %}
+  A video's source is its original Instagram post — no file is stored, just the link, since the transcript
+  itself is already the full analysis input.
+  {% endif %}
+</div>
+
+<div class="card">
+  {% if rows %}
+  <table>
+    <tr>
+      <th>{{ 'Author' if media.slug == 'books' else 'Channel' }}</th>
+      <th>{{ 'Book' if media.slug == 'books' else 'Video' }}</th>
+      {% if media.slug == 'books' %}
+      <th>Words</th>
+      <th>Ingested</th>
+      {% else %}
+      <th>Posted</th>
+      <th>Duration</th>
+      {% endif %}
+      <th>Source</th>
+    </tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.author_or_channel or '—' }}</td>
+      <td><a href="{{ r.detail_url }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title }}</a></td>
+      {% if media.slug == 'books' %}
+      <td class="muted">{{ r.word_count if r.word_count is not none else '—' }}</td>
+      <td class="muted" style="white-space:nowrap">{{ r.ingested_at }}</td>
+      {% else %}
+      <td class="muted" style="white-space:nowrap">{{ r.posted_at or '—' }}</td>
+      <td class="muted">{{ r.duration_label or '—' }}</td>
+      {% endif %}
+      <td>
+        {% if r.file_url %}<a href="{{ r.file_url }}" target="_blank" rel="noopener">{{ r.file_label }}</a>
+        {% elif r.source_text %}<span title="{{ r.source_text }}">{{ r.source_text|truncate(28) }}</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No sources ingested yet.</div>
+  {% endif %}
+</div>
+
+<a class="btn secondary" href="{{ url_for('sources_page') }}">← All sources</a>
+{% endblock %}

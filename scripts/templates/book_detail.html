@@ -15,9 +15,14 @@
   {% endif %}
 </div>
 
-{% if source_file_url %}
-<div style="margin:10px 0 18px">
-  <a class="btn secondary" style="margin:0" href="{{ source_file_url }}" target="_blank" rel="noopener">Open original file ↗</a>
+{% if has_pdf or source_file_url %}
+<div style="margin:10px 0 18px;display:flex;gap:10px">
+  {% if has_pdf %}
+  <a class="btn secondary" style="margin:0" href="{{ url_for('book_pdf', book_id=book.book_id) }}" target="_blank" rel="noopener">Open source PDF ↗</a>
+  {% endif %}
+  {% if source_file_url %}
+  <a class="btn secondary" style="margin:0" href="{{ source_file_url }}" target="_blank" rel="noopener" title="Only opens if you're browsing from the machine the file was uploaded from">Open local file ↗</a>
+  {% endif %}
 </div>
 {% endif %}
 

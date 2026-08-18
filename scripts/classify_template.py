@@ -92,10 +92,14 @@ compared directly on these dimensions):
 - rhetorical_appeal_balance: one of ["Primarily logical/data-driven", "Primarily emotional/narrative",
   "Primarily credibility/authority-driven", "Balanced blend"]
 - prose_rhythm: one of ["Staccato/choppy", "Flowing/poetic", "Balanced/mixed cadence", "Monotonous/uniform"]
+  — the qualitative FEEL/cadence of the prose when read aloud (choppy vs. flowing), NOT how much
+  sentence lengths vary (that's syntax_pattern below — pick from THIS list only, never copy a
+  syntax_pattern value here)
 - noun_verb_ratio_style: one of ["Verb-driven/dynamic", "Balanced", "Noun-heavy/nominalized (formal)",
   "Heavily nominalized/dense academic"]
 - syntax_pattern: one of ["Short & simple, low variety", "Long & complex, low variety",
   "Highly varied (short and long mixed)", "Fragmented/experimental"]
+  — sentence-LENGTH variety specifically, distinct from prose_rhythm above
 - pacing: one of ["Fast/action-driven", "Slow/descriptive", "Balanced action & description",
   "Variable/uneven pacing"]
 - polemical_tone: one of ["Polite/measured critique", "Firm but respectful", "Sharply critical",

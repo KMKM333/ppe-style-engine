@@ -52,6 +52,7 @@
   <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('channels_list', platform='YouTube') }}">
     <div class="muted">Long video inputs, YouTube</div>
     <div style="font-size:28px;font-weight:700">{{ n_long_videos }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">{{ n_long_videos_only }} video{{ '' if n_long_videos_only == 1 else 's' }} + {{ n_long_video_examples }} example{{ '' if n_long_video_examples == 1 else 's' }}</div>
   </a>
   <div class="card">
     <div class="muted">News</div>

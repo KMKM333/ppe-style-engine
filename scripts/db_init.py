@@ -30,9 +30,15 @@ VIDEO_VISUALS_DIR = DB_PATH.parent / "video_visuals"
 
 def get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
+    # timeout=30 (vs sqlite3's 5s default) + WAL journal mode: batches of
+    # long-form videos each spawn their own detached auto_process_video.py
+    # subprocess, so several heavy classification/breakdown/visuals/profile
+    # merges can be writing concurrently — the 5s default was observed
+    # producing "database is locked" 500s on /api/ingest/video mid-batch.
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 

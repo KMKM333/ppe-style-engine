@@ -34,7 +34,13 @@ import detect_video_visuals as dv
 import llm_client
 from db_init import get_conn
 
-COMBINED_MAX_TOKENS = 16000
+# The combined response now carries what used to be three separate outputs
+# (classification + breakdown + visuals) in one JSON object — 16,000 (the
+# old breakdown-only budget) truncated mid-response on content-rich videos
+# with many chapters and several flagged visuals, producing invalid JSON.
+# 32,000 leaves real headroom; books already use 48,000 for a single call
+# covering an entire book, so this isn't out of line.
+COMBINED_MAX_TOKENS = 32000
 
 
 def _extract_body(prompt_text, start_marker, end_marker):

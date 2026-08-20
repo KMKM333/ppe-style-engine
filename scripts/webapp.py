@@ -1585,6 +1585,31 @@ def fix_unresolved_channel():
 
     n = conn.execute("SELECT COUNT(*) FROM videos WHERE channel_id = ?", (bad_id,)).fetchone()[0]
     conn.execute("UPDATE videos SET channel_id = ? WHERE channel_id = ?", (target_id, bad_id))
+
+    # The placeholder channel can have its own auto-built style_profiles row
+    # by now (auto_process_shortform_video.py profiles every channel it
+    # classifies for, including an unresolved "Instagram Import" one) — that
+    # profile is junk built from mislabeled data, never worth keeping, but
+    # its foreign keys must be cleared before the channel row can be deleted.
+    bad_profile = conn.execute("SELECT profile_id FROM style_profiles WHERE channel_id = ?", (bad_id,)).fetchone()
+    if bad_profile:
+        bad_profile_id = bad_profile["profile_id"]
+        for table, column in [
+            ("profile_fingerprint_numeric", "profile_id"),
+            ("profile_fingerprint_categorical", "profile_id"),
+            ("profile_style_card", "profile_id"),
+            ("profile_fingerprint_snapshots", "profile_id"),
+            ("test_scores", "profile_id"),
+            ("transform_scores", "profile_id"),
+            ("transformations", "target_profile_id"),
+        ]:
+            conn.execute(f"DELETE FROM {table} WHERE {column} = ?", (bad_profile_id,))
+        conn.execute(
+            "DELETE FROM style_profile_hybrid_sources WHERE profile_id = ? OR source_profile_id = ?",
+            (bad_profile_id, bad_profile_id),
+        )
+        conn.execute("DELETE FROM style_profiles WHERE profile_id = ?", (bad_profile_id,))
+
     conn.execute("DELETE FROM channels WHERE channel_id = ?", (bad_id,))
     conn.commit()
 

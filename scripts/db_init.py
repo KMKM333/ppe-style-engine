@@ -30,15 +30,24 @@ VIDEO_VISUALS_DIR = DB_PATH.parent / "video_visuals"
 
 def get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    # timeout=30 (vs sqlite3's 5s default) + WAL journal mode: batches of
-    # long-form videos each spawn their own detached auto_process_video.py
-    # subprocess, so several heavy classification/breakdown/visuals/profile
-    # merges can be writing concurrently — the 5s default was observed
-    # producing "database is locked" 500s on /api/ingest/video mid-batch.
+    # timeout=30 (vs sqlite3's 5s default): batches of long-form videos
+    # each spawn their own detached auto_process_video.py subprocess, so
+    # several heavy classification/breakdown/visuals/profile merges can be
+    # writing concurrently — the 5s default was observed producing
+    # "database is locked" 500s on /api/ingest/video mid-batch.
+    #
+    # NOT using WAL journal mode: tried it alongside the timeout bump, but
+    # WAL requires reliable shared-memory (mmap) coordination across every
+    # process touching the file, which Render's persistent disk (network-
+    # backed) doesn't support consistently — it produced a *permanently*
+    # stuck "database is locked" (wal_checkpoint returned SQLITE_BUSY with
+    # no writer actually running) that the 30s timeout couldn't clear,
+    # worse than the intermittent lock it was meant to fix. Default
+    # rollback-journal mode + the longer timeout is the safer combination
+    # on this storage backend.
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 

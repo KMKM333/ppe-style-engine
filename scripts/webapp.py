@@ -2223,12 +2223,22 @@ def api_ingest_book():
 @app.route("/api/ingest/video", methods=["POST"])
 def api_ingest_video():
     """Video counterpart to /api/ingest/book — lets the Instagram Bulk
-    Transcriber hand one long-form YouTube video straight to the live
-    engine. Ingestion is synchronous (an INSERT + local feature extraction),
-    but classification/breakdown/visual-detection run in a detached
-    subprocess, same rationale as api_ingest_book: a multi-minute LLM call
-    inside an in-process thread risks gunicorn's arbiter recycling the
-    worker mid-call, silently killing the thread with it."""
+    Transcriber hand one video (long-form YouTube or short-form Instagram)
+    straight to the live engine. Ingestion is synchronous (an INSERT +
+    local feature extraction), but classification (and, for YouTube,
+    breakdown/visual-detection) runs in a detached subprocess, same
+    rationale as api_ingest_book: a multi-minute LLM call inside an
+    in-process thread risks gunicorn's arbiter recycling the worker
+    mid-call, silently killing the thread with it.
+
+    Which classification script runs depends on platform: YouTube's
+    auto_process_video.py does one combined call covering the Class
+    rubric + chapter breakdown + visual-chart detection (long-form only
+    has all three); everything else runs
+    auto_process_shortform_video.py's single Class-rubric call — a Reel
+    is too short to have chapters or on-screen data visuals, and the
+    long-form combined prompt is worded specifically for a long-form
+    YouTube video, so it isn't reused here."""
     if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
         abort(403)
 
@@ -2239,11 +2249,12 @@ def api_ingest_video():
     if not title or not script or not channel:
         return jsonify({"ok": False, "error": "'title', 'script', and 'channel' are required."}), 400
 
+    platform = data.get("platform") or "YouTube"
     video_id = ingest_video_row(
         title=title,
         script=script,
         channel=channel,
-        platform=data.get("platform") or "YouTube",
+        platform=platform,
         url=data.get("url") or None,
         duration_sec=data.get("duration_sec") or None,
         posted_at=data.get("posted_at") or None,
@@ -2252,7 +2263,8 @@ def api_ingest_video():
         length_band=data.get("length_band") or "C",
     )
 
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auto_process_video.py")
+    script_name = "auto_process_video.py" if platform == "YouTube" else "auto_process_shortform_video.py"
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
     subprocess.Popen([sys.executable, script_path, "--video_id", str(video_id)], start_new_session=True)
 
     return jsonify({"ok": True, "video_id": video_id, "status": "ingested, classifying in the background"})

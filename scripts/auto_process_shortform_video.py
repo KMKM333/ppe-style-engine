@@ -1,11 +1,13 @@
 """
 auto_process_shortform_video.py — the short-form (Instagram) counterpart to
-auto_process_video.py. Short-form Reels are too brief to have chapters or
-on-screen data visuals, so unlike the long-form pipeline this is just one
-Class-rubric LLM call (classify_template.py's existing short-form prompt,
-the same one previously only run by hand via its --export/--load workflow)
-followed by a channel profile rebuild — no breakdown or visual-detection
-steps.
+auto_process_video.py. Short-form Reels are too brief to have on-screen data
+visuals, so unlike the long-form pipeline there's no visual-detection step —
+but they DO still get a breakdown (summary/points/terms/examples), just via
+classify_video_breakdown.py's plain (non-chapter-aware) prompt instead of
+the long-form chapter-aware one. Two LLM calls total: classify_template.py's
+Class rubric, then classify_video_breakdown.py's flat breakdown — both
+previously only ever run by hand via their --export/--load workflows —
+followed by a channel profile rebuild.
 
 classify_and_build_profile(video_id) is called from webapp.py's
 /api/ingest/video endpoint in a detached background subprocess right after
@@ -19,6 +21,7 @@ Usage (manual/backfill):
 import argparse
 import traceback
 
+import classify_video_breakdown as cvb
 import llm_client
 import profile_builder
 from classify_template import (
@@ -30,6 +33,7 @@ from classify_template import (
 from db_init import get_conn
 
 CLASSIFICATION_MAX_TOKENS = 12000
+BREAKDOWN_MAX_TOKENS = 8000
 
 
 def _mark_needs_review(video_id, reason):
@@ -79,6 +83,19 @@ def classify_and_build_profile(video_id):
         _mark_needs_review(video_id, f"Merge classification failed: {e}")
         traceback.print_exc()
         return
+
+    # Summary/points/terms/examples breakdown — enrichment only, same
+    # "never fail the whole job over it" convention as the long-form
+    # pipeline's breakdown step (see auto_process_video.py)
+    try:
+        breakdown_prompt = cvb.build_prompt([row])
+        breakdown_result = llm_client.generate_json(breakdown_prompt, max_tokens=BREAKDOWN_MAX_TOKENS)
+        if isinstance(breakdown_result, dict):
+            breakdown_result = [breakdown_result]
+        cvb.merge_video_breakdown_results(breakdown_result)
+    except Exception as e:
+        print(f"[auto_process_shortform_video] video_id={video_id} breakdown merge failed (non-fatal): {e}")
+        traceback.print_exc()
 
     # Profile build — auto-assigns an A.N code if this channel doesn't have one yet
     try:

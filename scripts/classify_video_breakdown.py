@@ -102,7 +102,15 @@ def export_for_breakdown(channel_name=None, video_id=None, limit=30):
 def merge_video_breakdown(json_path):
     with open(json_path) as f:
         results = json.load(f)
+    if isinstance(results, dict):
+        results = [results]
+    return merge_video_breakdown_results(results)
 
+
+def merge_video_breakdown_results(results):
+    """Same as merge_video_breakdown(), but takes already-parsed JSON —
+    used by auto_process_shortform_video.py, which gets the breakdown
+    straight from the Anthropic API response instead of a file on disk."""
     conn = get_conn()
     n_videos = n_points = n_terms = n_examples = 0
     for r in results:

@@ -2769,6 +2769,75 @@ def video_creation_delete(creation_id):
     return redirect(url_for("video_creations_list"))
 
 
+@app.route("/production/spec-creations")
+def production_spec_creations_list():
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT c.creation_id, c.title, c.view_url, c.created_at,
+                  v.video_id AS source_video_id, v.title AS source_title,
+                  sp.profile_code AS style_profile_code,
+                  pp.profile_code AS production_profile_code
+           FROM production_spec_creations c
+           LEFT JOIN videos v ON v.video_id = c.source_video_id
+           LEFT JOIN style_profiles sp ON sp.profile_id = c.style_profile_id
+           LEFT JOIN style_profiles pp ON pp.profile_id = c.production_profile_id
+           ORDER BY c.created_at DESC"""
+    ).fetchall()
+    conn.close()
+    return render_template("production_spec_creations_list.html", active="production-spec-creations", rows=rows)
+
+
+@app.route("/production/spec-creations/new", methods=["GET", "POST"])
+def production_spec_creation_create():
+    conn = get_conn()
+    if request.method == "POST":
+        title = (request.form.get("title") or "").strip()
+        source_video_id = request.form.get("source_video_id") or None
+        style_profile_id = request.form.get("style_profile_id") or None
+        production_profile_id = request.form.get("production_profile_id") or None
+        view_url = (request.form.get("view_url") or "").strip() or None
+        if not title:
+            flash("Title is required.")
+        else:
+            conn.execute(
+                "INSERT INTO production_spec_creations "
+                "(title, source_video_id, style_profile_id, production_profile_id, view_url) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (title, source_video_id, style_profile_id, production_profile_id, view_url),
+            )
+            conn.commit()
+            conn.close()
+            return redirect(url_for("production_spec_creations_list"))
+
+    videos = conn.execute("SELECT video_id, title FROM videos ORDER BY ingested_at DESC LIMIT 500").fetchall()
+    style_profiles = conn.execute(
+        """SELECT p.profile_id, p.profile_code, c.channel_name FROM style_profiles p
+           JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.media_type != 'ProductionSpec' OR p.media_type IS NULL
+           ORDER BY p.profile_code"""
+    ).fetchall()
+    production_profiles = conn.execute(
+        """SELECT p.profile_id, p.profile_code, c.channel_name FROM style_profiles p
+           JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.media_type = 'ProductionSpec' ORDER BY p.profile_code"""
+    ).fetchall()
+    conn.close()
+    return render_template(
+        "production_spec_creation_form.html", active="production-spec-creations",
+        videos=videos, style_profiles=style_profiles, production_profiles=production_profiles,
+    )
+
+
+@app.route("/production/spec-creations/<int:creation_id>/delete", methods=["POST"])
+def production_spec_creation_delete(creation_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM production_spec_creations WHERE creation_id = ?", (creation_id,))
+    conn.commit()
+    conn.close()
+    flash(f"Deleted production spec creation {creation_id}.")
+    return redirect(url_for("production_spec_creations_list"))
+
+
 @app.route("/books")
 def books_list():
     conn = get_conn()

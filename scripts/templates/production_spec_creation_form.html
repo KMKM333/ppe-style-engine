@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}New Spec Creation — PPE Engine{% endblock %}
+{% block content %}
+<h1>New Production Spec Creation</h1>
+<div class="sub">Track a written production spec document — the content source it's built from, the writing-style profile it references, and the Production Spec (shot-pacing) profile it recreates.</div>
+
+<form method="post" action="{{ url_for('production_spec_creation_create') }}" class="card">
+  <label for="title">Title</label>
+  <input type="text" id="title" name="title" placeholder="e.g. PPE Engine · Production Spec, The Militia Divide" required>
+
+  <label for="source_video_id">Source input (content video)</label>
+  <select id="source_video_id" name="source_video_id">
+    <option value="">None</option>
+    {% for v in videos %}
+    <option value="{{ v.video_id }}">{{ v.title }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="style_profile_id">Profile style (writing/content style)</label>
+  <select id="style_profile_id" name="style_profile_id">
+    <option value="">None</option>
+    {% for p in style_profiles %}
+    <option value="{{ p.profile_id }}">{{ p.profile_code }} ({{ p.channel_name }})</option>
+    {% endfor %}
+  </select>
+
+  <label for="production_profile_id">Production profile (shot-pacing style)</label>
+  <select id="production_profile_id" name="production_profile_id">
+    <option value="">None</option>
+    {% for p in production_profiles %}
+    <option value="{{ p.profile_id }}">{{ p.profile_code }} ({{ p.channel_name }})</option>
+    {% endfor %}
+  </select>
+
+  <label for="view_url">View URL</label>
+  <input type="text" id="view_url" name="view_url" placeholder="https://claude.ai/code/artifact/...">
+
+  <button type="submit">Create</button>
+  <a href="{{ url_for('production_spec_creations_list') }}" class="btn secondary">Cancel</a>
+</form>
+{% endblock %}

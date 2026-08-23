@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Production Specs Creations — PPE Engine{% endblock %}
+{% block content %}
+<h1>Production Specs Creations</h1>
+<div class="sub">
+  Written production spec documents — shot-by-shot recreation briefs that combine a content source
+  video, a writing-style profile, and a Production Spec (shot-pacing) profile, like
+  <em>The Militia Divide</em>. Separate from Video Creations, which tracks actual rendered video output.
+</div>
+
+<a class="btn" href="{{ url_for('production_spec_creation_create') }}">+ New spec creation</a>
+
+<div class="card" style="margin-top:16px">
+  {% if rows %}
+  <table>
+    <tr><th>Title</th><th>Source input</th><th>Profile style</th><th>Production profile</th><th></th></tr>
+    {% for r in rows %}
+    <tr>
+      <td><strong>{{ r.title }}</strong></td>
+      <td>
+        {% if r.source_video_id %}<a href="{{ url_for('input_detail', video_id=r.source_video_id) }}">{{ r.source_title }}</a>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td>
+        {% if r.style_profile_code %}<a href="{{ url_for('profile_detail', code=r.style_profile_code) }}">{{ r.style_profile_code }}</a>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td>
+        {% if r.production_profile_code %}<a href="{{ url_for('production_profile_detail', code=r.production_profile_code) }}">{{ r.production_profile_code }}</a>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+      <td style="white-space:nowrap">
+        {% if r.view_url %}<a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ r.view_url }}" target="_blank" rel="noopener">View</a>{% else %}<span class="muted">—</span>{% endif %}
+        <form method="post" action="{{ url_for('production_spec_creation_delete', creation_id=r.creation_id) }}" onsubmit="return confirm('Delete this spec creation?');" style="display:inline">
+          <button type="submit" class="danger" style="margin:0;padding:5px 12px;font-size:12px">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No production spec creations yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

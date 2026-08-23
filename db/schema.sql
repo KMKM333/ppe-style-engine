@@ -627,3 +627,17 @@ CREATE TABLE IF NOT EXISTS video_creations (
     created_at                                     TEXT DEFAULT (datetime('now')),
     updated_at                                        TEXT DEFAULT (datetime('now'))
 );
+
+-- Written production spec documents (e.g. "The Militia Divide") that combine
+-- a content source video, a writing-style profile, and a Production Spec
+-- (shot-pacing) profile, with a link out to the published document.
+-- Separate from video_creations above, which tracks actual rendered videos.
+CREATE TABLE IF NOT EXISTS production_spec_creations (
+    creation_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title                  TEXT NOT NULL,
+    source_video_id          INTEGER REFERENCES videos(video_id),
+    style_profile_id            INTEGER REFERENCES style_profiles(profile_id),
+    production_profile_id          INTEGER REFERENCES style_profiles(profile_id),
+    view_url                          TEXT,
+    created_at                           TEXT DEFAULT (datetime('now'))
+);

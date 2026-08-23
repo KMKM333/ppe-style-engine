@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ profile.profile_code }} — Production Spec Fingerprint{% endblock %}
+{% block content %}
+<h1>{{ profile.profile_code }}, {{ profile.channel_name }}</h1>
+{% if profile.overview %}
+<div class="sub" style="margin-top:-4px">{{ profile.overview }}</div>
+{% endif %}
+<div class="sub">
+  {{ profile.n_videos_analysed }} input{{ '' if profile.n_videos_analysed == 1 else 's' }} analysed &middot;
+  <span class="pill {{ profile.status }}">{{ profile.status }}</span>
+</div>
+
+<h2 style="margin-top:0">Numeric attributes</h2>
+<div class="card">
+  {% if numeric %}
+  <table>
+    <tr><th>Attribute</th><th>Mean</th><th>Std</th><th>Median</th><th>Range</th></tr>
+    {% for r in numeric %}
+    <tr>
+      <td>{{ r.attribute }}</td>
+      <td>{{ '%.2f' % r.mean_val }}</td>
+      <td>{{ '%.2f' % r.std_val }}</td>
+      <td>{{ '%.2f' % r.median_val }}</td>
+      <td class="muted">[{{ '%.1f' % r.min_val }}, {{ '%.1f' % r.max_val }}]</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No numeric fingerprint yet.</div>
+  {% endif %}
+</div>
+
+<h2>Categorical attributes</h2>
+<div class="card">
+  {% if categorical %}
+    {% for attr, values in categorical.items() %}
+    <div style="margin-bottom:16px">
+      <div class="muted" style="margin-bottom:6px;text-transform:uppercase;font-size:12px;letter-spacing:.04em">{{ attr }}</div>
+      <table>
+        {% for v in values %}
+        <tr><td>{{ v.value }}</td><td style="width:120px">{{ v.share_pct }}%</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty">No categorical fingerprint yet.</div>
+  {% endif %}
+</div>
+
+<h2>Contributing inputs</h2>
+<div class="sub" style="margin-top:-6px">Every Production Spec input this fingerprint was built from — {{ inputs|length }} total.</div>
+<div class="card">
+  {% if inputs %}
+  <table>
+    <tr><th>Title</th><th>Shots</th><th>Avg shot length</th><th>Ingested</th><th></th></tr>
+    {% for i in inputs %}
+    <tr>
+      <td><strong>{{ i.title }}</strong></td>
+      <td>{{ i.total_shots if i.total_shots is not none else '—' }}</td>
+      <td>{{ '%.2fs' % i.avg_shot_length_sec if i.avg_shot_length_sec is not none else '—' }}</td>
+      <td class="muted">{{ i.ingested_at }}</td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('production_input_detail', input_id=i.input_id) }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No inputs analysed for this source yet.</div>
+  {% endif %}
+</div>
+
+<a class="btn secondary" href="{{ url_for('production_profiles_list') }}">← All Production Spec Profiles</a>
+{% endblock %}

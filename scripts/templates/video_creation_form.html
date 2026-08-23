@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}New Video Creation — PPE Engine{% endblock %}
+{% block content %}
+<h1>New Video Creation</h1>
+<div class="sub">Track a planned video output against a Production Spec Input and/or target profile.</div>
+
+<form method="post" action="{{ url_for('video_creation_create') }}" class="card">
+  <label for="title">Title</label>
+  <input type="text" id="title" name="title" placeholder="e.g. The Militia Divide" required>
+
+  <label for="brief">Brief</label>
+  <textarea id="brief" name="brief" placeholder="What this planned video should contain..."></textarea>
+
+  <label for="source_input_id">Source Production Spec Input (optional)</label>
+  <select id="source_input_id" name="source_input_id">
+    <option value="">None</option>
+    {% for i in inputs %}
+    <option value="{{ i.input_id }}">{{ i.title }}</option>
+    {% endfor %}
+  </select>
+
+  <label for="target_profile_id">Target Production Spec Profile</label>
+  <select id="target_profile_id" name="target_profile_id">
+    <option value="">None</option>
+    {% for p in profiles %}
+    <option value="{{ p.profile_id }}">{{ p.profile_code }} ({{ p.channel_name }})</option>
+    {% endfor %}
+  </select>
+
+  <label for="status">Status</label>
+  <select id="status" name="status">
+    <option value="planned">Planned</option>
+    <option value="queued">Queued</option>
+    <option value="in_progress">In progress</option>
+    <option value="done">Done</option>
+  </select>
+
+  <button type="submit">Create</button>
+  <a href="{{ url_for('video_creations_list') }}" class="btn secondary">Cancel</a>
+</form>
+{% endblock %}

@@ -348,6 +348,13 @@
         <a href="{{ url_for('attributes_page') }}" class="nav-item {{ 'active' if active=='attributes' else '' }}"><span class="nav-icon">{{ icon('tag') }}</span>Attributes</a>
         <a href="{{ url_for('tags_page') }}" class="nav-item {{ 'active' if active=='tags' else '' }}"><span class="nav-icon">{{ icon('hash') }}</span>Term &amp; Example Tags</a>
       </div>
+
+      <div class="nav-group">
+        <a href="{{ url_for('production_inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active in ('production-inputs','production-profiles','production-creations') else '' }}">Production</a>
+        <a href="{{ url_for('production_inputs_list') }}" class="nav-item {{ 'active' if active=='production-inputs' else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Production Spec Inputs</a>
+        <a href="{{ url_for('production_profiles_list') }}" class="nav-item {{ 'active' if active=='production-profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Production Spec Profiles</a>
+        <a href="{{ url_for('video_creations_list') }}" class="nav-item {{ 'active' if active=='production-creations' else '' }}"><span class="nav-icon">{{ icon('sparkles') }}</span>Video Creations</a>
+      </div>
     </nav>
     <div class="sidebar-advanced">
       <div class="nav-group-label">Advanced</div>

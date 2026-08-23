@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ creation.title }} — Video Creation{% endblock %}
+{% block content %}
+<h1>{{ creation.title }}</h1>
+<div class="sub">
+  {% if creation.status == 'done' %}<span class="pill confirmed">done</span>
+  {% elif creation.status == 'in_progress' %}<span class="pill draft">in progress</span>
+  {% elif creation.status == 'queued' %}<span class="pill draft">queued</span>
+  {% else %}<span class="pill draft">planned</span>{% endif %}
+  {% if creation.profile_code %} &middot; targeting <a href="{{ url_for('production_profile_detail', code=creation.profile_code) }}">{{ creation.profile_code }}</a> ({{ creation.profile_channel_name }}){% endif %}
+  {% if creation.source_title %} &middot; source: {{ creation.source_title }}{% endif %}
+</div>
+
+{% if creation.brief %}
+<div class="card">
+  <div class="muted" style="text-transform:uppercase;font-size:12px;letter-spacing:.04em;margin-bottom:6px">Brief</div>
+  {{ creation.brief }}
+</div>
+{% endif %}
+
+<h2>Status &amp; output</h2>
+<form method="post" action="{{ url_for('video_creation_update', creation_id=creation.creation_id) }}" class="card">
+  <label for="status">Status</label>
+  <select id="status" name="status">
+    <option value="planned" {{ 'selected' if creation.status == 'planned' }}>Planned</option>
+    <option value="queued" {{ 'selected' if creation.status == 'queued' }}>Queued</option>
+    <option value="in_progress" {{ 'selected' if creation.status == 'in_progress' }}>In progress</option>
+    <option value="done" {{ 'selected' if creation.status == 'done' }}>Done</option>
+  </select>
+
+  <label for="generation_tool">Generation tool</label>
+  <input type="text" id="generation_tool" name="generation_tool" value="{{ creation.generation_tool or '' }}" placeholder="e.g. Runway, Sora — filled in once you pick one">
+
+  <label for="output_url">Output URL</label>
+  <input type="text" id="output_url" name="output_url" value="{{ creation.output_url or '' }}" placeholder="https://...">
+
+  <label for="output_file_path">Output file path</label>
+  <input type="text" id="output_file_path" name="output_file_path" value="{{ creation.output_file_path or '' }}" placeholder="/path/to/video.mp4">
+
+  <button type="submit">Save</button>
+</form>
+
+<form method="post" action="{{ url_for('video_creation_delete', creation_id=creation.creation_id) }}" onsubmit="return confirm('Delete this video creation?');" style="margin-top:16px">
+  <button type="submit" class="danger">Delete this creation</button>
+</form>
+
+<a class="btn secondary" href="{{ url_for('video_creations_list') }}">← All Video Creations</a>
+{% endblock %}

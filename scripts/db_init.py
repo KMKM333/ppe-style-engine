@@ -27,6 +27,11 @@ BOOK_FILES_DIR = DB_PATH.parent / "book_files"
 # Layout: VIDEO_VISUALS_DIR/<video_id>/visual_<visual_id>.png
 VIDEO_VISUALS_DIR = DB_PATH.parent / "video_visuals"
 
+# Per-shot frame grabs for the Production Spec pipeline, captured locally by
+# the Instagram Bulk Transcriber the same way VIDEO_VISUALS_DIR is.
+# Layout: PRODUCTION_SPEC_SHOTS_DIR/<input_id>/shot_<shot_id>.png
+PRODUCTION_SPEC_SHOTS_DIR = DB_PATH.parent / "production_spec_shots"
+
 
 def get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

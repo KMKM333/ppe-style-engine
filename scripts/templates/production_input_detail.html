@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}{{ input.title }} — Production Spec{% endblock %}
+{% block content %}
+<h1>{{ input.title }}</h1>
+<div class="sub">
+  {{ input.channel_name }}{% if input.platform %} &middot; {{ input.platform }}{% endif %}
+  {% if input.url %} &middot; <a href="{{ input.url }}" target="_blank" rel="noopener">source ↗</a>{% endif %}
+  &middot;
+  {% if input.status == 'classified' %}<span class="pill confirmed">classified</span>
+  {% elif input.status == 'needs_review' %}<span class="pill bad">needs review</span>
+  {% else %}<span class="pill draft">{{ input.status }}</span>{% endif %}
+  {% if input.profile_code %} &middot; <a href="{{ url_for('production_profile_detail', code=input.profile_code) }}">{{ input.profile_code }} fingerprint</a>{% endif %}
+</div>
+
+{% if input.classification_error %}
+<div class="card" style="border-color:var(--bad)">
+  <div class="muted" style="text-transform:uppercase;font-size:12px;letter-spacing:.04em;margin-bottom:6px">Classification error</div>
+  {{ input.classification_error }}
+</div>
+{% endif %}
+
+{% if attrs %}
+<h2 style="margin-top:0">Shot summary</h2>
+<div class="macros">
+  <div class="macro-card"><h3>Total shots</h3><div class="mpct">{{ attrs.total_shots }}</div></div>
+  <div class="macro-card"><h3>Avg shot length</h3><div class="mpct">{{ '%.2fs' % attrs.avg_shot_length_sec }}</div></div>
+  <div class="macro-card"><h3>Median shot length</h3><div class="mpct">{{ '%.2fs' % attrs.median_shot_length_sec }}</div></div>
+  <div class="macro-card"><h3>Dominant shot type</h3><div class="mpct" style="font-size:18px">{{ attrs.dominant_shot_category or '—' }}</div></div>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="muted" style="text-transform:uppercase;font-size:12px;letter-spacing:.04em;margin-bottom:10px">Shot-length spread</div>
+  <table>
+    <tr><td>&lt; 1s</td><td>{{ attrs.pct_shots_under_1s }}%</td></tr>
+    <tr><td>1&ndash;2s</td><td>{{ (attrs.pct_shots_under_2s - attrs.pct_shots_under_1s)|round(1) }}%</td></tr>
+    <tr><td>2&ndash;5s</td><td>{{ attrs.pct_shots_2to5s }}%</td></tr>
+    <tr><td>&gt; 5s</td><td>{{ attrs.pct_shots_over_5s }}%</td></tr>
+  </table>
+</div>
+<div class="card" style="margin-top:14px">
+  <div class="muted" style="text-transform:uppercase;font-size:12px;letter-spacing:.04em;margin-bottom:10px">Shot-type mix</div>
+  <table>
+    <tr><td>Illustration panel</td><td>{{ attrs.pct_illustration_panel }}%</td></tr>
+    <tr><td>Step card</td><td>{{ attrs.pct_step_card }}%</td></tr>
+    <tr><td>Narrator reaction</td><td>{{ attrs.pct_narrator_reaction }}%</td></tr>
+    <tr><td>Map / data graphic</td><td>{{ attrs.pct_map_data_graphic }}%</td></tr>
+    <tr><td>CTA</td><td>{{ attrs.pct_cta }}%</td></tr>
+    <tr><td>Other</td><td>{{ attrs.pct_other }}%</td></tr>
+  </table>
+</div>
+{% endif %}
+
+<h2>Shots</h2>
+<div class="card">
+  {% if shots %}
+  <div style="display:flex;flex-wrap:wrap;gap:12px">
+    {% for s in shots %}
+    <div style="width:150px">
+      {% if s.frame_captured %}
+      <img src="{{ url_for('production_spec_shot_image', input_id=input.input_id, shot_id=s.shot_id) }}"
+           style="width:100%;aspect-ratio:9/16;object-fit:cover;border-radius:8px;border:1px solid var(--border)">
+      {% else %}
+      <div style="width:100%;aspect-ratio:9/16;border-radius:8px;border:1px dashed var(--border);display:flex;align-items:center;justify-content:center" class="muted">no frame</div>
+      {% endif %}
+      <div style="font-size:12px;margin-top:4px">
+        <strong>#{{ s.shot_number }}</strong>
+        <span class="muted">{{ '%.2fs' % s.duration_sec if s.duration_sec is not none else '—' }}</span>
+      </div>
+      <div class="muted" style="font-size:11px">{{ s.content_category or 'unclassified' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">No shots recorded.</div>
+  {% endif %}
+</div>
+
+<form method="post" action="{{ url_for('production_input_delete', input_id=input.input_id) }}" onsubmit="return confirm('Delete this Production Spec input and all its shots/frames?');" style="margin-top:16px">
+  <button type="submit" class="danger">Delete this input</button>
+</form>
+
+<a class="btn secondary" href="{{ url_for('production_inputs_list') }}">← All Production Spec Inputs</a>
+{% endblock %}

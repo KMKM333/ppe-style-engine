@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Video Creations — PPE Engine{% endblock %}
+{% block content %}
+<h1>Video Creations</h1>
+<div class="sub">
+  Planned/queued video outputs against a Production Spec profile — a status board, not an
+  auto-generation pipeline yet. Fill in a generation tool + output link once a video is actually made.
+  {{ rows|length }} shown.
+</div>
+
+<a class="btn" href="{{ url_for('video_creation_create') }}">+ New video creation</a>
+
+<form method="get" action="{{ url_for('video_creations_list') }}" class="card" style="margin-top:16px">
+  <div class="flex">
+    <div>
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="">Any</option>
+        <option value="planned" {{ 'selected' if filters.status == 'planned' }}>Planned</option>
+        <option value="queued" {{ 'selected' if filters.status == 'queued' }}>Queued</option>
+        <option value="in_progress" {{ 'selected' if filters.status == 'in_progress' }}>In progress</option>
+        <option value="done" {{ 'selected' if filters.status == 'done' }}>Done</option>
+      </select>
+    </div>
+    <div>
+      <label for="profile">Target profile</label>
+      <select id="profile" name="profile">
+        <option value="">All profiles</option>
+        {% for p in profiles %}
+        <option value="{{ p.profile_code }}" {{ 'selected' if filters.profile == p.profile_code }}>{{ p.profile_code }} ({{ p.channel_name }})</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <button type="submit">Apply filters</button>
+  <a href="{{ url_for('video_creations_list') }}" class="btn secondary">Reset</a>
+</form>
+
+<div class="card">
+  {% if rows %}
+  <table>
+    <tr><th>Title</th><th>Status</th><th>Source input</th><th>Target profile</th><th>Tool</th><th>Output</th><th>Created</th><th></th></tr>
+    {% for r in rows %}
+    <tr>
+      <td><strong>{{ r.title }}</strong></td>
+      <td>
+        {% if r.status == 'done' %}<span class="pill confirmed">done</span>
+        {% elif r.status == 'in_progress' %}<span class="pill draft">in progress</span>
+        {% elif r.status == 'queued' %}<span class="pill draft">queued</span>
+        {% else %}<span class="pill draft">planned</span>{% endif %}
+      </td>
+      <td class="muted">{{ r.source_title or '—' }}</td>
+      <td>{{ r.profile_code or '—' }}</td>
+      <td class="muted">{{ r.generation_tool or '—' }}</td>
+      <td>{% if r.output_url %}<a href="{{ r.output_url }}" target="_blank" rel="noopener">link ↗</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="muted" style="white-space:nowrap">{{ r.created_at }}</td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('video_creation_detail', creation_id=r.creation_id) }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No video creations tracked yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

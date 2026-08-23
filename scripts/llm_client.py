@@ -10,6 +10,7 @@ Get one, then before starting webapp.py:
 
     export ANTHROPIC_API_KEY=sk-ant-...
 """
+import base64
 import json
 import os
 import re
@@ -61,6 +62,44 @@ def generate_json(prompt_text: str, model: str = DEFAULT_MODEL, max_tokens: int 
         for chunk in stream.text_stream:
             reply_parts.append(chunk)
     reply = "".join(reply_parts)
+    text = reply.strip()
+    fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
+    if fence:
+        text = fence.group(1)
+    try:
+        return json.loads(text, strict=False)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Model didn't return valid JSON: {e}\n\nReply was:\n{reply}")
+
+
+def generate_json_with_images(prompt_text: str, images: list, model: str = DEFAULT_MODEL, max_tokens: int = 8192):
+    """Vision counterpart to generate_json() — used by
+    classify_production_spec_shots.py to classify each shot's content
+    category from its extracted frame. `images` is a list of
+    (media_type, raw_bytes) tuples, e.g. [("image/png", b"...")]. Builds an
+    Anthropic content list of image blocks (same base64 shape
+    instagram_transcriber/app.py's generate_smart_title() already builds for
+    a single thumbnail) followed by a trailing text block, then parses the
+    JSON reply the same tolerant way generate_json() does. Non-streaming —
+    unlike generate_json(), a shot-classification batch is capped at a
+    modest number of images per call (see classify_production_spec_shots.py),
+    so this doesn't need generate_json()'s streaming workaround for very
+    large max_tokens responses."""
+    client = _client()
+    content = [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": base64.b64encode(raw_bytes).decode("ascii")},
+        }
+        for media_type, raw_bytes in images
+    ]
+    content.append({"type": "text", "text": prompt_text})
+    message = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        messages=[{"role": "user", "content": content}],
+    )
+    reply = "".join(block.text for block in message.content if block.type == "text")
     text = reply.strip()
     fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
     if fence:

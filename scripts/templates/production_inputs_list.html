@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Production Spec Inputs — PPE Engine{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>Production Spec Inputs</h1>
+<div class="sub">Videos submitted for shot/pacing analysis (ffmpeg scene-detection + shot-type classification) — a parallel pipeline to the writing-style Library, feeding Production Spec Profiles below.</div>
+
+<form method="get" action="{{ url_for('production_inputs_list') }}" class="card">
+  <div class="flex">
+    <div>
+      <label for="q">Search title</label>
+      <input type="text" id="q" name="q" value="{{ filters.q }}" placeholder="e.g. Opium Wars">
+    </div>
+    <div>
+      <label for="channel_id">Source / channel</label>
+      <select id="channel_id" name="channel_id">
+        <option value="">All sources</option>
+        {% for c in channels %}
+        <option value="{{ c.channel_id }}" {{ 'selected' if filters.channel_id == c.channel_id }}>{{ c.channel_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="">Any</option>
+        <option value="ingested" {{ 'selected' if filters.status == 'ingested' }}>Ingested</option>
+        <option value="shots_detected" {{ 'selected' if filters.status == 'shots_detected' }}>Shots detected</option>
+        <option value="classifying" {{ 'selected' if filters.status == 'classifying' }}>Classifying</option>
+        <option value="classified" {{ 'selected' if filters.status == 'classified' }}>Classified</option>
+        <option value="needs_review" {{ 'selected' if filters.status == 'needs_review' }}>Needs review</option>
+      </select>
+    </div>
+  </div>
+  <button type="submit">Apply filters</button>
+  <a href="{{ url_for('production_inputs_list') }}" class="btn secondary">Reset</a>
+</form>
+
+<div class="card">
+  {% if rows %}
+  <table>
+    <tr>
+      <th>Title</th><th>Source</th><th>Platform</th><th>Shots</th><th>Avg shot length</th>
+      <th>Status</th><th>Ingested</th><th></th>
+    </tr>
+    {% for r in rows %}
+    <tr>
+      <td><a href="{{ url_for('production_input_detail', input_id=r.input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title }}</a></td>
+      <td>{{ r.channel_name }}</td>
+      <td class="muted">{{ r.platform or '—' }}</td>
+      <td>{{ r.total_shots if r.total_shots is not none else '—' }}</td>
+      <td>{{ '%.2fs' % r.avg_shot_length_sec if r.avg_shot_length_sec is not none else '—' }}</td>
+      <td>
+        {% if r.status == 'classified' %}<span class="pill confirmed">classified</span>
+        {% elif r.status == 'needs_review' %}<span class="pill bad">needs review</span>
+        {% else %}<span class="pill draft">{{ r.status }}</span>{% endif %}
+      </td>
+      <td class="muted" style="white-space:nowrap">{{ r.ingested_at }}</td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('production_input_detail', input_id=r.input_id) }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty">No Production Spec inputs yet — submit a video for shot analysis via the Instagram Bulk Transcriber.</div>
+  {% endif %}
+</div>
+{% endblock %}

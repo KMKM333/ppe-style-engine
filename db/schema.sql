@@ -542,3 +542,88 @@ CREATE TABLE IF NOT EXISTS book_examples (
                                               -- see match_book_screenshots.py
     created_at                   TEXT DEFAULT (datetime('now'))
 );
+
+-- ============================================================
+-- 10. PRODUCTION SPEC: shot/pacing analysis of reference videos,
+-- a parallel pipeline to the writing-style pipeline above — inputs here
+-- are analysed for shot cuts/pacing (ffmpeg scene-detection + frame
+-- classification), not transcript/prose style. Rolls up into
+-- style_profiles the same way videos/books do, via media_type='ProductionSpec'
+-- and profile_code prefix 'PS.*' (see production_spec_profile_builder.py).
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS production_spec_inputs (
+    input_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    channel_id            INTEGER REFERENCES channels(channel_id),
+    title                  TEXT,
+    platform                TEXT,            -- 'Instagram' / 'Facebook' / 'YouTube' / etc.
+    url                       TEXT,
+    duration_sec                REAL,
+    posted_at                     TEXT,
+    content_hash                   TEXT,     -- dedupe, mirrors videos.content_hash
+    scene_threshold                  REAL DEFAULT 0.25,  -- ffmpeg select='gt(scene,X)' threshold used
+    status                             TEXT DEFAULT 'ingested',  -- ingested / shots_detected / classifying / classified / needs_review
+    classification_error                 TEXT,
+    ingested_at                            TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_production_spec_inputs_content_hash ON production_spec_inputs(content_hash);
+
+-- Per-shot boundaries + content-category classification for one input.
+CREATE TABLE IF NOT EXISTS production_spec_shots (
+    shot_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    input_id             INTEGER REFERENCES production_spec_inputs(input_id),
+    shot_number            INTEGER NOT NULL,
+    start_sec                 REAL NOT NULL,
+    end_sec                     REAL,
+    duration_sec                  REAL,
+    content_category                TEXT,   -- 'illustration_panel' / 'step_card' / 'narrator_reaction' / 'map_graphic' / 'cta' / 'other'
+    classified_by                     TEXT, -- 'claude' / 'manual' / NULL (pending)
+    frame_captured                      INTEGER DEFAULT 0,  -- mirrors video_visuals.screenshot_captured
+    created_at                             TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_production_spec_shots_input ON production_spec_shots(input_id);
+
+-- One row per analysed input — the aggregation source for
+-- production_spec_profile_builder.py, mirroring video_attributes' role
+-- for profile_builder.py.
+CREATE TABLE IF NOT EXISTS production_spec_attributes (
+    input_id                 INTEGER PRIMARY KEY REFERENCES production_spec_inputs(input_id),
+    total_shots                 INTEGER,
+    avg_shot_length_sec            REAL,
+    median_shot_length_sec            REAL,
+    shot_length_stdev                    REAL,
+    pct_shots_under_1s                      REAL,
+    pct_shots_under_2s                         REAL,
+    pct_shots_2to5s                               REAL,
+    pct_shots_over_5s                                REAL,
+    pct_illustration_panel                              REAL,
+    pct_step_card                                          REAL,
+    pct_narrator_reaction                                     REAL,
+    pct_map_data_graphic                                         REAL,
+    pct_cta                                                         REAL,
+    pct_other                                                         REAL,
+    dominant_shot_category                                              TEXT,  -- categorical: mode of content_category
+    pacing_curve_json                                                      TEXT, -- JSON array of per-shot durations, in order
+    classified_by                                                             TEXT,  -- 'claude' / 'manual' / 'needs_review'
+    classified_at                                                                TEXT DEFAULT (datetime('now'))
+);
+
+-- v1 tracking table for planned video outputs. No generation API is wired
+-- up yet — this is a lightweight status board mirroring `transformations`,
+-- but simpler (no scoring machinery, since nothing is auto-generated in v1).
+-- output_url/output_file_path get filled in manually once a real
+-- video-generation tool is chosen.
+CREATE TABLE IF NOT EXISTS video_creations (
+    creation_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_input_id        INTEGER REFERENCES production_spec_inputs(input_id),  -- optional
+    target_profile_id         INTEGER REFERENCES style_profiles(profile_id),      -- the PS.* profile targeted
+    title                       TEXT,
+    brief                         TEXT,    -- free text: what this planned video should contain
+    status                          TEXT DEFAULT 'planned',  -- planned / queued / in_progress / done
+    generation_tool                    TEXT,  -- filled in later, e.g. 'Runway' — free text
+    output_url                            TEXT,
+    output_file_path                         TEXT,
+    created_by                                  TEXT DEFAULT 'manual',
+    created_at                                     TEXT DEFAULT (datetime('now')),
+    updated_at                                        TEXT DEFAULT (datetime('now'))
+);

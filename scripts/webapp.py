@@ -12,6 +12,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -19,7 +20,7 @@ from urllib.parse import quote
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, abort, jsonify
 
-from db_init import get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR, VIDEO_VISUALS_DIR
+from db_init import get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR, VIDEO_VISUALS_DIR, PRODUCTION_SPEC_SHOTS_DIR
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
 from score_engine import rate_input, score_intrinsic, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
@@ -28,6 +29,8 @@ from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, LLMConfigError
 from ingest_book import ingest_book_text
 from ingest_video import ingest_video_row
+from ingest_production_spec import ingest_production_spec_row
+from production_spec_profile_builder import build_profile as production_spec_build_profile
 
 # Shared secret the Instagram Bulk Transcriber (a separate local app) sends
 # as the X-Ingest-Key header when POSTing to /api/ingest/book, so a freshly
@@ -2374,6 +2377,396 @@ def video_visual_image(video_id, visual_id):
     if not image_path.is_file():
         abort(404)
     return send_file(image_path, mimetype="image/png")
+
+
+@app.route("/api/ingest/production-spec", methods=["POST"])
+def api_ingest_production_spec():
+    """Production Spec counterpart to /api/ingest/video — the Instagram Bulk
+    Transcriber's shot-analysis job POSTs here after running ffmpeg
+    scene-detection locally, handing over the shot boundary list (no frame
+    images yet, keeping this payload small the same way /api/ingest/video
+    keeps its payload to just text). Ingestion is synchronous; no subprocess
+    is launched here since classification can't start until every shot's
+    frame has been uploaded via api_set_shot_frame below."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+
+    data = request.get_json(silent=True) or {}
+    title = (data.get("title") or "").strip()
+    channel = (data.get("channel") or "").strip()
+    shots = data.get("shots") or []
+    if not title or not channel or not shots:
+        return jsonify({"ok": False, "error": "'title', 'channel', and a non-empty 'shots' list are required."}), 400
+
+    input_id, shot_rows = ingest_production_spec_row(
+        title=title,
+        channel=channel,
+        platform=data.get("platform") or "Instagram",
+        url=data.get("url") or None,
+        duration_sec=data.get("duration_sec") or None,
+        posted_at=data.get("posted_at") or None,
+        scene_threshold=data.get("scene_threshold") or 0.25,
+        shots=shots,
+    )
+    return jsonify({"ok": True, "input_id": input_id, "shots": shot_rows})
+
+
+@app.route("/api/production-spec/inputs/<int:input_id>/shots/<int:shot_id>/frame", methods=["POST"])
+def api_set_shot_frame(input_id, shot_id):
+    """Receives one shot's representative frame grabbed locally by the
+    transcriber, mirrors api_set_visual_screenshot for video_visuals."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    image_b64 = data.get("image_base64")
+    if not image_b64:
+        return jsonify({"ok": False, "error": "'image_base64' is required"}), 400
+
+    conn = get_conn()
+    shot = conn.execute(
+        "SELECT shot_id FROM production_spec_shots WHERE shot_id = ? AND input_id = ?", (shot_id, input_id)
+    ).fetchone()
+    if not shot:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such shot on this input"}), 404
+
+    shot_dir = PRODUCTION_SPEC_SHOTS_DIR / str(input_id)
+    shot_dir.mkdir(parents=True, exist_ok=True)
+    (shot_dir / f"shot_{shot_id}.png").write_bytes(base64.b64decode(image_b64))
+
+    conn.execute("UPDATE production_spec_shots SET frame_captured = 1 WHERE shot_id = ?", (shot_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "input_id": input_id, "shot_id": shot_id})
+
+
+@app.route("/api/production-spec/inputs/<int:input_id>/classify", methods=["POST"])
+def api_classify_production_spec(input_id):
+    """Kicks off shot-content classification once every frame has been
+    uploaded — a detached subprocess, same rationale as api_ingest_video:
+    the vision calls can take long enough that an in-process thread risks
+    gunicorn's arbiter recycling the worker mid-call."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    row = conn.execute("SELECT input_id FROM production_spec_inputs WHERE input_id = ?", (input_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such input"}), 404
+    conn.execute("UPDATE production_spec_inputs SET status = 'classifying' WHERE input_id = ?", (input_id,))
+    conn.commit()
+    conn.close()
+
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classify_production_spec_shots.py")
+    subprocess.Popen([sys.executable, script_path, "--input_id", str(input_id)], start_new_session=True)
+
+    return jsonify({"ok": True, "input_id": input_id, "status": "classifying"})
+
+
+@app.route("/api/production-spec/inputs/<int:input_id>/status")
+def api_production_spec_status(input_id):
+    """Lets the transcriber poll for classification completion, mirrors
+    api_video_status — 'classified' or 'needs_review' are terminal states."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT i.status, i.classification_error, p.profile_code
+           FROM production_spec_inputs i
+           LEFT JOIN channels c ON c.channel_id = i.channel_id
+           LEFT JOIN style_profiles p ON p.channel_id = c.channel_id AND p.media_type = 'ProductionSpec'
+           WHERE i.input_id = ?""",
+        (input_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"ok": False, "error": "no such input"}), 404
+    done = row["status"] in ("classified", "needs_review")
+    return jsonify({
+        "ok": True, "input_id": input_id, "done": done,
+        "status": row["status"], "classification_error": row["classification_error"],
+        "profile_code": row["profile_code"],
+    })
+
+
+@app.route("/production/inputs/<int:input_id>/shot/<int:shot_id>.png")
+def production_spec_shot_image(input_id, shot_id):
+    image_path = PRODUCTION_SPEC_SHOTS_DIR / str(input_id) / f"shot_{shot_id}.png"
+    if not image_path.is_file():
+        abort(404)
+    return send_file(image_path, mimetype="image/png")
+
+
+@app.route("/production/inputs")
+def production_inputs_list():
+    channel_filter = request.args.get("channel_id", type=int)
+    status_filter = request.args.get("status", "")
+    q = request.args.get("q", "").strip()
+
+    query = """SELECT i.input_id, i.title, i.platform, i.url, i.status, i.ingested_at,
+                      c.channel_id, c.channel_name,
+                      a.total_shots, a.avg_shot_length_sec, a.dominant_shot_category
+               FROM production_spec_inputs i
+               JOIN channels c ON c.channel_id = i.channel_id
+               LEFT JOIN production_spec_attributes a ON a.input_id = i.input_id
+               WHERE 1=1"""
+    params = []
+    if channel_filter:
+        query += " AND c.channel_id = ?"
+        params.append(channel_filter)
+    if status_filter:
+        query += " AND i.status = ?"
+        params.append(status_filter)
+    if q:
+        query += " AND i.title LIKE ?"
+        params.append(f"%{q}%")
+    query += " ORDER BY i.ingested_at DESC"
+
+    conn = get_conn()
+    rows = conn.execute(query, params).fetchall()
+    channels = conn.execute(
+        "SELECT DISTINCT c.channel_id, c.channel_name FROM channels c "
+        "JOIN production_spec_inputs i ON i.channel_id = c.channel_id ORDER BY c.channel_name"
+    ).fetchall()
+    conn.close()
+    return render_template(
+        "production_inputs_list.html", active="production-inputs", rows=rows, channels=channels,
+        filters={"channel_id": channel_filter, "status": status_filter, "q": q},
+    )
+
+
+@app.route("/production/inputs/<int:input_id>")
+def production_input_detail(input_id):
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT i.*, c.channel_name, p.profile_code
+           FROM production_spec_inputs i JOIN channels c ON c.channel_id = i.channel_id
+           LEFT JOIN style_profiles p ON p.channel_id = c.channel_id AND p.media_type = 'ProductionSpec'
+           WHERE i.input_id = ?""",
+        (input_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        flash(f"No such Production Spec input: {input_id}")
+        return redirect(url_for("production_inputs_list"))
+    attrs = conn.execute("SELECT * FROM production_spec_attributes WHERE input_id = ?", (input_id,)).fetchone()
+    shots = conn.execute(
+        "SELECT shot_id, shot_number, start_sec, end_sec, duration_sec, content_category, frame_captured "
+        "FROM production_spec_shots WHERE input_id = ? ORDER BY shot_number", (input_id,)
+    ).fetchall()
+    conn.close()
+    return render_template(
+        "production_input_detail.html", active="production-inputs",
+        input=row, attrs=attrs, shots=shots,
+    )
+
+
+@app.route("/production/inputs/<int:input_id>/delete", methods=["POST"])
+def production_input_delete(input_id):
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT channel_id FROM production_spec_inputs WHERE input_id = ?", (input_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        flash(f"No such Production Spec input: {input_id}")
+        return redirect(url_for("production_inputs_list"))
+    channel_id = row["channel_id"]
+    channel = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
+
+    conn.execute("DELETE FROM production_spec_shots WHERE input_id = ?", (input_id,))
+    conn.execute("DELETE FROM production_spec_attributes WHERE input_id = ?", (input_id,))
+    conn.execute("DELETE FROM production_spec_inputs WHERE input_id = ?", (input_id,))
+    conn.commit()
+    conn.close()
+
+    shot_dir = PRODUCTION_SPEC_SHOTS_DIR / str(input_id)
+    if shot_dir.is_dir():
+        shutil.rmtree(shot_dir, ignore_errors=True)
+
+    if channel:
+        try:
+            conn = get_conn()
+            code = conn.execute(
+                "SELECT profile_code FROM style_profiles WHERE channel_id = ? AND media_type = 'ProductionSpec'",
+                (channel_id,),
+            ).fetchone()
+            conn.close()
+            if code:
+                production_spec_build_profile(channel["channel_name"], code["profile_code"], min_n=1)
+        except Exception as e:
+            flash(f"Input deleted, but rebuilding the Production Spec profile failed: {e}")
+
+    flash(f"Deleted Production Spec input {input_id}.")
+    return redirect(url_for("production_inputs_list"))
+
+
+@app.route("/production/profiles")
+def production_profiles_list():
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT p.profile_id, p.profile_code, p.channel_id, p.overview, p.n_videos_analysed, p.status,
+                  c.channel_name
+           FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.media_type = 'ProductionSpec' ORDER BY p.profile_code"""
+    ).fetchall()
+    conn.close()
+    return render_template("production_profiles_list.html", active="production-profiles", profiles=rows)
+
+
+@app.route("/production/profiles/<code>")
+def production_profile_detail(code):
+    conn = get_conn()
+    profile = conn.execute(
+        """SELECT p.*, c.channel_name FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.profile_code = ? AND p.media_type = 'ProductionSpec'""",
+        (code,),
+    ).fetchone()
+    if not profile:
+        conn.close()
+        flash(f"No such Production Spec profile: {code}")
+        return redirect(url_for("production_profiles_list"))
+    numeric = conn.execute(
+        "SELECT attribute, mean_val, std_val, min_val, max_val, median_val FROM profile_fingerprint_numeric "
+        "WHERE profile_id = ? ORDER BY attribute", (profile["profile_id"],)
+    ).fetchall()
+    categorical_rows = conn.execute(
+        "SELECT attribute, value, share_pct FROM profile_fingerprint_categorical "
+        "WHERE profile_id = ? ORDER BY attribute, share_pct DESC", (profile["profile_id"],)
+    ).fetchall()
+    categorical = {}
+    for r in categorical_rows:
+        categorical.setdefault(r["attribute"], []).append(r)
+    inputs = conn.execute(
+        """SELECT i.input_id, i.title, i.url, i.ingested_at, a.total_shots, a.avg_shot_length_sec
+           FROM production_spec_inputs i LEFT JOIN production_spec_attributes a ON a.input_id = i.input_id
+           WHERE i.channel_id = ? ORDER BY i.ingested_at DESC""",
+        (profile["channel_id"],),
+    ).fetchall()
+    conn.close()
+    return render_template(
+        "production_profile_detail.html", active="production-profiles",
+        profile=profile, numeric=numeric, categorical=categorical, inputs=inputs,
+    )
+
+
+@app.route("/production/creations")
+def video_creations_list():
+    status_filter = request.args.get("status", "")
+    profile_filter = request.args.get("profile", "")
+
+    query = """SELECT vc.*, p.profile_code, i.title AS source_title
+               FROM video_creations vc
+               LEFT JOIN style_profiles p ON p.profile_id = vc.target_profile_id
+               LEFT JOIN production_spec_inputs i ON i.input_id = vc.source_input_id
+               WHERE 1=1"""
+    params = []
+    if status_filter:
+        query += " AND vc.status = ?"
+        params.append(status_filter)
+    if profile_filter:
+        query += " AND p.profile_code = ?"
+        params.append(profile_filter)
+    query += " ORDER BY vc.created_at DESC"
+
+    conn = get_conn()
+    rows = conn.execute(query, params).fetchall()
+    profiles = conn.execute(
+        """SELECT p.profile_code, c.channel_name FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.media_type = 'ProductionSpec' ORDER BY p.profile_code"""
+    ).fetchall()
+    conn.close()
+    return render_template(
+        "video_creations_list.html", active="production-creations", rows=rows, profiles=profiles,
+        filters={"status": status_filter, "profile": profile_filter},
+    )
+
+
+@app.route("/production/creations/new", methods=["GET", "POST"])
+def video_creation_create():
+    conn = get_conn()
+    if request.method == "POST":
+        title = (request.form.get("title") or "").strip()
+        brief = (request.form.get("brief") or "").strip()
+        source_input_id = request.form.get("source_input_id") or None
+        target_profile_id = request.form.get("target_profile_id") or None
+        status = request.form.get("status") or "planned"
+        if not title:
+            flash("Title is required.")
+        else:
+            cur = conn.execute(
+                "INSERT INTO video_creations (source_input_id, target_profile_id, title, brief, status) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (source_input_id, target_profile_id, title, brief, status),
+            )
+            conn.commit()
+            creation_id = cur.lastrowid
+            conn.close()
+            return redirect(url_for("video_creation_detail", creation_id=creation_id))
+
+    inputs = conn.execute("SELECT input_id, title FROM production_spec_inputs ORDER BY ingested_at DESC").fetchall()
+    profiles = conn.execute(
+        """SELECT p.profile_id, p.profile_code, c.channel_name FROM style_profiles p
+           JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.media_type = 'ProductionSpec' ORDER BY p.profile_code"""
+    ).fetchall()
+    conn.close()
+    return render_template(
+        "video_creation_form.html", active="production-creations", inputs=inputs, profiles=profiles,
+    )
+
+
+@app.route("/production/creations/<int:creation_id>")
+def video_creation_detail(creation_id):
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT vc.*, p.profile_code, c.channel_name AS profile_channel_name, i.title AS source_title
+           FROM video_creations vc
+           LEFT JOIN style_profiles p ON p.profile_id = vc.target_profile_id
+           LEFT JOIN channels c ON c.channel_id = p.channel_id
+           LEFT JOIN production_spec_inputs i ON i.input_id = vc.source_input_id
+           WHERE vc.creation_id = ?""",
+        (creation_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        flash(f"No such video creation: {creation_id}")
+        return redirect(url_for("video_creations_list"))
+    return render_template("video_creation_detail.html", active="production-creations", creation=row)
+
+
+@app.route("/production/creations/<int:creation_id>/update", methods=["POST"])
+def video_creation_update(creation_id):
+    conn = get_conn()
+    row = conn.execute("SELECT creation_id FROM video_creations WHERE creation_id = ?", (creation_id,)).fetchone()
+    if not row:
+        conn.close()
+        flash(f"No such video creation: {creation_id}")
+        return redirect(url_for("video_creations_list"))
+    conn.execute(
+        """UPDATE video_creations SET status = ?, generation_tool = ?, output_url = ?, output_file_path = ?,
+           updated_at = datetime('now') WHERE creation_id = ?""",
+        (
+            request.form.get("status") or "planned",
+            request.form.get("generation_tool") or None,
+            request.form.get("output_url") or None,
+            request.form.get("output_file_path") or None,
+            creation_id,
+        ),
+    )
+    conn.commit()
+    conn.close()
+    return redirect(url_for("video_creation_detail", creation_id=creation_id))
+
+
+@app.route("/production/creations/<int:creation_id>/delete", methods=["POST"])
+def video_creation_delete(creation_id):
+    conn = get_conn()
+    conn.execute("DELETE FROM video_creations WHERE creation_id = ?", (creation_id,))
+    conn.commit()
+    conn.close()
+    flash(f"Deleted video creation {creation_id}.")
+    return redirect(url_for("video_creations_list"))
 
 
 @app.route("/books")

@@ -123,6 +123,7 @@
     .nav-item { white-space:normal; }
     .sidebar-advanced { flex-direction:column; margin-top:16px; padding-top:14px;
       border-top:1px solid var(--border); border-left:none; padding-left:0; }
+
   }
   main { max-width: 1600px; margin: 0 auto; padding: 24px 24px 60px; }
   h1 { font-size: 22px; margin: 0 0 6px; }
@@ -168,6 +169,18 @@
      up vertically from one section card to the next instead of each table
      auto-sizing its own columns off its own content. */
   table.attr-table { table-layout: fixed; }
+  /* Same fixed-percentage-column approach as attr-table, for the Library
+     input list's Type/Channel/Title/Words/Length/Source/Ingested columns. */
+  .inputs-table { table-layout: fixed; }
+  /* Placed after the base rule above so it wins the cascade (see the
+     .page-header-band box-shadow fix for the same pattern). Under 375px
+     the percentage <col> widths crush every column into a few px, forcing
+     header labels and cell text to overlap each other — illegible, not
+     just cramped. Auto layout lets columns size to content instead; the
+     table becomes wider than the viewport, same as Books/Channels already
+     are on mobile, and scrolls cleanly inside .card's own overflow-x:auto
+     rather than corrupting the layout. */
+  @media (max-width: 860px) { .inputs-table { table-layout: auto; } }
   table.attr-table col.col-attribute { width: 19%; }
   table.attr-table col.col-type { width: 17%; }
   table.attr-table col.col-description { width: 25%; }

@@ -63,11 +63,20 @@
   .content-col { flex:1; min-width:0; }
   .mobile-nav-toggle { display:none; align-items:center; justify-content:center; width:34px; height:34px;
     border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--text);
-    cursor:pointer; flex-shrink:0; margin-left:auto; padding:0; }
+    cursor:pointer; flex-shrink:0; padding:0; }
   .mobile-nav-toggle svg { width:18px; height:18px; }
+  /* The trigger button (as opposed to the drawer's own internal close
+     button, which shares .mobile-nav-toggle's look but stays inline in the
+     drawer header) sits fixed at top-right, paired with the theme toggle at
+     the same height — 24px (theme's right offset) + 34px (button width) +
+     8px (gap) = 66px keeps them a tight, aligned pair. */
+  .mobile-nav-toggle-fixed { position:fixed; top:18px; right:66px; z-index:120; box-shadow:0 2px 8px rgba(0,0,0,.15); }
   .sidebar-backdrop { display:none; }
   .sidebar-drawer-head { display:none; }
   @media (max-width: 860px) {
+    /* Both fixed top-right buttons must stay above the drawer/backdrop
+       (z-index 105-110) so they remain reachable while the drawer is open. */
+    .theme-toggle { z-index:120; }
     .app-shell { flex-direction:column; align-items:stretch; }
     .content-col { width:100%; min-width:0; }
     .sidebar { width:100%; max-width:100%; height:auto; position:static; flex-direction:column;
@@ -339,14 +348,14 @@
 <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle light / dark mode" onclick="toggleTheme()">
   <span id="theme-toggle-icon">{{ icon('moon') }}</span>
 </button>
+<button type="button" class="mobile-nav-toggle mobile-nav-toggle-fixed" title="Open menu" onclick="toggleMobileNav()">
+  {{ icon('menu') }}
+</button>
 <div class="app-shell">
   <aside class="sidebar">
     <div class="sidebar-brand">
       <span class="brand-icon"></span>
       <span>PPE Engine</span>
-      <button type="button" class="mobile-nav-toggle" title="Open menu" onclick="toggleMobileNav()">
-        {{ icon('menu') }}
-      </button>
     </div>
     <div class="sidebar-backdrop" onclick="toggleMobileNav()"></div>
     <div class="sidebar-drawer">

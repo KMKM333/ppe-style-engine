@@ -65,6 +65,8 @@
     border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--text);
     cursor:pointer; flex-shrink:0; margin-left:auto; padding:0; }
   .mobile-nav-toggle svg { width:18px; height:18px; }
+  .sidebar-backdrop { display:none; }
+  .sidebar-drawer-head { display:none; }
   @media (max-width: 860px) {
     .app-shell { flex-direction:column; align-items:stretch; }
     .content-col { width:100%; min-width:0; }
@@ -72,13 +74,24 @@
       align-items:stretch; overflow-x:visible; gap:0; padding:12px 14px; }
     .sidebar-brand { padding:4px 0 12px; }
     .mobile-nav-toggle { display:inline-flex; }
-    .sidebar-search, .sidebar-nav, .sidebar-advanced { display:none; width:100%; max-width:100%; }
-    .sidebar.nav-open .sidebar-search,
-    .sidebar.nav-open .sidebar-nav,
-    .sidebar.nav-open .sidebar-advanced { display:flex; }
-    .sidebar-search { flex-basis:100%; margin-bottom:8px; }
+
+    /* Slide-over drawer: search/nav/advanced move into a fixed-position panel
+       that slides in from the left over a dimmed backdrop, rather than
+       pushing page content down inline — the sidebar-brand row above stays
+       in the normal document flow and visible underneath. */
+    .sidebar-backdrop { display:block; position:fixed; inset:0; background:rgba(0,0,0,0);
+      pointer-events:none; transition:background .2s ease; z-index:105; }
+    .sidebar.nav-open .sidebar-backdrop { background:rgba(0,0,0,.55); pointer-events:auto; }
+    .sidebar-drawer { position:fixed; top:0; left:0; height:100vh; width:min(300px, 85vw);
+      background:var(--panel); border-right:1px solid var(--border); z-index:110;
+      display:flex; flex-direction:column; padding:16px 14px; overflow-y:auto;
+      transform:translateX(-100%); transition:transform .22s ease; box-shadow:2px 0 24px rgba(0,0,0,.3); }
+    .sidebar.nav-open .sidebar-drawer { transform:translateX(0); }
+    .sidebar-drawer-head { display:flex; align-items:center; justify-content:space-between;
+      font-weight:700; font-size:14.5px; margin-bottom:14px; }
+    .sidebar-search { width:100%; margin-bottom:10px; }
     .sidebar-search input { margin-bottom:0; }
-    .sidebar-nav { flex-direction:column; flex-wrap:nowrap; gap:1px; }
+    .sidebar-nav { flex-direction:column; flex-wrap:nowrap; gap:1px; width:100%; }
     .nav-group { margin-top:16px; width:100%; }
     .nav-item { white-space:normal; }
     .sidebar-advanced { flex-direction:column; margin-top:16px; padding-top:14px;
@@ -331,9 +344,15 @@
     <div class="sidebar-brand">
       <span class="brand-icon"></span>
       <span>PPE Engine</span>
-      <button type="button" class="mobile-nav-toggle" id="mobile-nav-toggle" title="Menu" onclick="toggleMobileNav()">
-        <span id="mobile-nav-toggle-icon">{{ icon('menu') }}</span>
+      <button type="button" class="mobile-nav-toggle" title="Open menu" onclick="toggleMobileNav()">
+        {{ icon('menu') }}
       </button>
+    </div>
+    <div class="sidebar-backdrop" onclick="toggleMobileNav()"></div>
+    <div class="sidebar-drawer">
+    <div class="sidebar-drawer-head">
+      <span>Menu</span>
+      <button type="button" class="mobile-nav-toggle" title="Close menu" onclick="toggleMobileNav()">{{ icon('x') }}</button>
     </div>
     <div class="sidebar-search">
       <input type="text" id="nav-search" placeholder="Search" oninput="filterNav(this.value)">
@@ -383,6 +402,7 @@
       <a href="{{ url_for('score_form') }}" class="nav-item {{ 'active' if active=='score' else '' }}"><span class="nav-icon">{{ icon('target') }}</span>Score Text</a>
       <a href="{{ url_for('sources_page') }}" class="nav-item {{ 'active' if active=='sources' else '' }}"><span class="nav-icon">{{ icon('book') }}</span>Sources</a>
     </div>
+    </div>
   </aside>
 
   <div class="content-col">
@@ -419,10 +439,7 @@
   applyTheme(document.documentElement.getAttribute('data-theme') || 'dark');
 
   function toggleMobileNav() {
-    var sidebar = document.querySelector('.sidebar');
-    var iconSpan = document.getElementById('mobile-nav-toggle-icon');
-    var open = sidebar.classList.toggle('nav-open');
-    if (iconSpan) iconSpan.innerHTML = open ? `{{ icon('x') }}` : `{{ icon('menu') }}`;
+    document.querySelector('.sidebar').classList.toggle('nav-open');
   }
   // Tapping a nav link on mobile should close the drawer instead of leaving
   // it open over the next page while navigation happens.

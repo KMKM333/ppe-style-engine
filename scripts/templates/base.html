@@ -67,16 +67,19 @@
   .mobile-nav-toggle svg { width:18px; height:18px; }
   /* The trigger button (as opposed to the drawer's own internal close
      button, which shares .mobile-nav-toggle's look but stays inline in the
-     drawer header) sits fixed at top-right, paired with the theme toggle at
-     the same height — 24px (theme's right offset) + 34px (button width) +
-     8px (gap) = 66px keeps them a tight, aligned pair. */
-  .mobile-nav-toggle-fixed { position:fixed; top:18px; right:66px; z-index:120; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+     drawer header) sits fixed at the same height as the theme toggle,
+     flush against the right edge of the screen — the theme toggle moves
+     just to its left (see the mobile override below) so menu stays the
+     rightmost, most-reachable button. */
+  .mobile-nav-toggle-fixed { position:fixed; top:18px; right:24px; z-index:120; box-shadow:0 2px 8px rgba(0,0,0,.15); }
   .sidebar-backdrop { display:none; }
   .sidebar-drawer-head { display:none; }
   @media (max-width: 860px) {
     /* Both fixed top-right buttons must stay above the drawer/backdrop
-       (z-index 105-110) so they remain reachable while the drawer is open. */
-    .theme-toggle { z-index:120; }
+       (z-index 105-110) so they remain reachable while the drawer is open.
+       right:66px = 24px (menu's right offset) + 34px (button width) + 8px
+       (gap), sitting just left of the menu button. */
+    .theme-toggle { z-index:120; right:66px; }
     .app-shell { flex-direction:column; align-items:stretch; }
     .content-col { width:100%; min-width:0; }
     .sidebar { width:100%; max-width:100%; height:auto; position:static; flex-direction:column;

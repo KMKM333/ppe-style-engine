@@ -65,34 +65,31 @@
     border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--text);
     cursor:pointer; flex-shrink:0; padding:0; }
   .mobile-nav-toggle svg { width:18px; height:18px; }
-  /* The trigger button (as opposed to the drawer's own internal close
-     button, which shares .mobile-nav-toggle's look but stays inline in the
-     drawer header) sits fixed at the same height as the theme toggle,
-     flush against the right edge of the screen — the theme toggle moves
-     just to its left (see the mobile override below) so menu stays the
-     rightmost, most-reachable button. */
-  .mobile-nav-toggle-fixed { position:fixed; top:18px; right:24px; z-index:120; box-shadow:0 2px 8px rgba(0,0,0,.15); }
+  /* The trigger button lives in normal document flow, in its own row
+     right after the brand, on the left — not fixed-position, so it can
+     never overlap the logo or the theme toggle: it simply pushes
+     everything below it down, the same as any other block content. */
+  .mobile-nav-row { display:none; }
   .sidebar-backdrop { display:none; }
   .sidebar-drawer-head { display:none; }
   @media (max-width: 860px) {
-    /* Both fixed top-right buttons must stay above the drawer/backdrop
-       (z-index 105-110) so they remain reachable while the drawer is open.
-       right:66px = 24px (menu's right offset) + 34px (button width) + 8px
-       (gap), sitting just left of the menu button. */
-    .theme-toggle { z-index:120; right:66px; }
+    /* The theme toggle stays fixed top-right, above the drawer/backdrop
+       (z-index 105-110) so it remains reachable while the drawer is open. */
+    .theme-toggle { z-index:120; }
     .app-shell { flex-direction:column; align-items:stretch; }
     .content-col { width:100%; min-width:0; }
     .sidebar { width:100%; max-width:100%; height:auto; position:static; flex-direction:column;
       align-items:stretch; overflow-x:visible; gap:0; padding:12px 14px; }
-    .sidebar-brand { padding:4px 0 12px; }
+    .sidebar-brand { padding:4px 0 8px; }
+    .mobile-nav-row { display:block; padding-bottom:12px; }
     .mobile-nav-toggle { display:inline-flex; }
 
-    /* The fixed menu/theme buttons float at top:18px..52px regardless of
-       scroll — push the blue header band's top edge below that band (~14px
-       clearance) so its gradient background no longer renders underneath
-       them, and add a matching top border so the band reads as its own
-       framed block (border-color matches the existing bottom border). */
-    .page-header-band { margin-top:14px; border-top:1px solid var(--border); }
+    /* No manual gap needed above the header band any more — the menu row
+       above is real in-flow content, so it already pushes the band down
+       naturally. border-top matches border-bottom exactly (same color,
+       same width, no extra box-shadow) so the band reads as one evenly
+       framed block instead of a thicker "band" on one side. */
+    .page-header-band { border-top:1px solid var(--border); }
 
     /* Slide-over drawer: search/nav/advanced move into a fixed-position panel
        that slides in from the left over a dimmed backdrop, rather than
@@ -121,6 +118,10 @@
   .page-header-band { position:relative; background:
       radial-gradient(900px 340px at 12% 0%, rgba(var(--accent-rgb),.13), transparent 65%), var(--panel);
     border-bottom: 1px solid var(--border); box-shadow: 0 1px 0 rgba(var(--accent-rgb),.12); overflow:hidden; }
+  /* Placed after the base rule above so it wins the cascade: on mobile,
+     top and bottom borders should be pixel-identical (no extra accent
+     glow on just one side), matching the framed-block look. */
+  @media (max-width: 860px) { .page-header-band { box-shadow: none; } }
   .page-header-band-inner { max-width:1600px; margin:0 auto; padding:24px 24px 38px; position:relative; }
   .page-header-band .sub { margin-bottom:0; font-size:15.5px; }
   .page-header-band h1 { font-size:34px; font-weight:700; letter-spacing:-.015em; margin-bottom:10px; }
@@ -358,14 +359,16 @@
 <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle light / dark mode" onclick="toggleTheme()">
   <span id="theme-toggle-icon">{{ icon('moon') }}</span>
 </button>
-<button type="button" class="mobile-nav-toggle mobile-nav-toggle-fixed" title="Open menu" onclick="toggleMobileNav()">
-  {{ icon('menu') }}
-</button>
 <div class="app-shell">
   <aside class="sidebar">
     <div class="sidebar-brand">
       <span class="brand-icon"></span>
       <span>PPE Engine</span>
+    </div>
+    <div class="mobile-nav-row">
+      <button type="button" class="mobile-nav-toggle" title="Open menu" onclick="toggleMobileNav()">
+        {{ icon('menu') }}
+      </button>
     </div>
     <div class="sidebar-backdrop" onclick="toggleMobileNav()"></div>
     <div class="sidebar-drawer">

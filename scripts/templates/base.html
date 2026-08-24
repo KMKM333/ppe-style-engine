@@ -84,6 +84,13 @@
     .sidebar-brand { padding:4px 0 12px; }
     .mobile-nav-toggle { display:inline-flex; }
 
+    /* The fixed menu/theme buttons float at top:18px..52px regardless of
+       scroll — push the blue header band's top edge below that band (~14px
+       clearance) so its gradient background no longer renders underneath
+       them, and add a matching top border so the band reads as its own
+       framed block (border-color matches the existing bottom border). */
+    .page-header-band { margin-top:14px; border-top:1px solid var(--border); }
+
     /* Slide-over drawer: search/nav/advanced move into a fixed-position panel
        that slides in from the left over a dimmed backdrop, rather than
        pushing page content down inline — the sidebar-brand row above stays

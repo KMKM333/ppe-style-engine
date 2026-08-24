@@ -68,21 +68,32 @@
   /* The trigger button lives in normal document flow, in its own row
      right after the brand, on the left — not fixed-position, so it can
      never overlap the logo or the theme toggle: it simply pushes
-     everything below it down, the same as any other block content. */
-  .mobile-nav-row { display:none; }
+     everything below it down, the same as any other block content.
+     .mobile-nav-row itself must NOT be display:none by default — the
+     theme toggle lives inside it now, and still needs to render (as a
+     fixed-position element) on desktop; only .mobile-nav-toggle (the menu
+     button) hides itself outside the mobile media query. On desktop this
+     row ends up empty (theme-toggle is taken out of flow by position:
+     fixed) and collapses to nothing, which is harmless. */
   .sidebar-backdrop { display:none; }
   .sidebar-drawer-head { display:none; }
   @media (max-width: 860px) {
-    /* The theme toggle stays fixed top-right, above the drawer/backdrop
-       (z-index 105-110) so it remains reachable while the drawer is open. */
-    .theme-toggle { z-index:120; }
     .app-shell { flex-direction:column; align-items:stretch; }
     .content-col { width:100%; min-width:0; }
     .sidebar { width:100%; max-width:100%; height:auto; position:static; flex-direction:column;
       align-items:stretch; overflow-x:visible; gap:0; padding:12px 14px; }
     .sidebar-brand { padding:4px 0 8px; }
-    .mobile-nav-row { display:block; padding-bottom:12px; }
+    /* Menu and theme toggle share one row so they're guaranteed the same
+       height by construction, instead of trying to match a fixed-position
+       pixel offset to wherever in-flow content happens to land. */
+    .mobile-nav-row { display:flex; align-items:center; justify-content:space-between; padding-bottom:12px; }
     .mobile-nav-toggle { display:inline-flex; }
+    /* The theme toggle joins that row in normal flow on mobile (it's
+       fixed top-right on desktop, set in the unmedia'd .theme-toggle rule)
+       — position:relative (not static) keeps it in flow for alignment
+       while still letting z-index lift it above the drawer/backdrop
+       (105-110) so it stays reachable while the drawer is open. */
+    .theme-toggle { position:relative; top:auto; right:auto; z-index:120; box-shadow:none; }
 
     /* No manual gap needed above the header band any more — the menu row
        above is real in-flow content, so it already pushes the band down
@@ -356,9 +367,6 @@
 {% elif name == 'x' %}
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
 {% endif %}{% endmacro %}
-<button type="button" class="theme-toggle" id="theme-toggle" title="Toggle light / dark mode" onclick="toggleTheme()">
-  <span id="theme-toggle-icon">{{ icon('moon') }}</span>
-</button>
 <div class="app-shell">
   <aside class="sidebar">
     <div class="sidebar-brand">
@@ -368,6 +376,9 @@
     <div class="mobile-nav-row">
       <button type="button" class="mobile-nav-toggle" title="Open menu" onclick="toggleMobileNav()">
         {{ icon('menu') }}
+      </button>
+      <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle light / dark mode" onclick="toggleTheme()">
+        <span id="theme-toggle-icon">{{ icon('moon') }}</span>
       </button>
     </div>
     <div class="sidebar-backdrop" onclick="toggleMobileNav()"></div>

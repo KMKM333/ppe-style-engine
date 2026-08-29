@@ -2350,6 +2350,91 @@ def api_video_status(video_id):
     })
 
 
+@app.route("/api/profiles/<code>/summary")
+def api_profile_summary(code):
+    """Read-only JSON summary of one style profile, for chat-based tools
+    (Hermes/Telegram) to check on things without scraping the HTML page.
+    Same X-Ingest-Key convention as the other /api/* routes."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    p = conn.execute(
+        """SELECT p.profile_code, p.subject, p.status, p.media_type, p.n_videos_analysed,
+                  c.channel_name, c.channel_id, c.platform
+           FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.profile_code = ?""",
+        (code,),
+    ).fetchone()
+    if not p:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such profile: {code}"}), 404
+    n_videos = conn.execute(
+        "SELECT COUNT(*) FROM videos WHERE channel_id = ?", (p["channel_id"],)
+    ).fetchone()[0]
+    recent = conn.execute(
+        """SELECT title, ingested_at FROM videos WHERE channel_id = ?
+           ORDER BY ingested_at DESC LIMIT 5""",
+        (p["channel_id"],),
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "profile_code": p["profile_code"],
+        "channel_name": p["channel_name"],
+        "platform": p["platform"],
+        "subject": p["subject"],
+        "status": p["status"],
+        "media_type": p["media_type"],
+        "n_videos": n_videos,
+        "n_videos_analysed": p["n_videos_analysed"],
+        "recent_videos": [{"title": r["title"], "ingested_at": r["ingested_at"]} for r in recent],
+    })
+
+
+@app.route("/api/channels/<name>/summary")
+def api_channel_summary(name):
+    """Read-only JSON summary of one channel by name, mirrors
+    api_profile_summary but keyed by channel rather than profile code
+    (useful when a channel doesn't have a profile yet)."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    c = conn.execute(
+        "SELECT channel_id, channel_name, platform FROM channels WHERE channel_name = ?",
+        (name,),
+    ).fetchone()
+    if not c:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such channel: {name}"}), 404
+    p = conn.execute(
+        """SELECT profile_code, subject, status, media_type, n_videos_analysed
+           FROM style_profiles WHERE channel_id = ?""",
+        (c["channel_id"],),
+    ).fetchone()
+    n_videos = conn.execute(
+        "SELECT COUNT(*) FROM videos WHERE channel_id = ?", (c["channel_id"],)
+    ).fetchone()[0]
+    recent = conn.execute(
+        """SELECT title, ingested_at FROM videos WHERE channel_id = ?
+           ORDER BY ingested_at DESC LIMIT 5""",
+        (c["channel_id"],),
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "channel_name": c["channel_name"],
+        "platform": c["platform"],
+        "has_profile": p is not None,
+        "profile_code": p["profile_code"] if p else None,
+        "subject": p["subject"] if p else None,
+        "status": p["status"] if p else None,
+        "media_type": p["media_type"] if p else None,
+        "n_videos": n_videos,
+        "n_videos_analysed": p["n_videos_analysed"] if p else 0,
+        "recent_videos": [{"title": r["title"], "ingested_at": r["ingested_at"]} for r in recent],
+    })
+
+
 @app.route("/api/videos/<int:video_id>/visuals")
 def api_video_visuals(video_id):
     """Lets the transcriber (which has access to the actual video) fetch

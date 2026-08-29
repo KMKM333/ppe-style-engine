@@ -22,11 +22,19 @@ Only used by auto_process_video.py. If you're backfilling a channel by
 hand (the --export/--load workflow), keep using the three original modules
 — nothing about them changed.
 
+Cost control (Aug 2026): the "visuals" part — recreating on-screen charts
+as SVG — is skipped by default (PPE_SKIP_VISUALS=1), since it's likely the
+single biggest output-token line item per long-form video. Set
+PPE_SKIP_VISUALS=0, or pass --with-visuals on the manual/backfill CLI
+below, to include it for a specific run.
+
 Usage (manual/backfill):
     python3 classify_video_combined.py --video_id 123
+    python3 classify_video_combined.py --video_id 123 --with-visuals
 """
 import argparse
 import json
+import os
 
 import classify_template as ct
 import classify_video_breakdown as cvb
@@ -41,6 +49,9 @@ from db_init import get_conn
 # 32,000 leaves real headroom; books already use 48,000 for a single call
 # covering an entire book, so this isn't out of line.
 COMBINED_MAX_TOKENS = 32000
+
+# See "Cost control" note above — default ON (visuals skipped).
+SKIP_VISUALS_DEFAULT = os.environ.get("PPE_SKIP_VISUALS", "1") == "1"
 
 
 def _extract_body(prompt_text, start_marker, end_marker):
@@ -93,18 +104,30 @@ def _visuals_body():
     return body.format(marker_every_words=dv.MARKER_EVERY_WORDS, max_visuals=dv.MAX_VISUALS)
 
 
-def build_combined_prompt(title, script, timed_segments):
+def build_combined_prompt(title, script, timed_segments, skip_visuals=None):
+    if skip_visuals is None:
+        skip_visuals = SKIP_VISUALS_DEFAULT
+
     classification_body = _classification_body()
     breakdown_body = _breakdown_body()
-    visuals_body = _visuals_body()
-
     timestamped = dv.build_timestamped_transcript(timed_segments) if timed_segments else script
 
-    return (
-        "You are analysing a long-form PPE (philosophy/politics/economics) YouTube video. "
-        "Do THREE things in a single pass and return exactly one JSON object with three "
-        'top-level keys: "classification", "sections", "visuals" — plus a fourth, "summary", '
-        "a 1-2 sentence plain-language description of what the whole video covers.\n\n"
+    if skip_visuals:
+        intro = (
+            "You are analysing a long-form PPE (philosophy/politics/economics) YouTube video. "
+            "Do TWO things in a single pass and return exactly one JSON object with two "
+            'top-level keys: "classification", "sections" — plus a third, "summary", '
+            "a 1-2 sentence plain-language description of what the whole video covers.\n\n"
+        )
+    else:
+        intro = (
+            "You are analysing a long-form PPE (philosophy/politics/economics) YouTube video. "
+            "Do THREE things in a single pass and return exactly one JSON object with three "
+            'top-level keys: "classification", "sections", "visuals" — plus a fourth, "summary", '
+            "a 1-2 sentence plain-language description of what the whole video covers.\n\n"
+        )
+
+    body = (
         "============================================================\n"
         '1. CLASSIFICATION — the "classification" key, an object with exactly these fields\n'
         "============================================================\n"
@@ -115,25 +138,42 @@ def build_combined_prompt(title, script, timed_segments):
         "otherwise infer natural segment breaks). Each section object has exactly these fields:\n"
         "============================================================\n"
         f"{breakdown_body}\n\n"
-        "============================================================\n"
-        '3. SIGNIFICANT VISUALS — the "visuals" key, an array (empty if none — most videos\n'
-        "won't have any) of objects, each with exactly these fields:\n"
-        "============================================================\n"
-        f"{visuals_body}\n\n"
-        "The transcript below has inline [MM:SS] timestamp markers — used only for part 3, to "
-        "point at an approximate on-screen moment.\n\n"
-        'Return exactly one JSON object of the shape {"summary": "...", "classification": {...}, '
-        '"sections": [...], "visuals": [...]}. Do not add commentary outside the JSON object.\n\n'
-        f"TITLE: {title}\n\n"
-        "TRANSCRIPT:\n"
-        f"{timestamped}\n"
     )
 
+    if skip_visuals:
+        tail = (
+            'Return exactly one JSON object of the shape {"summary": "...", "classification": {...}, '
+            '"sections": [...]}. Do not add commentary outside the JSON object.\n\n'
+            f"TITLE: {title}\n\n"
+            "TRANSCRIPT:\n"
+            f"{timestamped}\n"
+        )
+    else:
+        visuals_body = _visuals_body()
+        body += (
+            "============================================================\n"
+            '3. SIGNIFICANT VISUALS — the "visuals" key, an array (empty if none — most videos\n'
+            "won't have any) of objects, each with exactly these fields:\n"
+            "============================================================\n"
+            f"{visuals_body}\n\n"
+        )
+        tail = (
+            "The transcript below has inline [MM:SS] timestamp markers — used only for part 3, to "
+            "point at an approximate on-screen moment.\n\n"
+            'Return exactly one JSON object of the shape {"summary": "...", "classification": {...}, '
+            '"sections": [...], "visuals": [...]}. Do not add commentary outside the JSON object.\n\n'
+            f"TITLE: {title}\n\n"
+            "TRANSCRIPT:\n"
+            f"{timestamped}\n"
+        )
 
-def classify_video_combined(video_id, title, script, timed_segments):
+    return intro + body + tail
+
+
+def classify_video_combined(video_id, title, script, timed_segments, skip_visuals=None):
     """Runs the single combined API call and returns the parsed dict —
     does NOT write to the DB (see merge_combined_result)."""
-    prompt = build_combined_prompt(title, script, timed_segments)
+    prompt = build_combined_prompt(title, script, timed_segments, skip_visuals=skip_visuals)
     result = llm_client.generate_json(prompt, max_tokens=COMBINED_MAX_TOKENS)
     if not isinstance(result, dict):
         raise ValueError(f"Expected a single JSON object, got {type(result).__name__}")
@@ -177,7 +217,9 @@ def extract_visuals(result):
     moment whose marker doesn't parse back into a real timestamp or that
     has no SVG fallback. Shared by merge_combined_result() above and
     auto_process_video.py's more granular (enrichment-only-on-failure)
-    orchestration, so this list-building logic lives in exactly one place."""
+    orchestration, so this list-building logic lives in exactly one place.
+    Returns [] as-is when the visuals step was skipped (result has no
+    "visuals" key) — merge_visuals() on an empty list is a no-op."""
     visuals = []
     for v in result.get("visuals") or []:
         ts = dv._parse_timestamp(v.get("nearest_marker"))
@@ -190,6 +232,10 @@ def extract_visuals(result):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--video_id", type=int, required=True)
+    ap.add_argument(
+        "--with-visuals", action="store_true",
+        help="Include chart/visual detection for this run even if PPE_SKIP_VISUALS is set (costs more output tokens).",
+    )
     args = ap.parse_args()
 
     conn = get_conn()
@@ -199,7 +245,10 @@ if __name__ == "__main__":
         raise SystemExit(f"No such video: {args.video_id}")
 
     timed = json.loads(row["timed_transcript_json"]) if row["timed_transcript_json"] else []
-    result = classify_video_combined(args.video_id, row["title"], row["script"], timed)
+    result = classify_video_combined(
+        args.video_id, row["title"], row["script"], timed,
+        skip_visuals=(False if args.with_visuals else None),
+    )
     errors = validate_combined_result(args.video_id, result)
     if errors:
         raise SystemExit("Validation failed: " + "; ".join(errors))

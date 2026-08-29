@@ -29,6 +29,7 @@ from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, LLMConfigError
 from ingest_book import ingest_book_text
 from ingest_video import ingest_video_row
+import gatekeeper
 from ingest_production_spec import ingest_production_spec_row
 from production_spec_profile_builder import build_profile as production_spec_build_profile
 
@@ -2278,18 +2279,42 @@ def api_ingest_video():
         return jsonify({"ok": False, "error": "'title', 'script', and 'channel' are required."}), 400
 
     platform = data.get("platform") or "YouTube"
+    duration_sec = data.get("duration_sec") or None
     video_id = ingest_video_row(
         title=title,
         script=script,
         channel=channel,
         platform=platform,
         url=data.get("url") or None,
-        duration_sec=data.get("duration_sec") or None,
+        duration_sec=duration_sec,
         posted_at=data.get("posted_at") or None,
         chapter_count=data.get("chapter_count"),
         timed_transcript=data.get("timed_transcript") or None,
         length_band=data.get("length_band") or "C",
     )
+
+    # --- gatekeeper: cheap, no-LLM checks before an expensive Claude call fires.
+    # See gatekeeper.py's module docstring for why this exists (Aug 2026 cost
+    # investigation) and what each check does.
+    conn = get_conn()
+    row = conn.execute("SELECT classified_by FROM video_attributes WHERE video_id = ?", (video_id,)).fetchone()
+    conn.close()
+    if bool(row) and row["classified_by"] == "claude":
+        # content_hash-deduped to an existing, ALREADY-classified video —
+        # ingest_video_row() already guaranteed no duplicate DB row; this
+        # stops a re-submitted job (e.g. Bulk Transcriber retrying after a
+        # partial failure) from also re-running the expensive classification
+        # subprocess on a video that's already done.
+        return jsonify({"ok": True, "video_id": video_id, "status": "already classified, skipped re-processing"})
+
+    hold_reason = (
+        gatekeeper.check_length(duration_sec, platform)
+        or gatekeeper.check_topic(title, script)
+        or gatekeeper.check_daily_budget()
+    )
+    if hold_reason:
+        gatekeeper.mark_needs_review(video_id, hold_reason)
+        return jsonify({"ok": True, "video_id": video_id, "status": "held for review", "reason": hold_reason})
 
     script_name = "auto_process_video.py" if platform == "YouTube" else "auto_process_shortform_video.py"
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)

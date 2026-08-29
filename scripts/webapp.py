@@ -3595,6 +3595,87 @@ def negative_space_delete(code, row_id):
     return redirect(url_for("style_card", code=code))
 
 
+# --- Machine-facing style card API (for Hermes/Telegram, key-protected) ---
+# Deliberately separate from the browser routes above rather than adding
+# auth to them: the website itself still has no login for a person clicking
+# Save, and gating those routes would break normal browser use. These two
+# routes give an automated caller the same read/write ability, guarded by
+# the same X-Ingest-Key convention as the rest of /api/*.
+
+@app.route("/api/profiles/<code>/style-card", methods=["GET"])
+def api_style_card_get(code):
+    """Read-only: current style card fields + negative-space entries, as
+    JSON, so a caller can show the user what's there before overwriting it."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    profile = _get_profile_or_404(conn, code)
+    if not profile:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such profile: {code}"}), 404
+    fields = conn.execute(
+        "SELECT field, declared_value, numeric_attr FROM profile_style_card WHERE profile_id=? AND constraint_type IS NULL",
+        (profile["profile_id"],),
+    ).fetchall()
+    negative_space = conn.execute(
+        "SELECT id, constraint_type, declared_value FROM profile_style_card WHERE profile_id=? AND constraint_type IS NOT NULL ORDER BY constraint_type, id",
+        (profile["profile_id"],),
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "profile_code": code,
+        "fields": [dict(f) for f in fields],
+        "negative_space": [dict(r) for r in negative_space],
+    })
+
+
+@app.route("/api/profiles/<code>/style-card/save", methods=["POST"])
+def api_style_card_save(code):
+    """Write one style card field. Same upsert logic as the browser's
+    style_card_save route: an empty declared_value deletes the field."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    profile = _get_profile_or_404(conn, code)
+    if not profile:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such profile: {code}"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    field = request.form.get("field") or payload.get("field") or ""
+    declared_value = (request.form.get("declared_value") or payload.get("declared_value") or "").strip()
+    numeric_attr = request.form.get("numeric_attr") or payload.get("numeric_attr") or None
+    valid_fields = {f for f, _, _ in STYLE_CARD_FIELDS}
+    if field not in valid_fields:
+        conn.close()
+        return jsonify({"ok": False, "error": f"unknown style card field: {field}", "valid_fields": sorted(valid_fields)}), 400
+
+    existing = conn.execute(
+        "SELECT id FROM profile_style_card WHERE profile_id=? AND field=? AND constraint_type IS NULL",
+        (profile["profile_id"], field),
+    ).fetchone()
+    if not declared_value:
+        if existing:
+            conn.execute("DELETE FROM profile_style_card WHERE id=?", (existing["id"],))
+        action = "deleted"
+    elif existing:
+        conn.execute(
+            "UPDATE profile_style_card SET declared_value=?, numeric_attr=?, updated_at=datetime('now') WHERE id=?",
+            (declared_value, numeric_attr, existing["id"]),
+        )
+        action = "updated"
+    else:
+        conn.execute(
+            "INSERT INTO profile_style_card (profile_id, field, declared_value, numeric_attr) VALUES (?, ?, ?, ?)",
+            (profile["profile_id"], field, declared_value, numeric_attr),
+        )
+        action = "created"
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "profile_code": code, "field": field, "action": action, "declared_value": declared_value})
+
+
 def _snapshot_fingerprint_json(conn, profile_id):
     numeric = {
         r["attribute"]: r["mean_val"]

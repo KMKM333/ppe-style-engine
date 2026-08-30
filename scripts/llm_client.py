@@ -9,11 +9,19 @@ API key from console.anthropic.com, NOT your Claude.ai/Claude Code login.
 Get one, then before starting webapp.py:
 
     export ANTHROPIC_API_KEY=sk-ant-...
+
+Every call below also logs its actual usage (from the API response's own
+`usage` field, not an estimate) via gatekeeper.record_usage(), so
+gatekeeper.check_daily_budget() has real numbers to work from. Logging is
+best-effort and wrapped in try/except everywhere — a logging hiccup must
+never break the underlying Claude call.
 """
 import base64
 import json
 import os
 import re
+
+import gatekeeper
 
 DEFAULT_MODEL = "claude-sonnet-5"
 
@@ -33,6 +41,15 @@ def _client():
     return anthropic.Anthropic(api_key=api_key)
 
 
+def _log_usage(model, usage, call_site):
+    if not usage:
+        return
+    try:
+        gatekeeper.record_usage(model, usage.input_tokens, usage.output_tokens, call_site)
+    except Exception as e:
+        print(f"[llm_client] usage logging failed (non-fatal): {e}")
+
+
 def generate_transform(prompt_text: str, model: str = DEFAULT_MODEL) -> dict:
     """Sends a transform.TRANSFORM_PROMPT-shaped prompt to Claude and parses
     the TITLE:/SCRIPT: reply into {"title": ..., "script": ..., "raw_reply": ...}."""
@@ -42,6 +59,7 @@ def generate_transform(prompt_text: str, model: str = DEFAULT_MODEL) -> dict:
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt_text}],
     )
+    _log_usage(model, message.usage, "generate_transform")
     reply = "".join(block.text for block in message.content if block.type == "text")
     return _parse_reply(reply)
 
@@ -61,6 +79,8 @@ def generate_json(prompt_text: str, model: str = DEFAULT_MODEL, max_tokens: int 
     ) as stream:
         for chunk in stream.text_stream:
             reply_parts.append(chunk)
+        final_message = stream.get_final_message()
+    _log_usage(model, getattr(final_message, "usage", None), "generate_json")
     reply = "".join(reply_parts)
     text = reply.strip()
     fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)
@@ -99,6 +119,7 @@ def generate_json_with_images(prompt_text: str, images: list, model: str = DEFAU
         max_tokens=max_tokens,
         messages=[{"role": "user", "content": content}],
     )
+    _log_usage(model, message.usage, "generate_json_with_images")
     reply = "".join(block.text for block in message.content if block.type == "text")
     text = reply.strip()
     fence = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.DOTALL)

@@ -29,6 +29,7 @@ from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, LLMConfigError
 from ingest_book import ingest_book_text
 from ingest_video import ingest_video_row
+import gatekeeper
 from ingest_production_spec import ingest_production_spec_row
 from production_spec_profile_builder import build_profile as production_spec_build_profile
 
@@ -2278,18 +2279,42 @@ def api_ingest_video():
         return jsonify({"ok": False, "error": "'title', 'script', and 'channel' are required."}), 400
 
     platform = data.get("platform") or "YouTube"
+    duration_sec = data.get("duration_sec") or None
     video_id = ingest_video_row(
         title=title,
         script=script,
         channel=channel,
         platform=platform,
         url=data.get("url") or None,
-        duration_sec=data.get("duration_sec") or None,
+        duration_sec=duration_sec,
         posted_at=data.get("posted_at") or None,
         chapter_count=data.get("chapter_count"),
         timed_transcript=data.get("timed_transcript") or None,
         length_band=data.get("length_band") or "C",
     )
+
+    # --- gatekeeper: cheap, no-LLM checks before an expensive Claude call fires.
+    # See gatekeeper.py's module docstring for why this exists (Aug 2026 cost
+    # investigation) and what each check does.
+    conn = get_conn()
+    row = conn.execute("SELECT classified_by FROM video_attributes WHERE video_id = ?", (video_id,)).fetchone()
+    conn.close()
+    if bool(row) and row["classified_by"] == "claude":
+        # content_hash-deduped to an existing, ALREADY-classified video —
+        # ingest_video_row() already guaranteed no duplicate DB row; this
+        # stops a re-submitted job (e.g. Bulk Transcriber retrying after a
+        # partial failure) from also re-running the expensive classification
+        # subprocess on a video that's already done.
+        return jsonify({"ok": True, "video_id": video_id, "status": "already classified, skipped re-processing"})
+
+    hold_reason = (
+        gatekeeper.check_length(duration_sec, platform)
+        or gatekeeper.check_topic(title, script)
+        or gatekeeper.check_daily_budget()
+    )
+    if hold_reason:
+        gatekeeper.mark_needs_review(video_id, hold_reason)
+        return jsonify({"ok": True, "video_id": video_id, "status": "held for review", "reason": hold_reason})
 
     script_name = "auto_process_video.py" if platform == "YouTube" else "auto_process_shortform_video.py"
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
@@ -2322,6 +2347,91 @@ def api_video_status(video_id):
         "ok": True, "video_id": video_id, "done": done,
         "classified_by": row["classified_by"], "classification_error": row["classification_error"],
         "profile_code": row["profile_code"],
+    })
+
+
+@app.route("/api/profiles/<code>/summary")
+def api_profile_summary(code):
+    """Read-only JSON summary of one style profile, for chat-based tools
+    (Hermes/Telegram) to check on things without scraping the HTML page.
+    Same X-Ingest-Key convention as the other /api/* routes."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    p = conn.execute(
+        """SELECT p.profile_code, p.subject, p.status, p.media_type, p.n_videos_analysed,
+                  c.channel_name, c.channel_id, c.platform
+           FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.profile_code = ?""",
+        (code,),
+    ).fetchone()
+    if not p:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such profile: {code}"}), 404
+    n_videos = conn.execute(
+        "SELECT COUNT(*) FROM videos WHERE channel_id = ?", (p["channel_id"],)
+    ).fetchone()[0]
+    recent = conn.execute(
+        """SELECT title, ingested_at FROM videos WHERE channel_id = ?
+           ORDER BY ingested_at DESC LIMIT 5""",
+        (p["channel_id"],),
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "profile_code": p["profile_code"],
+        "channel_name": p["channel_name"],
+        "platform": p["platform"],
+        "subject": p["subject"],
+        "status": p["status"],
+        "media_type": p["media_type"],
+        "n_videos": n_videos,
+        "n_videos_analysed": p["n_videos_analysed"],
+        "recent_videos": [{"title": r["title"], "ingested_at": r["ingested_at"]} for r in recent],
+    })
+
+
+@app.route("/api/channels/<name>/summary")
+def api_channel_summary(name):
+    """Read-only JSON summary of one channel by name, mirrors
+    api_profile_summary but keyed by channel rather than profile code
+    (useful when a channel doesn't have a profile yet)."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    c = conn.execute(
+        "SELECT channel_id, channel_name, platform FROM channels WHERE channel_name = ?",
+        (name,),
+    ).fetchone()
+    if not c:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such channel: {name}"}), 404
+    p = conn.execute(
+        """SELECT profile_code, subject, status, media_type, n_videos_analysed
+           FROM style_profiles WHERE channel_id = ?""",
+        (c["channel_id"],),
+    ).fetchone()
+    n_videos = conn.execute(
+        "SELECT COUNT(*) FROM videos WHERE channel_id = ?", (c["channel_id"],)
+    ).fetchone()[0]
+    recent = conn.execute(
+        """SELECT title, ingested_at FROM videos WHERE channel_id = ?
+           ORDER BY ingested_at DESC LIMIT 5""",
+        (c["channel_id"],),
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "channel_name": c["channel_name"],
+        "platform": c["platform"],
+        "has_profile": p is not None,
+        "profile_code": p["profile_code"] if p else None,
+        "subject": p["subject"] if p else None,
+        "status": p["status"] if p else None,
+        "media_type": p["media_type"] if p else None,
+        "n_videos": n_videos,
+        "n_videos_analysed": p["n_videos_analysed"] if p else 0,
+        "recent_videos": [{"title": r["title"], "ingested_at": r["ingested_at"]} for r in recent],
     })
 
 
@@ -3483,6 +3593,131 @@ def negative_space_delete(code, row_id):
     conn.commit()
     conn.close()
     return redirect(url_for("style_card", code=code))
+
+
+# --- Machine-facing style card API (for Hermes/Telegram, key-protected) ---
+# Deliberately separate from the browser routes above rather than adding
+# auth to them: the website itself still has no login for a person clicking
+# Save, and gating those routes would break normal browser use. These two
+# routes give an automated caller the same read/write ability, guarded by
+# the same X-Ingest-Key convention as the rest of /api/*.
+
+@app.route("/api/profiles/<code>/style-card", methods=["GET"])
+def api_style_card_get(code):
+    """Read-only: current style card fields + negative-space entries, as
+    JSON, so a caller can show the user what's there before overwriting it."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    profile = _get_profile_or_404(conn, code)
+    if not profile:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such profile: {code}"}), 404
+    fields = conn.execute(
+        "SELECT field, declared_value, numeric_attr FROM profile_style_card WHERE profile_id=? AND constraint_type IS NULL",
+        (profile["profile_id"],),
+    ).fetchall()
+    negative_space = conn.execute(
+        "SELECT id, constraint_type, declared_value FROM profile_style_card WHERE profile_id=? AND constraint_type IS NOT NULL ORDER BY constraint_type, id",
+        (profile["profile_id"],),
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "profile_code": code,
+        "fields": [dict(f) for f in fields],
+        "negative_space": [dict(r) for r in negative_space],
+    })
+
+
+@app.route("/api/profiles/<code>/style-card/save", methods=["POST"])
+def api_style_card_save(code):
+    """Write one style card field. Same upsert logic as the browser's
+    style_card_save route: an empty declared_value deletes the field."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    profile = _get_profile_or_404(conn, code)
+    if not profile:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such profile: {code}"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    field = request.form.get("field") or payload.get("field") or ""
+    declared_value = (request.form.get("declared_value") or payload.get("declared_value") or "").strip()
+    numeric_attr = request.form.get("numeric_attr") or payload.get("numeric_attr") or None
+    valid_fields = {f for f, _, _ in STYLE_CARD_FIELDS}
+    if field not in valid_fields:
+        conn.close()
+        return jsonify({"ok": False, "error": f"unknown style card field: {field}", "valid_fields": sorted(valid_fields)}), 400
+
+    existing = conn.execute(
+        "SELECT id FROM profile_style_card WHERE profile_id=? AND field=? AND constraint_type IS NULL",
+        (profile["profile_id"], field),
+    ).fetchone()
+    if not declared_value:
+        if existing:
+            conn.execute("DELETE FROM profile_style_card WHERE id=?", (existing["id"],))
+        action = "deleted"
+    elif existing:
+        conn.execute(
+            "UPDATE profile_style_card SET declared_value=?, numeric_attr=?, updated_at=datetime('now') WHERE id=?",
+            (declared_value, numeric_attr, existing["id"]),
+        )
+        action = "updated"
+    else:
+        conn.execute(
+            "INSERT INTO profile_style_card (profile_id, field, declared_value, numeric_attr) VALUES (?, ?, ?, ?)",
+            (profile["profile_id"], field, declared_value, numeric_attr),
+        )
+        action = "created"
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "profile_code": code, "field": field, "action": action, "declared_value": declared_value})
+
+
+# --- Machine-facing video title API (for Hermes/Telegram, key-protected) ---
+# Same rationale as the style card API above: there's no browser-side title
+# edit UI yet, so this gives an automated caller a safe, auditable way to
+# rename a video instead of touching the videos table directly.
+
+@app.route("/api/videos/<int:video_id>/title", methods=["GET"])
+def api_video_title_get(video_id):
+    """Read-only: current title, so a caller can show the user what's there
+    before overwriting it."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    video = conn.execute("SELECT video_id, title FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+    conn.close()
+    if not video:
+        return jsonify({"ok": False, "error": f"no such video: {video_id}"}), 404
+    return jsonify({"ok": True, "video_id": video_id, "title": video["title"]})
+
+
+@app.route("/api/videos/<int:video_id>/title/save", methods=["POST"])
+def api_video_title_save(video_id):
+    """Write a video's title. Requires a non-empty new_title — unlike the
+    style card fields, a video can't be titleless, so this never deletes."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    video = conn.execute("SELECT video_id, title FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+    if not video:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such video: {video_id}"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    new_title = (request.form.get("new_title") or payload.get("new_title") or "").strip()
+    if not new_title:
+        conn.close()
+        return jsonify({"ok": False, "error": "'new_title' is required and cannot be blank"}), 400
+
+    old_title = video["title"]
+    conn.execute("UPDATE videos SET title = ? WHERE video_id = ?", (new_title, video_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "video_id": video_id, "old_title": old_title, "title": new_title})
 
 
 def _snapshot_fingerprint_json(conn, profile_id):

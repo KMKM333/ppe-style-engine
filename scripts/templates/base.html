@@ -399,6 +399,54 @@
   .quickview-field .qf-label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color: var(--muted); margin-bottom:3px; }
   .quickview-field .qf-value { font-size:14px; color: var(--text); }
   .quickview-panel .btn { margin-top:20px; text-align:center; }
+
+  /* --- quick-view "beyond the row" sections: attributes / chapters / terms /
+     concepts, lazy-fetched once per open and shown as independent
+     collapsible sections (not a strict single-open accordion) so the panel
+     opens light — nothing but the count badges — and the reader picks
+     exactly what they want to dig into. */
+  .qv-extra { margin-top:8px; }
+  .qv-loading { color: var(--muted); font-size:13px; padding:16px 0; text-align:center; }
+  .qv-section { border-top:1px solid var(--border); padding-top:12px; margin-top:12px; }
+  .qv-section-head { display:flex; align-items:center; justify-content:space-between; gap:8px;
+    cursor:pointer; user-select:none; background:none; border:none; padding:0; width:100%;
+    font-family:inherit; color:inherit; text-align:left; }
+  .qv-section-head:hover .qv-section-title { color: var(--accent); }
+  .qv-section-title { font-size:12.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;
+    display:flex; align-items:center; gap:8px; }
+  .qv-section-count { font-size:11px; font-weight:700; color: var(--accent);
+    background: rgba(var(--accent-rgb),.15); padding:1px 7px; border-radius:999px; }
+  .qv-section-chevron { color: var(--muted); width:14px; height:14px; flex-shrink:0; transition: transform .15s ease; }
+  .qv-section.open .qv-section-chevron { transform: rotate(90deg); }
+  @media (prefers-reduced-motion: reduce) { .qv-section-chevron { transition:none; } }
+  .qv-section-body { display:none; margin-top:12px; }
+  .qv-section.open .qv-section-body { display:block; }
+
+  .qv-attr-group { margin-bottom:12px; }
+  .qv-attr-group:last-child { margin-bottom:0; }
+  .qv-attr-group-name { font-size:11px; color: var(--muted); text-transform:uppercase; letter-spacing:.03em; margin-bottom:4px; }
+  .qv-attr-row { display:flex; justify-content:space-between; gap:14px; font-size:13px; padding:4px 0; border-bottom:1px solid var(--border); }
+  .qv-attr-row:last-child { border-bottom:none; }
+  .qv-attr-label { color: var(--muted); flex-shrink:0; }
+  .qv-attr-value { text-align:right; }
+
+  .qv-chapter { margin-bottom:14px; padding-bottom:14px; border-bottom:1px solid var(--border); }
+  .qv-chapter:last-child { border-bottom:none; margin-bottom:0; padding-bottom:0; }
+  .qv-chapter-title { font-size:13.5px; font-weight:700; margin-bottom:3px; }
+  .qv-chapter-summary { font-size:12.5px; color: var(--muted); line-height:1.45; margin-bottom:8px; }
+  .qv-chapter-topics { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:8px; }
+  .qv-chapter-points { margin:0; padding-left:18px; font-size:12.5px; line-height:1.6; }
+
+  .qv-term { margin-bottom:10px; }
+  .qv-term:last-child { margin-bottom:0; }
+  .qv-term-name { font-size:13px; font-weight:600; }
+  .qv-term-def { margin-top:2px; font-size:12.5px; color: var(--muted); line-height:1.45; }
+
+  .qv-example { margin-bottom:12px; font-size:12.5px; line-height:1.45; }
+  .qv-example:last-child { margin-bottom:0; }
+  .qv-example-title { font-weight:600; font-size:13px; }
+  .qv-example-text { margin-top:2px; }
+  .qv-example-reinforces { color: var(--muted); font-size:11.5px; margin-top:4px; }
 </style>
 <script>
   (function () {
@@ -568,6 +616,7 @@
     <button type="button" class="quickview-close" title="Close" onclick="closeQuickview()">{{ icon('x') }}</button>
   </div>
   <div id="quickview-fields"></div>
+  <div class="qv-extra" id="quickview-extra"></div>
   <a href="#" class="btn" id="quickview-open-full">Open full page →</a>
 </div>
 
@@ -607,12 +656,107 @@
     }
   })();
 
+  // "Beyond the row" quick-view sections — attributes / chapters / terms /
+  // concepts, fetched lazily from quickview_url only when a row is opened
+  // (not embedded per-row, which would bloat every list page). Rendered as
+  // independent collapsible sections, each starting closed with a count
+  // badge, so the panel opens light and the reader picks what to expand
+  // rather than facing a wall of text.
+  function qvEscape(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+    });
+  }
+  var qvExtraToken = 0;
+  function toggleQvSection(headEl) {
+    headEl.closest('.qv-section').classList.toggle('open');
+  }
+  function qvSectionHtml(id, title, count, bodyHtml) {
+    return '<div class="qv-section" id="' + id + '">' +
+      '<button type="button" class="qv-section-head" onclick="toggleQvSection(this)">' +
+        '<span class="qv-section-title">' + title + ' <span class="qv-section-count">' + count + '</span></span>' +
+        `<span class="qv-section-chevron">{{ icon("chevron-right") }}</span>` +
+      '</button>' +
+      '<div class="qv-section-body">' + bodyHtml + '</div>' +
+    '</div>';
+  }
+  function qvRenderAttributes(groups) {
+    return groups.map(function (g) {
+      var rows = g.fields.map(function (f) {
+        return '<div class="qv-attr-row"><span class="qv-attr-label">' + qvEscape(f.label) +
+          '</span><span class="qv-attr-value">' + qvEscape(f.value) + '</span></div>';
+      }).join('');
+      return '<div class="qv-attr-group"><div class="qv-attr-group-name">' + qvEscape(g.section) + '</div>' + rows + '</div>';
+    }).join('');
+  }
+  function qvRenderChapters(chapters) {
+    return chapters.map(function (ch) {
+      var topics = (ch.topics || []).map(function (t) { return '<span class="tag">' + qvEscape(t) + '</span>'; }).join('');
+      var points = (ch.points || []).map(function (p) { return '<li>' + qvEscape(p) + '</li>'; }).join('');
+      return '<div class="qv-chapter">' +
+        '<div class="qv-chapter-title">' + qvEscape(ch.title) + '</div>' +
+        (ch.summary ? '<div class="qv-chapter-summary">' + qvEscape(ch.summary) + '</div>' : '') +
+        (topics ? '<div class="qv-chapter-topics">' + topics + '</div>' : '') +
+        (points ? '<ul class="qv-chapter-points">' + points + '</ul>' : '') +
+      '</div>';
+    }).join('');
+  }
+  function qvRenderTerms(terms) {
+    return terms.map(function (t) {
+      return '<div class="qv-term"><div class="qv-term-name">' + qvEscape(t.term) + '</div>' +
+        (t.definition ? '<div class="qv-term-def">' + qvEscape(t.definition) + '</div>' : '') + '</div>';
+    }).join('');
+  }
+  function qvRenderExamples(examples) {
+    return examples.map(function (e) {
+      return '<div class="qv-example">' +
+        (e.title ? '<div class="qv-example-title">' + qvEscape(e.title) + '</div>' : '') +
+        '<div class="qv-example-text">' + qvEscape(e.text) + '</div>' +
+        (e.reinforces ? '<div class="qv-example-reinforces">Reinforces: ' + qvEscape(e.reinforces) + '</div>' : '') +
+      '</div>';
+    }).join('');
+  }
+  function loadQuickviewExtra(url, token) {
+    var container = document.getElementById('quickview-extra');
+    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+      if (token !== qvExtraToken) return; // a different row was opened while this was in flight
+      if (!data.ok) { container.innerHTML = ''; return; }
+      var html = '';
+      if (data.attributes && data.attributes.length) {
+        var attrCount = data.attributes.reduce(function (n, g) { return n + g.fields.length; }, 0);
+        html += qvSectionHtml('qv-attributes', 'Attributes', attrCount, qvRenderAttributes(data.attributes));
+      }
+      if (data.chapters && data.chapters.length) {
+        html += qvSectionHtml('qv-chapters', 'Chapters / Sections', data.chapters.length, qvRenderChapters(data.chapters));
+      }
+      if (data.terms && data.terms.length) {
+        html += qvSectionHtml('qv-terms', 'Terms', data.terms.length, qvRenderTerms(data.terms));
+      }
+      if (data.examples && data.examples.length) {
+        html += qvSectionHtml('qv-examples', 'Concepts / Examples', data.examples.length, qvRenderExamples(data.examples));
+      }
+      container.innerHTML = html || '';
+    }).catch(function () {
+      if (token !== qvExtraToken) return;
+      container.innerHTML = '';
+    });
+  }
+
   // Row quick-view: any <tr data-quickview='{...}'> becomes clickable (except
   // clicks that land on a real link/button/form inside it, which keep their
   // own behavior) and opens a right-side panel with the row's already-
   // rendered summary fields — no reload, no losing table scroll position.
-  // data-quickview shape: {kind, title, detail_url, fields:[{label,value,href?}]}
+  // data-quickview shape: {kind, title, detail_url, quickview_url,
+  // fields:[{label,value,href?}]}
   function openQuickview(data) {
+    var token = ++qvExtraToken;
+    var extraEl = document.getElementById('quickview-extra');
+    if (data.quickview_url) {
+      extraEl.innerHTML = '<div class="qv-loading">Loading details…</div>';
+      loadQuickviewExtra(data.quickview_url, token);
+    } else {
+      extraEl.innerHTML = '';
+    }
     document.getElementById('quickview-kind').textContent = data.kind || '';
     document.getElementById('quickview-title').textContent = data.title || '';
     var fieldsEl = document.getElementById('quickview-fields');

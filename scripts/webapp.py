@@ -1284,6 +1284,7 @@ def inputs_list():
                 "status_pill": None,
                 "ingested_at": v["ingested_at"],
                 "detail_url": url_for("input_detail", video_id=v["video_id"]),
+                "quickview_url": url_for("input_quickview_json", video_id=v["video_id"]),
             })
 
     if kind not in ("video", "youtube") and not title_format:
@@ -1371,6 +1372,7 @@ def inputs_list():
                 ),
                 "ingested_at": b["ingested_at"],
                 "detail_url": book_detail_url,
+                "quickview_url": url_for("book_quickview_json", book_id=b["book_id"]),
                 "examples": examples,
             })
 
@@ -1520,6 +1522,72 @@ def input_detail(video_id):
         needs_review=attrs.get("classified_by") == "needs_review",
         classification_error=attrs.get("classification_error"),
     )
+
+
+@app.route("/inputs/<int:video_id>/quickview.json")
+def input_quickview_json(video_id):
+    """Powers the Library page's row quick-view slide-over — the same
+    attributes/chapters/terms/examples shown on input_detail.html, but
+    flattened and fetched lazily (only when a row is actually opened)
+    rather than embedded in every row of the table."""
+    conn = get_conn()
+    video = conn.execute("SELECT video_id FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+    if not video:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such video"}), 404
+
+    attrs_row = conn.execute("SELECT * FROM video_attributes WHERE video_id = ?", (video_id,)).fetchone()
+    attrs = dict(attrs_row) if attrs_row else {}
+    attributes = []
+    for name, fields in ATTRIBUTE_SECTIONS:
+        section_fields = [{"label": f, "value": attrs[f]} for f in fields if attrs.get(f) not in (None, "")]
+        if section_fields:
+            attributes.append({"section": name, "fields": section_fields})
+
+    section_rows = conn.execute(
+        "SELECT * FROM video_sections WHERE video_id = ? ORDER BY section_number, section_id", (video_id,)
+    ).fetchall()
+    chapters, all_terms, all_examples = [], [], []
+    for s in section_rows:
+        sec_points = conn.execute(
+            "SELECT point_text FROM video_points WHERE section_id = ? ORDER BY point_id", (s["section_id"],)
+        ).fetchall()
+        sec_terms = conn.execute(
+            "SELECT term, definition FROM video_terms WHERE section_id = ? ORDER BY term_id", (s["section_id"],)
+        ).fetchall()
+        sec_examples = conn.execute(
+            "SELECT example_title, example_text, reinforces_point FROM video_examples "
+            "WHERE section_id = ? ORDER BY example_id", (s["section_id"],)
+        ).fetchall()
+        chapters.append({
+            "title": f'{s["section_number"]}. {s["section_title"]}' if s["section_number"] is not None else s["section_title"],
+            "summary": s["summary"],
+            "topics": [t.strip() for t in s["topics"].split(",")] if s["topics"] else [],
+            "points": [p["point_text"] for p in sec_points],
+        })
+        all_terms.extend({"term": t["term"], "definition": t["definition"]} for t in sec_terms)
+        all_examples.extend(
+            {"title": e["example_title"], "text": e["example_text"], "reinforces": e["reinforces_point"]}
+            for e in sec_examples
+        )
+
+    flat_terms = conn.execute(
+        "SELECT term, definition FROM video_terms WHERE video_id = ? AND section_id IS NULL ORDER BY term_id",
+        (video_id,),
+    ).fetchall()
+    flat_examples = conn.execute(
+        "SELECT example_title, example_text, reinforces_point FROM video_examples "
+        "WHERE video_id = ? AND section_id IS NULL ORDER BY example_id", (video_id,)
+    ).fetchall()
+    conn.close()
+
+    all_terms.extend({"term": t["term"], "definition": t["definition"]} for t in flat_terms)
+    all_examples.extend(
+        {"title": e["example_title"], "text": e["example_text"], "reinforces": e["reinforces_point"]}
+        for e in flat_examples
+    )
+
+    return jsonify({"ok": True, "attributes": attributes, "chapters": chapters, "terms": all_terms, "examples": all_examples})
 
 
 @app.route("/inputs/<int:video_id>/delete", methods=["POST"])
@@ -3273,6 +3341,76 @@ def book_detail(book_id):
         profile_scores=profile_scores, macro_fit=macro_fit,
         source_file_url=source_file_url, has_pdf=has_pdf,
     )
+
+
+@app.route("/books/<int:book_id>/quickview.json")
+def book_quickview_json(book_id):
+    """Book counterpart to input_quickview_json() — same flattened
+    attributes/chapters/terms/examples shape, powering the same Library
+    row quick-view panel for book rows."""
+    conn = get_conn()
+    book = conn.execute("SELECT book_id FROM books WHERE book_id = ?", (book_id,)).fetchone()
+    if not book:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such book"}), 404
+
+    attrs_row = conn.execute("SELECT * FROM book_attributes WHERE book_id = ?", (book_id,)).fetchone()
+    attrs = dict(attrs_row) if attrs_row else {}
+    attributes = []
+    for name, fields in BOOK_ATTRIBUTE_SECTIONS:
+        if not fields:
+            continue
+        section_fields = []
+        for f in fields:
+            v = attrs.get(f)
+            if v in (None, ""):
+                continue
+            if v == 1:
+                v = "Yes"
+            elif v == 0:
+                v = "No"
+            section_fields.append({"label": BOOK_FIELD_LABELS[f], "value": v})
+        if section_fields:
+            attributes.append({"section": name, "fields": section_fields})
+
+    section_rows = conn.execute(
+        "SELECT * FROM book_sections WHERE book_id = ? ORDER BY section_number, section_id", (book_id,)
+    ).fetchall()
+    chapters, all_terms, all_examples = [], [], []
+    for s in section_rows:
+        pts = conn.execute(
+            "SELECT point_text FROM book_points WHERE section_id = ? ORDER BY point_id", (s["section_id"],)
+        ).fetchall()
+        trms = conn.execute(
+            "SELECT term, definition FROM book_terms WHERE section_id = ? ORDER BY term_id", (s["section_id"],)
+        ).fetchall()
+        exs = conn.execute(
+            "SELECT example_title, example_text, reinforces_point FROM book_examples "
+            "WHERE section_id = ? ORDER BY example_id", (s["section_id"],)
+        ).fetchall()
+        chapters.append({
+            "title": s["section_title"],
+            "summary": s["summary"],
+            "topics": [t.strip() for t in s["topics"].split(",")] if s["topics"] else [],
+            "points": [p["point_text"] for p in pts],
+        })
+        all_terms.extend({"term": t["term"], "definition": t["definition"]} for t in trms)
+        all_examples.extend(
+            {"title": e["example_title"], "text": e["example_text"], "reinforces": e["reinforces_point"]}
+            for e in exs
+        )
+
+    unsec_examples = conn.execute(
+        "SELECT example_title, example_text, reinforces_point FROM book_examples "
+        "WHERE book_id = ? AND section_id IS NULL ORDER BY example_id", (book_id,)
+    ).fetchall()
+    conn.close()
+    all_examples.extend(
+        {"title": e["example_title"], "text": e["example_text"], "reinforces": e["reinforces_point"]}
+        for e in unsec_examples
+    )
+
+    return jsonify({"ok": True, "attributes": attributes, "chapters": chapters, "terms": all_terms, "examples": all_examples})
 
 
 @app.route("/profiles/<code>")

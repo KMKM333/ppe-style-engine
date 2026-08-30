@@ -186,6 +186,7 @@
         "kind": r.media_type or "Input",
         "title": r.title,
         "detail_url": r.detail_url,
+        "quickview_url": r.quickview_url,
         "fields": [
           {"label": "Channel / author", "value": r.channel_name or "—"},
           {"label": "Words", "value": r.word_count if r.word_count is not none else "—"},

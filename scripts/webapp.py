@@ -3676,6 +3676,50 @@ def api_style_card_save(code):
     return jsonify({"ok": True, "profile_code": code, "field": field, "action": action, "declared_value": declared_value})
 
 
+# --- Machine-facing video title API (for Hermes/Telegram, key-protected) ---
+# Same rationale as the style card API above: there's no browser-side title
+# edit UI yet, so this gives an automated caller a safe, auditable way to
+# rename a video instead of touching the videos table directly.
+
+@app.route("/api/videos/<int:video_id>/title", methods=["GET"])
+def api_video_title_get(video_id):
+    """Read-only: current title, so a caller can show the user what's there
+    before overwriting it."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    video = conn.execute("SELECT video_id, title FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+    conn.close()
+    if not video:
+        return jsonify({"ok": False, "error": f"no such video: {video_id}"}), 404
+    return jsonify({"ok": True, "video_id": video_id, "title": video["title"]})
+
+
+@app.route("/api/videos/<int:video_id>/title/save", methods=["POST"])
+def api_video_title_save(video_id):
+    """Write a video's title. Requires a non-empty new_title — unlike the
+    style card fields, a video can't be titleless, so this never deletes."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    video = conn.execute("SELECT video_id, title FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+    if not video:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such video: {video_id}"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    new_title = (request.form.get("new_title") or payload.get("new_title") or "").strip()
+    if not new_title:
+        conn.close()
+        return jsonify({"ok": False, "error": "'new_title' is required and cannot be blank"}), 400
+
+    old_title = video["title"]
+    conn.execute("UPDATE videos SET title = ? WHERE video_id = ?", (new_title, video_id))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "video_id": video_id, "old_title": old_title, "title": new_title})
+
+
 def _snapshot_fingerprint_json(conn, profile_id):
     numeric = {
         r["attribute"]: r["mean_val"]

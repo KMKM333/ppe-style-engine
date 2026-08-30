@@ -59,7 +59,11 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No video creations tracked yet.</div>
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('sparkles') }}</div>
+    <p>No video creations tracked yet.</p>
+    <a href="{{ url_for('video_creation_create') }}" class="btn">+ New video creation</a>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

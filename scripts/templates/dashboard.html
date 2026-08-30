@@ -59,21 +59,24 @@
 <div class="card">
   {% if profiles %}
   <table>
-    <tr><th>Media type</th><th>Code</th><th>Channel</th><th>Subject</th><th>N analysed</th><th>Status</th><th></th></tr>
+    <tr><th>Media type</th><th>Code</th><th>Channel</th><th>Subject</th><th class="num">N analysed</th><th>Status</th><th></th></tr>
     {% for p in profiles %}
     <tr>
       <td class="{{ 'muted' if not p.media_type }}">{{ p.media_type or "—" }}</td>
       <td><strong>{{ p.profile_code }}</strong></td>
       <td>{{ p.channel_name }}</td>
       <td class="{{ 'muted' if not p.subject }}">{{ p.subject or "—" }}</td>
-      <td>{{ p.n_videos_analysed }}</td>
+      <td class="num">{{ p.n_videos_analysed }}</td>
       <td><span class="pill {{ p.status }}">{{ p.status }}</span></td>
       <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('profile_detail', code=p.profile_code) }}">View fingerprint</a></td>
     </tr>
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No profiles built yet.</div>
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('users') }}</div>
+    <p>No profiles built yet.</p>
+  </div>
   {% endif %}
 </div>
 

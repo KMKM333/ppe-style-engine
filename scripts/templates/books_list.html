@@ -10,15 +10,15 @@
 <div class="card">
   {% if books %}
   <table>
-    <tr><th>Title</th><th>Author</th><th>Subject</th><th>Year</th><th>Words</th><th>Examples</th><th>Status</th><th>Read</th><th></th></tr>
+    <tr><th>Title</th><th>Author</th><th>Subject</th><th class="num">Year</th><th class="num">Words</th><th class="num">Examples</th><th>Status</th><th>Read</th><th></th></tr>
     {% for b in books %}
     <tr>
       <td><strong>{{ b.title }}</strong></td>
       <td>{{ b.author or '—' }}</td>
       <td class="{{ 'muted' if not b.subject }}">{{ b.subject or '—' }}</td>
-      <td>{{ b.publication_year or '—' }}</td>
-      <td>{{ b.word_count or '—' }}</td>
-      <td class="{{ 'muted' if not b.n_examples }}">{{ b.n_examples or '—' }}</td>
+      <td class="num">{{ b.publication_year or '—' }}</td>
+      <td class="num">{{ b.word_count or '—' }}</td>
+      <td class="num {{ 'muted' if not b.n_examples }}">{{ b.n_examples or '—' }}</td>
       <td>
         {% if b.classified_by == 'needs_review' %}
         <span class="pill bad" title="Automatic classification failed — see the book's page for the reason">needs review</span>
@@ -38,9 +38,12 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">
-    No books ingested yet. Run <code>python3 ingest_book.py --file mybook.txt --title "..." --author "..." --subject Economics</code>
-    from the scripts/ directory, then classify it with <code>classify_book_template.py</code>.
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('book') }}</div>
+    <p>
+      No books ingested yet. Run <code>python3 ingest_book.py --file mybook.txt --title "..." --author "..." --subject Economics</code>
+      from the scripts/ directory, then classify it with <code>classify_book_template.py</code>.
+    </p>
   </div>
   {% endif %}
 </div>

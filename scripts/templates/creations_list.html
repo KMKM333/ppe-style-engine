@@ -90,17 +90,17 @@
   {% if rows %}
   <table>
     <tr>
-      <th>Title</th><th>Source input</th><th>Target</th><th>Post-score</th><th>Pre-score</th>
-      <th>Delta</th><th>By</th><th>Generated</th><th></th>
+      <th>Title</th><th>Source input</th><th>Target</th><th class="num">Post-score</th><th class="num">Pre-score</th>
+      <th class="num">Delta</th><th>By</th><th>Generated</th><th></th>
     </tr>
     {% for r in rows %}
     <tr>
       <td>{{ r.generated_title or '(untitled)' }}</td>
       <td class="muted">#{{ r.test_id }} {{ r.source_label or '' }}</td>
       <td><strong>{{ r.profile_code }}</strong></td>
-      <td class="score {{ 'good' if (r.total_score or 0) >= 70 else ('mid' if (r.total_score or 0) >= 40 else 'bad') }}">{{ r.total_score if r.total_score is not none else '—' }}</td>
-      <td class="muted">{{ r.pre_score_same_profile if r.pre_score_same_profile is not none else '—' }}</td>
-      <td class="{{ 'check-pass' if (r.score_delta or 0) > 0 else ('check-fail' if (r.score_delta or 0) < 0 else 'muted') }}">
+      <td class="num score {{ 'good' if (r.total_score or 0) >= 70 else ('mid' if (r.total_score or 0) >= 40 else 'bad') }}">{{ r.total_score if r.total_score is not none else '—' }}</td>
+      <td class="num muted">{{ r.pre_score_same_profile if r.pre_score_same_profile is not none else '—' }}</td>
+      <td class="num {{ 'check-pass' if (r.score_delta or 0) > 0 else ('check-fail' if (r.score_delta or 0) < 0 else 'muted') }}">
         {{ '%+.1f' % r.score_delta if r.score_delta is not none else '—' }}
       </td>
       <td class="muted">{{ r.generated_by }}</td>
@@ -110,7 +110,11 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No creations match these filters yet — run the Workflow to generate one.</div>
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('sparkles') }}</div>
+    <p>No creations match these filters yet.</p>
+    <a href="{{ url_for('workflow_start') }}" class="btn">Start the workflow</a>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

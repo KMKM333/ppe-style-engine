@@ -40,7 +40,7 @@
   {% if rows %}
   <table>
     <tr>
-      <th>Title</th><th>Source</th><th>Platform</th><th>Shots</th><th>Avg shot length</th>
+      <th>Title</th><th>Source</th><th>Platform</th><th class="num">Shots</th><th class="num">Avg shot length</th>
       <th>Status</th><th>Ingested</th><th></th>
     </tr>
     {% for r in rows %}
@@ -48,8 +48,8 @@
       <td><a href="{{ url_for('production_input_detail', input_id=r.input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title }}</a></td>
       <td>{{ r.channel_name }}</td>
       <td class="muted">{{ r.platform or '—' }}</td>
-      <td>{{ r.total_shots if r.total_shots is not none else '—' }}</td>
-      <td>{{ '%.2fs' % r.avg_shot_length_sec if r.avg_shot_length_sec is not none else '—' }}</td>
+      <td class="num">{{ r.total_shots if r.total_shots is not none else '—' }}</td>
+      <td class="num">{{ '%.2fs' % r.avg_shot_length_sec if r.avg_shot_length_sec is not none else '—' }}</td>
       <td>
         {% if r.status == 'classified' %}<span class="pill confirmed">classified</span>
         {% elif r.status == 'needs_review' %}<span class="pill bad">needs review</span>
@@ -61,7 +61,10 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No Production Spec inputs yet — submit a video for shot analysis via the Instagram Bulk Transcriber.</div>
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('layers') }}</div>
+    <p>No Production Spec inputs yet — submit a video for shot analysis via the Instagram Bulk Transcriber.</p>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

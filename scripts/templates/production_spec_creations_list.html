@@ -39,7 +39,11 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No production spec creations yet.</div>
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('wand') }}</div>
+    <p>No production spec creations yet.</p>
+    <a href="{{ url_for('production_spec_creation_create') }}" class="btn">+ New spec creation</a>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

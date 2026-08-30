@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Inputs — PPE Engine{% endblock %}
 {% block main_class %}wide{% endblock %}
-{% macro sort_th(col, label) %}
+{% macro sort_th(col, label, cls='') %}
   {% set is_active = filters.sort == col %}
   {% set new_dir = 'desc' if (is_active and filters.dir != 'desc') else 'asc' %}
-  <th>
+  <th class="{{ cls }}">
     <a href="{{ url_for('inputs_list', kind=filters.kind, q=filters.q, channel_id=filters.channel_id, title_format=filters.title_format, term=filters.term, example=filters.example, word_min=filters.word_min, word_max=filters.word_max, sort=col, dir=new_dir) }}"
        style="color:inherit;text-decoration:none;white-space:nowrap">
       {{ label }}{% if is_active %}<span style="color:var(--accent)">{{ ' ▲' if filters.dir == 'asc' else ' ▼' }}</span>{% else %}<span class="muted" style="opacity:.4"> ⇅</span>{% endif %}
@@ -58,6 +58,14 @@
     <div class="muted">News</div>
     <div style="font-size:28px;font-weight:700">{{ n_news }}</div>
   </div>
+</div>
+
+<div class="flex" style="gap:8px;margin:-4px 0 16px;align-items:center">
+  {% for value, label in kinds %}
+  <a href="{{ url_for('inputs_list', kind=value, q=filters.q, channel_id=filters.channel_id, title_format=filters.title_format, term=filters.term, example=filters.example, word_min=filters.word_min, word_max=filters.word_max, sort=filters.sort, dir=filters.dir) }}"
+     class="tag-link" style="flex:0 0 auto;min-width:0;{{ 'background:var(--accent);color:#fff;border-color:var(--accent)' if filters.kind == value else '' }}">{{ label }}</a>
+  {% endfor %}
+  <span class="muted" style="flex:0 0 auto;font-size:13px;margin-left:4px">{{ rows|length }} of {{ total }} shown</span>
 </div>
 
 <form method="get" action="{{ url_for('inputs_list') }}" class="card">
@@ -167,14 +175,25 @@
       {{ sort_th('media_type', 'Type') }}
       {{ sort_th('channel_name', 'Channel / author') }}
       {{ sort_th('title', 'Title') }}
-      {{ sort_th('word_count', 'Words') }}
-      {{ sort_th('duration_sec', 'Length') }}
+      {{ sort_th('word_count', 'Words', 'num') }}
+      {{ sort_th('duration_sec', 'Length', 'num') }}
       {{ sort_th('source_url', 'Source') }}
       {{ sort_th('ingested_at', 'Ingested') }}
       <th></th>
     </tr>
     {% for r in rows %}
-    <tr>
+    <tr data-quickview='{{ {
+        "kind": r.media_type or "Input",
+        "title": r.title,
+        "detail_url": r.detail_url,
+        "fields": [
+          {"label": "Channel / author", "value": r.channel_name or "—"},
+          {"label": "Words", "value": r.word_count if r.word_count is not none else "—"},
+          {"label": "Length", "value": r.duration_label if r.duration_label is not none else "—"},
+          {"label": "Source", "value": (r.source_label if r.source_url else (r.source_text or "—")), "href": r.source_url or none},
+          {"label": "Ingested", "value": r.ingested_at or "—"}
+        ]
+      } | tojson }}'>
       <td class="{{ 'muted' if not r.media_type }}" style="white-space:nowrap">{{ r.media_type or '—' }}</td>
       <td>
         {% if r.profile_code %}
@@ -189,8 +208,8 @@
         {% if r.status_pill == 'pending' %} <span class="pill draft">pending</span>{% endif %}
         {% if r.status_pill == 'needs_review' %} <span class="pill bad" title="Automatic classification failed — see the book's page for the reason">needs review</span>{% endif %}
       </td>
-      <td>{{ r.word_count if r.word_count is not none else '—' }}</td>
-      <td>{{ r.duration_label if r.duration_label is not none else '—' }}</td>
+      <td class="num">{{ r.word_count if r.word_count is not none else '—' }}</td>
+      <td class="num">{{ r.duration_label if r.duration_label is not none else '—' }}</td>
       <td>
         {% if r.source_url %}<a href="{{ r.source_url }}" target="_blank" rel="noopener">{{ r.source_label }}</a>
         {% elif r.source_text %}<span title="{{ r.source_text }}">{{ r.source_text|truncate(28) }}</span>
@@ -213,8 +232,8 @@
         <a href="{{ ex.detail_url }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ ex.label }}</a>
         {% if ex.example_title %}<a class="tag-link" style="margin-left:6px" href="{{ url_for('inputs_list', example=ex.example_title) }}" title="Find every input sharing this example">🏷</a>{% endif %}
       </td>
-      <td class="muted">—</td>
-      <td class="muted">—</td>
+      <td class="muted num">—</td>
+      <td class="muted num">—</td>
       <td class="muted" style="white-space:nowrap">{{ ex.location or '—' }}</td>
       <td class="muted" style="white-space:nowrap">{{ r.ingested_at }}</td>
       <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ ex.detail_url }}">View</a></td>
@@ -223,7 +242,15 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No inputs match these filters.</div>
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('archive') }}</div>
+    {% if filters.kind or filters.q or filters.channel_id or filters.title_format or filters.term or filters.example or filters.word_min is not none or filters.word_max is not none %}
+    <p>No inputs match these filters. Try widening the type, word range, or clearing the search.</p>
+    <a href="{{ url_for('inputs_list') }}" class="btn secondary">Clear filters</a>
+    {% else %}
+    <p>No inputs ingested yet.</p>
+    {% endif %}
+  </div>
   {% endif %}
 </div>
 {% endblock %}

@@ -22,7 +22,8 @@
   .app-shell { display:flex; align-items:flex-start; }
   .sidebar { width:240px; flex-shrink:0; background:var(--panel); border-right:1px solid var(--border);
     padding:18px 14px; position:sticky; top:0; height:100vh; overflow-y:auto;
-    display:flex; flex-direction:column; gap:2px; }
+    display:flex; flex-direction:column; gap:2px; transition:width .18s ease; }
+  @media (prefers-reduced-motion: reduce) { .sidebar { transition:none; } }
   .sidebar-brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:14.5px;
     padding:4px 8px 16px; white-space:nowrap; }
   .sidebar-brand .brand-icon { width:22px; height:22px; border-radius:6px; background:var(--accent); flex-shrink:0; }
@@ -32,6 +33,11 @@
     cursor:pointer; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,.15); }
   .theme-toggle:hover { color:var(--text); border-color:var(--muted); }
   .theme-toggle svg { width:17px; height:17px; }
+  .sidebar-collapse-btn { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px;
+    margin-left:auto; border-radius:6px; border:1px solid var(--border); background:var(--panel2); color:var(--muted);
+    cursor:pointer; flex-shrink:0; padding:0; }
+  .sidebar-collapse-btn:hover { color:var(--text); border-color:var(--muted); }
+  .sidebar-collapse-btn svg { width:13px; height:13px; }
   .sidebar-search input { width:100%; background:var(--panel2); border:1px solid var(--border); border-radius:8px;
     color:var(--text); padding:8px 10px; font-size:13px; margin-bottom:14px; }
   .sidebar-nav { display:flex; flex-direction:column; gap:1px; }
@@ -123,7 +129,26 @@
     .nav-item { white-space:normal; }
     .sidebar-advanced { flex-direction:column; margin-top:16px; padding-top:14px;
       border-top:1px solid var(--border); border-left:none; padding-left:0; }
-
+    /* The collapse rail is a desktop-only concept (mobile already has its own
+       drawer/overlay pattern) so the toggle button never shows below 861px. */
+    .sidebar-collapse-btn { display:none; }
+  }
+  /* Collapsible sidebar rail — desktop only. The class lives on <html> (set
+     by an early head script, mirroring the theme FOUC-prevention pattern)
+     rather than on .sidebar itself, since .sidebar doesn't exist yet when
+     that early script runs. Labels are hidden via font-size:0 on the row
+     rather than requiring every nav-item's text to be individually wrapped
+     in a span — .nav-icon keeps its own explicit px width/height so the
+     icon itself is unaffected. */
+  @media (min-width: 861px) {
+    html.sidebar-collapsed .sidebar { width: 64px; }
+    html.sidebar-collapsed .sidebar-brand { justify-content:center; padding-left:0; padding-right:0; }
+    html.sidebar-collapsed .sidebar-brand span:not(.brand-icon) { display:none; }
+    html.sidebar-collapsed .sidebar-collapse-btn { margin-left:0; }
+    html.sidebar-collapsed .sidebar-search { display:none; }
+    html.sidebar-collapsed .nav-group-label { display:none; }
+    html.sidebar-collapsed .nav-item { justify-content:center; gap:0; padding:9px 0; font-size:0; }
+    html.sidebar-collapsed .nav-badge { display:none; }
   }
   main { max-width: 1600px; margin: 0 auto; padding: 24px 24px 60px; }
   h1 { font-size: 22px; margin: 0 0 6px; }
@@ -190,10 +215,27 @@
   table.attr-table td, table.attr-table th { overflow-wrap: break-word; }
   th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing:.04em; }
   tr:hover td { background: rgba(255,255,255,0.02); }
-  .pill { display:inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight:600; }
+  .pill { display:inline-flex; align-items:center; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight:600; }
+  .pill::before { content:''; display:inline-block; width:6px; height:6px; border-radius:50%; background:currentColor;
+    margin-right:6px; flex-shrink:0; }
   .pill.confirmed { background: rgba(74,222,128,.15); color: var(--good); }
   .pill.draft { background: rgba(250,204,21,.15); color: var(--mid); }
   .pill.bad { background: rgba(248,113,113,.15); color: var(--bad); }
+  /* Right-aligned, tabular-figure treatment for numeric table columns, so
+     word counts / scores / durations line up and scan cleanly top-to-bottom
+     instead of ragging left like text. */
+  .num { text-align:right; font-variant-numeric: tabular-nums; }
+  th.num a { justify-content:flex-end; display:inline-flex; width:100%; }
+  /* --- empty states: icon + message + optional CTA, replacing bare italic
+     text for the sections where an action actually exists to take. */
+  .empty-state { display:flex; flex-direction:column; align-items:center; text-align:center;
+    padding:36px 20px; color: var(--muted); }
+  .empty-state .empty-icon { width:40px; height:40px; border-radius:50%; background:var(--panel2);
+    border:1px solid var(--border); display:flex; align-items:center; justify-content:center;
+    color: var(--muted); margin-bottom:14px; }
+  .empty-state .empty-icon svg { width:19px; height:19px; }
+  .empty-state p { margin:0; font-size:13.5px; line-height:1.5; max-width:420px; }
+  .empty-state .btn, .empty-state .btn.secondary { margin-top:16px; }
   .tag-link {
     display:inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight:600;
     background: rgba(var(--accent-rgb),.12); color: var(--accent); border: 1px solid rgba(var(--accent-rgb),.3);
@@ -326,12 +368,48 @@
   .modal-box h2 { margin:0 0 12px; font-size:18px; }
   .modal-box p { color: var(--muted); font-size:13.5px; line-height:1.55; margin:0 0 16px; }
   .modal-box .confidence { color: var(--text); }
+
+  /* --- row quick-view: a right-side slide-over for peeking at a table row's
+     detail without leaving the list (no page reload, scroll position kept).
+     Shared by any page that renders <tr data-quickview='{...}'> — see
+     openQuickview() below. Kept deliberately shallow (the fields already
+     rendered in the row) rather than re-fetching the full detail page. */
+  .quickview-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,0);
+    pointer-events:none; transition:background .2s ease; z-index:115; }
+  .quickview-backdrop.open { display:block; background:rgba(0,0,0,.5); pointer-events:auto; }
+  .quickview-panel { position:fixed; top:0; right:0; height:100vh; width:min(400px, 92vw);
+    background:var(--panel); border-left:1px solid var(--border); z-index:116;
+    display:flex; flex-direction:column; padding:22px 24px; overflow-y:auto;
+    transform:translateX(100%); transition:transform .22s ease; box-shadow:-2px 0 24px rgba(0,0,0,.3); }
+  .quickview-panel.open { transform:translateX(0); }
+  @media (prefers-reduced-motion: reduce) {
+    .quickview-panel { transition:none; }
+    .quickview-backdrop { transition:none; }
+  }
+  .quickview-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:4px; }
+  .quickview-kind { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color: var(--accent); }
+  .quickview-title { font-size:18px; font-weight:700; margin:4px 0 14px; line-height:1.3; }
+  .quickview-close { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px;
+    border-radius:8px; border:1px solid var(--border); background:var(--panel2); color:var(--muted);
+    cursor:pointer; flex-shrink:0; padding:0; }
+  .quickview-close:hover { color:var(--text); border-color:var(--muted); }
+  .quickview-close svg { width:15px; height:15px; }
+  .quickview-field { padding:10px 0; border-bottom:1px solid var(--border); }
+  .quickview-field:last-of-type { border-bottom:none; }
+  .quickview-field .qf-label { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color: var(--muted); margin-bottom:3px; }
+  .quickview-field .qf-value { font-size:14px; color: var(--text); }
+  .quickview-panel .btn { margin-top:20px; text-align:center; }
 </style>
 <script>
   (function () {
     try {
       var t = localStorage.getItem('ppe-theme') || 'dark';
       document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+    try {
+      if (localStorage.getItem('ppe-sidebar-collapsed') === '1') {
+        document.documentElement.classList.add('sidebar-collapsed');
+      }
     } catch (e) {}
   })();
 </script>
@@ -379,12 +457,21 @@
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="7" y2="7"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="17" y2="17"/></svg>
 {% elif name == 'x' %}
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+{% elif name == 'chevron-left' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+{% elif name == 'chevron-right' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+{% elif name == 'inbox' %}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
 {% endif %}{% endmacro %}
 <div class="app-shell">
   <aside class="sidebar">
     <div class="sidebar-brand">
       <span class="brand-icon"></span>
       <span>PPE Engine</span>
+      <button type="button" class="sidebar-collapse-btn" id="sidebar-collapse-btn" title="Collapse sidebar" onclick="toggleSidebarCollapse()">
+        <span id="sidebar-collapse-icon">{{ icon('chevron-left') }}</span>
+      </button>
     </div>
     <div class="mobile-nav-row">
       <button type="button" class="mobile-nav-toggle" title="Open menu" onclick="toggleMobileNav()">
@@ -470,6 +557,20 @@
     </main>
   </div>
 </div>
+
+<div class="quickview-backdrop" id="quickview-backdrop" onclick="closeQuickview()"></div>
+<div class="quickview-panel" id="quickview-panel">
+  <div class="quickview-head">
+    <div>
+      <div class="quickview-kind" id="quickview-kind"></div>
+      <div class="quickview-title" id="quickview-title"></div>
+    </div>
+    <button type="button" class="quickview-close" title="Close" onclick="closeQuickview()">{{ icon('x') }}</button>
+  </div>
+  <div id="quickview-fields"></div>
+  <a href="#" class="btn" id="quickview-open-full">Open full page →</a>
+</div>
+
 <script>
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
@@ -487,6 +588,81 @@
   function toggleMobileNav() {
     document.querySelector('.sidebar').classList.toggle('nav-open');
   }
+
+  function toggleSidebarCollapse() {
+    var collapsed = !document.documentElement.classList.contains('sidebar-collapsed');
+    document.documentElement.classList.toggle('sidebar-collapsed', collapsed);
+    try { localStorage.setItem('ppe-sidebar-collapsed', collapsed ? '1' : '0'); } catch (e) {}
+    var btn = document.getElementById('sidebar-collapse-btn');
+    var iconSpan = document.getElementById('sidebar-collapse-icon');
+    if (btn) btn.title = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+    if (iconSpan) iconSpan.innerHTML = collapsed ? `{{ icon('chevron-right') }}` : `{{ icon('chevron-left') }}`;
+  }
+  (function () {
+    if (document.documentElement.classList.contains('sidebar-collapsed')) {
+      var btn = document.getElementById('sidebar-collapse-btn');
+      if (btn) btn.title = 'Expand sidebar';
+      var iconSpan = document.getElementById('sidebar-collapse-icon');
+      if (iconSpan) iconSpan.innerHTML = `{{ icon('chevron-right') }}`;
+    }
+  })();
+
+  // Row quick-view: any <tr data-quickview='{...}'> becomes clickable (except
+  // clicks that land on a real link/button/form inside it, which keep their
+  // own behavior) and opens a right-side panel with the row's already-
+  // rendered summary fields — no reload, no losing table scroll position.
+  // data-quickview shape: {kind, title, detail_url, fields:[{label,value,href?}]}
+  function openQuickview(data) {
+    document.getElementById('quickview-kind').textContent = data.kind || '';
+    document.getElementById('quickview-title').textContent = data.title || '';
+    var fieldsEl = document.getElementById('quickview-fields');
+    fieldsEl.innerHTML = '';
+    (data.fields || []).forEach(function (f) {
+      var row = document.createElement('div');
+      row.className = 'quickview-field';
+      var label = document.createElement('div');
+      label.className = 'qf-label';
+      label.textContent = f.label;
+      var value = document.createElement('div');
+      value.className = 'qf-value';
+      if (f.href) {
+        var a = document.createElement('a');
+        a.href = f.href;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = f.value;
+        value.appendChild(a);
+      } else {
+        value.textContent = f.value;
+      }
+      row.appendChild(label);
+      row.appendChild(value);
+      fieldsEl.appendChild(row);
+    });
+    var openFullBtn = document.getElementById('quickview-open-full');
+    if (data.detail_url) {
+      openFullBtn.href = data.detail_url;
+      openFullBtn.style.display = '';
+    } else {
+      openFullBtn.style.display = 'none';
+    }
+    document.getElementById('quickview-panel').classList.add('open');
+    document.getElementById('quickview-backdrop').classList.add('open');
+  }
+  function closeQuickview() {
+    document.getElementById('quickview-panel').classList.remove('open');
+    document.getElementById('quickview-backdrop').classList.remove('open');
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeQuickview();
+  });
+  document.querySelectorAll('tr[data-quickview]').forEach(function (tr) {
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', function (e) {
+      if (e.target.closest('a, button, form, input, select, textarea')) return;
+      try { openQuickview(JSON.parse(tr.dataset.quickview)); } catch (err) {}
+    });
+  });
   // Tapping a nav link on mobile should close the drawer instead of leaving
   // it open over the next page while navigation happens.
   document.querySelectorAll('.sidebar-nav .nav-item, .sidebar-advanced .nav-item').forEach(function (a) {

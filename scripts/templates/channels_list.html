@@ -8,12 +8,12 @@
 <div class="card">
   {% if channels %}
   <table>
-    <tr><th>Channel</th><th>Subject</th><th>Videos</th><th>Analysed</th><th>Profile</th><th>Status</th><th></th></tr>
+    <tr><th>Channel</th><th>Subject</th><th class="num">Videos</th><th>Analysed</th><th>Profile</th><th>Status</th><th></th></tr>
     {% for c in channels %}
     <tr class="channel-row" onclick="toggleChannelVideos({{ c.channel_id }})" style="cursor:pointer">
       <td><span id="chev-{{ c.channel_id }}" class="muted" style="display:inline-block;width:14px">▸</span><strong>{{ c.channel_name }}</strong></td>
       <td class="{{ 'muted' if not c.subject }}">{{ c.subject or '—' }}</td>
-      <td>{{ c.n_videos }}</td>
+      <td class="num">{{ c.n_videos }}</td>
       <td>
         <span class="pill {{ 'confirmed' if c.is_analysed else ('draft' if c.n_analysed > 0 else 'bad') }}" title="{{ c.n_analysed }} of {{ c.n_videos }} videos have an analysis breakdown">
           {% if c.is_analysed %}Analysed{% elif c.n_analysed > 0 %}{{ c.analysed_pct }}% analysed{% else %}Not analysed{% endif %}
@@ -47,7 +47,10 @@
     {% endfor %}
   </table>
   {% else %}
-  <div class="empty">No {{ platform }} channels ingested yet.</div>
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('instagram') if platform == 'Instagram' else icon('youtube') }}</div>
+    <p>No {{ platform }} channels ingested yet.</p>
+  </div>
   {% endif %}
 </div>
 <script>

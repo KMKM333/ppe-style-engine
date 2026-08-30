@@ -1420,6 +1420,7 @@ def inputs_list():
     n_books_only = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
     n_book_examples = conn.execute("SELECT COUNT(*) FROM book_examples").fetchone()[0]
     n_books = n_books_only + n_book_examples
+    n_book_authors = conn.execute("SELECT COUNT(DISTINCT author) FROM books WHERE author IS NOT NULL").fetchone()[0]
     n_short_videos = conn.execute("SELECT COUNT(*) FROM videos WHERE media_type = 'Instagram'").fetchone()[0]
     n_short_video_accounts = conn.execute(
         "SELECT COUNT(DISTINCT channel_id) FROM videos WHERE media_type = 'Instagram'"
@@ -1429,6 +1430,9 @@ def inputs_list():
         "SELECT COUNT(*) FROM video_examples e JOIN videos v ON v.video_id = e.video_id WHERE v.media_type = 'YouTube'"
     ).fetchone()[0]
     n_long_videos = n_long_videos_only + n_long_video_examples
+    n_long_video_channels = conn.execute(
+        "SELECT COUNT(DISTINCT channel_id) FROM videos WHERE media_type = 'YouTube'"
+    ).fetchone()[0]
     n_news = 0  # news article ingestion not built yet
     # Matches the Dashboard's "Inputs ingested" count exactly: videos + books + book_examples,
     # and (like books) long-form videos here already bundles in their examples.
@@ -1439,10 +1443,11 @@ def inputs_list():
         "inputs_list.html", active="inputs",
         rows=rows, channels=channels, title_formats=title_formats, total=total, kinds=INPUT_KINDS,
         all_terms=all_terms, all_examples=all_examples,
-        n_books=n_books, n_books_only=n_books_only, n_book_examples=n_book_examples,
+        n_books=n_books, n_books_only=n_books_only, n_book_examples=n_book_examples, n_book_authors=n_book_authors,
         n_short_videos=n_short_videos, n_short_video_accounts=n_short_video_accounts,
         n_long_videos=n_long_videos, n_long_videos_only=n_long_videos_only,
-        n_long_video_examples=n_long_video_examples, n_news=n_news, n_all_inputs=n_all_inputs,
+        n_long_video_examples=n_long_video_examples, n_long_video_channels=n_long_video_channels,
+        n_news=n_news, n_all_inputs=n_all_inputs,
         filters={
             "kind": kind, "channel_id": channel_id, "q": q, "title_format": title_format,
             "term": term, "example": example,

@@ -42,21 +42,22 @@
   <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('books_list') }}">
     <div class="muted">Book inputs</div>
     <div style="font-size:28px;font-weight:700">{{ n_books }}</div>
-    <div class="muted" style="font-size:12px;margin-top:2px">{{ n_books_only }} book{{ '' if n_books_only == 1 else 's' }} + {{ n_book_examples }} example{{ '' if n_book_examples == 1 else 's' }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">{{ n_books_only }} book{{ '' if n_books_only == 1 else 's' }} + {{ n_book_examples }} example{{ '' if n_book_examples == 1 else 's' }} &middot; {{ n_book_authors }} author{{ '' if n_book_authors == 1 else 's' }}</div>
   </a>
   <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('channels_list') }}">
     <div class="muted">Short video inputs, Instagram</div>
     <div style="font-size:28px;font-weight:700">{{ n_short_videos }}</div>
-    <div class="muted" style="font-size:12px;margin-top:2px">{{ n_short_video_accounts }} account{{ '' if n_short_video_accounts == 1 else 's' }} + {{ n_short_videos }} video{{ '' if n_short_videos == 1 else 's' }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">{{ n_short_videos }} video{{ '' if n_short_videos == 1 else 's' }} &middot; {{ n_short_video_accounts }} account{{ '' if n_short_video_accounts == 1 else 's' }}</div>
   </a>
   <a class="card" style="text-decoration:none;color:inherit;display:block" href="{{ url_for('channels_list', platform='YouTube') }}">
     <div class="muted">Long video inputs, YouTube</div>
     <div style="font-size:28px;font-weight:700">{{ n_long_videos }}</div>
-    <div class="muted" style="font-size:12px;margin-top:2px">{{ n_long_videos_only }} video{{ '' if n_long_videos_only == 1 else 's' }} + {{ n_long_video_examples }} example{{ '' if n_long_video_examples == 1 else 's' }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">{{ n_long_videos_only }} video{{ '' if n_long_videos_only == 1 else 's' }} + {{ n_long_video_examples }} example{{ '' if n_long_video_examples == 1 else 's' }} &middot; {{ n_long_video_channels }} channel{{ '' if n_long_video_channels == 1 else 's' }}</div>
   </a>
   <div class="card">
     <div class="muted">News</div>
     <div style="font-size:28px;font-weight:700">{{ n_news }}</div>
+    <div class="muted" style="font-size:12px;margin-top:2px">Not built yet</div>
   </div>
 </div>
 

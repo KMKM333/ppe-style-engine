@@ -4351,10 +4351,18 @@ Return raw JSON only, matching exactly this shape — no markdown fence, no comm
 
 
 def _pick_unswiped_source(conn):
-    """Returns (kind, row) for a random item never turned into a swipe
-    candidate before, or (None, None) once both pools are exhausted.
-    Coin-flips video vs. book each call so the queue doesn't skew toward
-    whichever table happens to be bigger."""
+    """Returns (kind, row) for a random item eligible to become a swipe
+    candidate, or (None, None) once both pools are exhausted. Coin-flips
+    video vs. book each call so the queue doesn't skew toward whichever
+    table happens to be bigger.
+
+    "Eligible" excludes anything currently queued or already liked (never
+    re-show something on deck or already turned into a candidate), but
+    NOT anything whose only candidate rows are disliked — a disliked
+    source goes back into the same random pool everything else is drawn
+    from, so it can resurface later. There's no cooldown/delay logic:
+    with hundreds of other never-tried items in the pool, ORDER BY
+    RANDOM() naturally makes "later" mean later, not next card."""
     kinds = ["video", "book"]
     random.shuffle(kinds)
     for kind in kinds:
@@ -4362,7 +4370,10 @@ def _pick_unswiped_source(conn):
             row = conn.execute(
                 """SELECT v.video_id, v.title, v.script AS content, c.channel_name
                    FROM videos v JOIN channels c ON c.channel_id = v.channel_id
-                   WHERE NOT EXISTS (SELECT 1 FROM swipe_candidates sc WHERE sc.source_video_id = v.video_id)
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM swipe_candidates sc
+                       WHERE sc.source_video_id = v.video_id AND sc.status != 'disliked'
+                   )
                    ORDER BY RANDOM() LIMIT 1"""
             ).fetchone()
         else:
@@ -4370,7 +4381,10 @@ def _pick_unswiped_source(conn):
                 """SELECT b.book_id, b.title, COALESCE(b.summary, substr(b.full_text, 1, 4000)) AS content,
                           b.author AS channel_name
                    FROM books b
-                   WHERE NOT EXISTS (SELECT 1 FROM swipe_candidates sc WHERE sc.source_book_id = b.book_id)
+                   WHERE NOT EXISTS (
+                       SELECT 1 FROM swipe_candidates sc
+                       WHERE sc.source_book_id = b.book_id AND sc.status != 'disliked'
+                   )
                    ORDER BY RANDOM() LIMIT 1"""
             ).fetchone()
         if row:

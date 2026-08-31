@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from collections import Counter
 from urllib.parse import quote
 
@@ -4410,19 +4411,53 @@ def _generate_swipe_candidate(conn):
     return cur.lastrowid
 
 
-def _ensure_swipe_buffer(conn, target=SWIPE_BUFFER_TARGET, max_new=3):
+def _fill_swipe_buffer(target=SWIPE_BUFFER_TARGET, max_new=3):
     """Tops the queued buffer back up, generating at most max_new candidates
-    per call so a single request never blocks on more than a few LLM
-    round-trips. A real background job (per the roadmap) replaces this
-    on-demand top-up once the buffer needs to stay warm without a request
-    triggering it."""
-    queued = conn.execute("SELECT COUNT(*) FROM swipe_candidates WHERE status = 'queued'").fetchone()[0]
-    made = 0
-    while queued + made < target and made < max_new:
-        if _generate_swipe_candidate(conn) is None:
-            break  # corpus exhausted, or generation failed — don't loop forever
-        made += 1
-    return made
+    in this pass. Runs on its own connection so it's safe to call from a
+    background thread — see _maybe_start_swipe_buffer_fill() below. Never
+    call this directly from a request handler: each candidate is a live
+    Claude call (several seconds), and gunicorn here only has a handful of
+    worker threads total — blocking even two or three of them on live LLM
+    calls is enough to stall every other page on the site behind it."""
+    conn = get_conn()
+    try:
+        queued = conn.execute("SELECT COUNT(*) FROM swipe_candidates WHERE status = 'queued'").fetchone()[0]
+        made = 0
+        while queued + made < target and made < max_new:
+            if _generate_swipe_candidate(conn) is None:
+                break  # corpus exhausted, or generation failed — don't loop forever
+            made += 1
+        return made
+    finally:
+        conn.close()
+
+
+_swipe_buffer_lock = threading.Lock()
+_swipe_buffer_filling = False
+
+
+def _maybe_start_swipe_buffer_fill():
+    """Fire-and-forget top-up: starts _fill_swipe_buffer() on a daemon
+    thread if one isn't already running, and returns immediately either
+    way. Guarded by a lock so a burst of near-simultaneous requests can't
+    each spawn their own fill and hammer the LLM API in parallel."""
+    global _swipe_buffer_filling
+    with _swipe_buffer_lock:
+        if _swipe_buffer_filling:
+            return
+        _swipe_buffer_filling = True
+
+    def _run():
+        global _swipe_buffer_filling
+        try:
+            _fill_swipe_buffer()
+        except Exception as e:
+            print(f"[swipe] background buffer fill failed: {e}")
+        finally:
+            with _swipe_buffer_lock:
+                _swipe_buffer_filling = False
+
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _serialize_candidate(row):
@@ -4447,7 +4482,9 @@ def swipe_page():
 @app.route("/api/swipe/next")
 def api_swipe_next():
     conn = get_conn()
-    _ensure_swipe_buffer(conn)
+    queued_count = conn.execute("SELECT COUNT(*) FROM swipe_candidates WHERE status = 'queued'").fetchone()[0]
+    if queued_count < SWIPE_BUFFER_TARGET:
+        _maybe_start_swipe_buffer_fill()  # never blocks this request on an LLM call
     row = conn.execute(
         """SELECT sc.*,
                   COALESCE(v.title, b.title) AS title,
@@ -4462,7 +4499,12 @@ def api_swipe_next():
     ).fetchone()
     conn.close()
     if not row:
-        return jsonify({"ok": True, "candidate": None, "message": "No more inputs to swipe on right now."})
+        message = (
+            "Preparing more inputs — check back in a few seconds."
+            if queued_count < SWIPE_BUFFER_TARGET
+            else "No more inputs to swipe on right now."
+        )
+        return jsonify({"ok": True, "candidate": None, "message": message})
     return jsonify({"ok": True, "candidate": _serialize_candidate(row)})
 
 

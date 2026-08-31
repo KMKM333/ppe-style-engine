@@ -122,24 +122,9 @@ FORM_SPECS = {
             "- Voice: expository, varied vocabulary, reads like a nonfiction case study excerpt"
         ),
     },
-    # The three below are hand-written targets (not corpus-derived like the
-    # two above) for the Swipe mechanism's format picker — see swipe.html /
-    # api_swipe_create(). "Short video" and "Instagram" both land in the
-    # short-form world; short_video_script exists as a distinct, slightly
-    # longer option so the picker isn't offering two identical choices.
-    "short_video_script": {
-        "label": "Short video script",
-        "spec": (
-            "- Target length: ~500 words\n"
-            "- Target sentence length: ~20 words/sentence on average\n"
-            "- Direct address (\"you\"): ~2 per 100 words\n"
-            "- Include roughly 2-3 questions across the piece, spaced out to re-hook attention\n"
-            "- Title format: a curiosity-gap or \"what happened when...\" style hook\n"
-            "- Hook: a pattern-interrupt in the first two sentences — a surprising fact or reversal\n"
-            "- Close: a clear takeaway plus a soft engagement prompt (follow/comment), not hard-sell\n"
-            "- Voice: conversational, a little more explanatory than a 60-second script, built to be read aloud in ~2-3 minutes"
-        ),
-    },
+    # long_video_script and news_article below are hand-written targets
+    # (not corpus-derived like insta_script/book_example above) for the
+    # Swipe mechanism's format picker — see swipe.html / api_swipe_create().
     "long_video_script": {
         "label": "Long-form video script",
         "spec": (
@@ -174,11 +159,14 @@ FORM_SPECS = {
 # Order the Swipe format picker presents these in, plus the short label
 # shown on each button — kept separate from FORM_SPECS's own labels since
 # the picker's copy is meant to be scannable at a glance, not descriptive.
+# Mirrors the swipe mechanism's own long-term input taxonomy (book chapter /
+# short video / long video / news article) so output format choices match
+# the shape of what can be swiped on in the first place.
 SWIPE_FORM_CHOICES = [
-    ("insta_script", "Instagram"),
-    ("short_video_script", "Short video"),
-    ("long_video_script", "Long video"),
-    ("news_article", "News"),
+    ("book_example", "Book chapter"),
+    ("insta_script", "Instagram video"),
+    ("long_video_script", "YouTube video"),
+    ("news_article", "News article"),
 ]
 
 

@@ -642,7 +642,7 @@ CREATE TABLE IF NOT EXISTS video_creations (
 -- and cached here so swiping never waits on a live call.
 CREATE TABLE IF NOT EXISTS swipe_candidates (
     candidate_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_kind       TEXT NOT NULL,                              -- 'video' / 'book' / 'mixed'
+    source_kind       TEXT NOT NULL,                              -- 'video' / 'book' / 'video_section' / 'book_section' / 'mixed'
     source_video_id   INTEGER REFERENCES videos(video_id),
     source_book_id    INTEGER REFERENCES books(book_id),
     sources_json      TEXT,                                       -- JSON list of all contributing sources

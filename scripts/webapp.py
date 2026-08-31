@@ -4394,11 +4394,44 @@ def _excluded_source_keys(conn):
     return excluded
 
 
+# Weighted kind pool for picking one new source. "video"/"book" are the
+# whole-item fallback (an Instagram video, or a book/YouTube-video with no
+# chapter breakdown at all); "video_section"/"book_section" swipe on one
+# chapter/section instead of the whole thing, using its own already-
+# classified points/terms/examples where the breakdown exists — which is
+# most books and most long-form YouTube videos already ingested. This is
+# what actually answers "input = book chapter / section of long video",
+# not a separate mechanism from whole-item swiping.
+SWIPE_SOURCE_KIND_WEIGHTS = [("video", 0.30), ("video_section", 0.25), ("book", 0.05), ("book_section", 0.40)]
+
+
+def _weighted_kind_order():
+    """A full ordering of the 4 source kinds, sampled without replacement
+    by weight — so a pool that's empty this call falls through to the
+    next-most-likely kind instead of failing outright."""
+    remaining = list(SWIPE_SOURCE_KIND_WEIGHTS)
+    order = []
+    while remaining:
+        total = sum(w for _, w in remaining)
+        r = random.random() * total
+        cumulative = 0.0
+        for i, (kind, w) in enumerate(remaining):
+            cumulative += w
+            if r < cumulative:
+                order.append(kind)
+                remaining.pop(i)
+                break
+        else:
+            order.append(remaining.pop()[0])
+    return order
+
+
 def _pick_unswiped_source(conn, excluded=None):
     """Returns (kind, row) for a random item eligible to become a swipe
-    candidate source, or (None, None) once both pools are exhausted.
-    Coin-flips video vs. book each call so the queue doesn't skew toward
-    whichever table happens to be bigger.
+    candidate source, or (None, None) once every pool is exhausted. Tries
+    the 4 kinds (video / video_section / book / book_section) in a
+    weighted random order each call, so the queue doesn't skew toward
+    whichever pool happens to be biggest.
 
     `excluded` is a set of (kind, id) pairs to skip — pass the same set
     across multiple calls (see _pick_unswiped_sources()) so a multi-source
@@ -4412,26 +4445,60 @@ def _pick_unswiped_source(conn, excluded=None):
     naturally makes "later" mean later, not next card."""
     if excluded is None:
         excluded = _excluded_source_keys(conn)
-    kinds = ["video", "book"]
-    random.shuffle(kinds)
-    for kind in kinds:
+    for kind in _weighted_kind_order():
         excluded_ids = [k[1] for k in excluded if k[0] == kind]
         placeholders = ",".join("?" * len(excluded_ids))
+
         if kind == "video":
-            where = f"WHERE v.video_id NOT IN ({placeholders})" if excluded_ids else ""
+            where_id = f"AND v.video_id NOT IN ({placeholders})" if excluded_ids else ""
             row = conn.execute(
                 f"""SELECT v.video_id, v.title, v.script AS content, c.channel_id, c.channel_name
                     FROM videos v JOIN channels c ON c.channel_id = v.channel_id
-                    {where} ORDER BY RANDOM() LIMIT 1""",
+                    WHERE (v.media_type != 'YouTube' OR NOT EXISTS (
+                        SELECT 1 FROM video_sections vs WHERE vs.video_id = v.video_id
+                    )) {where_id}
+                    ORDER BY RANDOM() LIMIT 1""",
                 excluded_ids,
             ).fetchone()
-        else:
-            where = f"WHERE b.book_id NOT IN ({placeholders})" if excluded_ids else ""
+        elif kind == "video_section":
+            where_id = f"AND vs.section_id NOT IN ({placeholders})" if excluded_ids else ""
+            row = conn.execute(
+                f"""SELECT vs.section_id, vs.section_title AS title, vs.summary, vs.topics,
+                           v.title AS parent_title, c.channel_id, c.channel_name,
+                           (SELECT GROUP_CONCAT(point_text, ' | ') FROM video_points WHERE section_id = vs.section_id) AS points,
+                           (SELECT GROUP_CONCAT(term || ': ' || COALESCE(definition, ''), ' | ') FROM video_terms WHERE section_id = vs.section_id) AS terms,
+                           (SELECT GROUP_CONCAT(example_title || ' - ' || example_text, ' | ') FROM video_examples WHERE section_id = vs.section_id) AS examples
+                    FROM video_sections vs
+                    JOIN videos v ON v.video_id = vs.video_id
+                    JOIN channels c ON c.channel_id = v.channel_id
+                    WHERE 1=1 {where_id}
+                    ORDER BY RANDOM() LIMIT 1""",
+                excluded_ids,
+            ).fetchone()
+        elif kind == "book":
+            where_id = f"AND b.book_id NOT IN ({placeholders})" if excluded_ids else ""
             row = conn.execute(
                 f"""SELECT b.book_id, b.title, COALESCE(b.summary, substr(b.full_text, 1, 4000)) AS content,
                            b.author AS channel_name,
                            (SELECT channel_id FROM channels WHERE channel_name = b.author AND platform = 'Book') AS channel_id
-                    FROM books b {where} ORDER BY RANDOM() LIMIT 1""",
+                    FROM books b
+                    WHERE NOT EXISTS (SELECT 1 FROM book_sections bs WHERE bs.book_id = b.book_id) {where_id}
+                    ORDER BY RANDOM() LIMIT 1""",
+                excluded_ids,
+            ).fetchone()
+        else:  # book_section
+            where_id = f"AND bs.section_id NOT IN ({placeholders})" if excluded_ids else ""
+            row = conn.execute(
+                f"""SELECT bs.section_id, bs.section_title AS title, bs.summary, bs.topics,
+                           b.title AS parent_title, b.author AS channel_name,
+                           (SELECT channel_id FROM channels WHERE channel_name = b.author AND platform = 'Book') AS channel_id,
+                           (SELECT GROUP_CONCAT(point_text, ' | ') FROM book_points WHERE section_id = bs.section_id) AS points,
+                           (SELECT GROUP_CONCAT(term || ': ' || COALESCE(definition, ''), ' | ') FROM book_terms WHERE section_id = bs.section_id) AS terms,
+                           (SELECT GROUP_CONCAT(example_title || ' - ' || example_text, ' | ') FROM book_examples WHERE section_id = bs.section_id) AS examples
+                    FROM book_sections bs
+                    JOIN books b ON b.book_id = bs.book_id
+                    WHERE 1=1 {where_id}
+                    ORDER BY RANDOM() LIMIT 1""",
                 excluded_ids,
             ).fetchone()
         if row:
@@ -4463,15 +4530,39 @@ def _pick_unswiped_sources(conn, n):
     return picked
 
 
+def _source_content_block(kind, row, limit):
+    """Builds the CONTENT text fed to the pitch prompt for one source. For
+    a chapter/section source (video_section / book_section), this uses the
+    section's own already-classified summary/topics/points/terms/examples
+    rather than raw script/book text — that content is real (extracted by
+    the classification pipeline, not guessed), so it's both cheaper to
+    include and more accurate than asking Claude to invent terms/examples
+    from scratch the way a whole-book/whole-video source still has to."""
+    if kind in ("video_section", "book_section"):
+        parts = [f"Chapter: {row['title']}", f"From: {row['parent_title']}"]
+        if row["summary"]:
+            parts.append(f"Summary: {row['summary']}")
+        if row["topics"]:
+            parts.append(f"Topics: {row['topics']}")
+        if row["points"]:
+            parts.append(f"Key points: {row['points']}")
+        if row["terms"]:
+            parts.append(f"Known terms (reuse these rather than inventing new ones): {row['terms']}")
+        if row["examples"]:
+            parts.append(f"Known examples (reuse these rather than inventing new ones): {row['examples']}")
+        return "\n".join(parts)[:limit]
+    return (row["content"] or "")[:limit]
+
+
 def _build_pitch_prompt(sources):
     """sources: list of (kind, row) tuples, length 1-3."""
     if len(sources) == 1:
         kind, row = sources[0]
-        content = (row["content"] or "")[:4000]
+        content = _source_content_block(kind, row, 4000)
         return SWIPE_PITCH_PROMPT_SINGLE.format(kind=kind, title=row["title"], content=content)
     blocks = []
     for i, (kind, row) in enumerate(sources, start=1):
-        content = (row["content"] or "")[:2000]
+        content = _source_content_block(kind, row, 2000)
         blocks.append(f'SOURCE {i} ({kind}): "{row["title"]}"\nCONTENT (may be truncated):\n{content}')
     return SWIPE_PITCH_PROMPT_MULTI.format(n=len(sources), sources_block="\n\n".join(blocks))
 
@@ -4498,6 +4589,7 @@ def _generate_swipe_candidate(conn):
     sources_payload = [
         {
             "kind": kind, "id": row[0], "title": row["title"],
+            "parent_title": row["parent_title"] if "parent_title" in row.keys() else None,
             "channel_id": row["channel_id"], "channel_name": row["channel_name"],
         }
         for kind, row in sources

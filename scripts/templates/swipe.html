@@ -188,9 +188,18 @@
     card.id = 'active-card';
 
     var sources = c.sources || [];
-    var kindLabel = sources.length > 1 ? sources.length + ' SOURCES' : (sources[0] && sources[0].kind === 'video' ? 'Video' : 'Book');
+    function sourceKindLabel(s) {
+      if (s.kind === 'video') return 'Video';
+      if (s.kind === 'book') return 'Book';
+      if (s.kind === 'video_section') return 'Video chapter';
+      if (s.kind === 'book_section') return 'Book chapter';
+      return 'Source';
+    }
+    var kindLabel = sources.length > 1 ? sources.length + ' SOURCES' : sourceKindLabel(sources[0] || {});
     var channelLine = sources.map(function (s) {
-      return (s.kind === 'video' ? 'Video' : 'Book') + ' · ' + (s.channel_name || s.title || '');
+      var line = sourceKindLabel(s) + ' · ' + (s.channel_name || s.title || '');
+      if (s.parent_title) line += ' — ' + s.parent_title;
+      return line;
     }).join('  +  ');
     var termsHtml = (c.terms || []).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('');
     var exHtml = (c.examples || []).map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('');

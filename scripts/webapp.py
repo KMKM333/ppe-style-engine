@@ -2954,20 +2954,274 @@ def video_creation_delete(creation_id):
     return redirect(url_for("video_creations_list"))
 
 
+PRODUCTION_CREATION_SHOT_MIX_FIELDS = [
+    ("pct_illustration_panel", "illustration panel"),
+    ("pct_step_card", "step card"),
+    ("pct_narrator_reaction", "narrator reaction"),
+    ("pct_map_data_graphic", "map/data graphic"),
+    ("pct_cta", "cta"),
+    ("pct_other", "other"),
+]
+
+PRODUCTION_CREATION_PROMPT = """You are building a shot-pacing production spec: a plan for recutting a long-form video into a shorter illustrated recut, broken into numbered beats.
+
+SOURCE VIDEO CONTENT — use these real facts/points as the beats' content, don't invent new ones:
+{content_block}
+
+PACING TARGET — measured from {production_channel_name}'s real shot-by-shot analysis (n={n_analysed} video(s) classified so far, so treat this as directional, not gospel):
+- Average shot length: {avg_shot_length:.2f}s
+- Shot-type mix: {shot_mix_summary}
+
+VOICE/STYLE TARGET: {style_channel_name}{style_overview_suffix}
+
+Return ONLY a JSON object shaped exactly like this, no other text:
+{{
+  "title": "a punchy title for this recut, in the source's own vocabulary",
+  "dek": "one sentence describing what this recut is and the pacing template it's built on",
+  "beats": [
+    {{
+      "step": 1,
+      "title": "short beat title",
+      "duration_sec_min": 10, "duration_sec_max": 14,
+      "shot_count_min": 4, "shot_count_max": 5,
+      "content_points": ["fact drawn from the source content above, verbatim or close to it"],
+      "illustration_captions": ["one visual direction per shot or shot-group"],
+      "punch_tags": ["2-4 short punch words for on-screen captions"]
+    }}
+  ],
+  "production_notes": [
+    {{"heading": "short heading", "text": "one craft note, 1-2 sentences"}}
+  ]
+}}
+
+Split the source content into 5-7 beats that cover its real structure end to end — don't pad, and don't invent facts not present in the source content above."""
+
+
+def _video_full_breakdown_block(conn, video_id, limit=6000):
+    """Whole-video content block for a production creation prompt: every
+    chapter's title/summary/points if the video has a section breakdown,
+    else a truncated raw script — same fallback video_detail() uses."""
+    video = conn.execute("SELECT title, script FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+    if not video:
+        return ""
+    section_rows = conn.execute(
+        "SELECT * FROM video_sections WHERE video_id = ? ORDER BY section_number, section_id", (video_id,)
+    ).fetchall()
+    if not section_rows:
+        return f"Title: {video['title']}\n\n{(video['script'] or '')[:limit]}"
+    parts = [f"Title: {video['title']}"]
+    for s in section_rows:
+        pts = conn.execute(
+            "SELECT point_text FROM video_points WHERE section_id = ? ORDER BY point_id", (s["section_id"],)
+        ).fetchall()
+        points_text = "\n".join(f"- {p['point_text']}" for p in pts)
+        parts.append(f"Section {s['section_number']}: {s['section_title']}\nSummary: {s['summary']}\nPoints:\n{points_text}")
+    return "\n\n".join(parts)[:limit]
+
+
+def _production_creation_source_label(conn, kind, video_id, book_id, section_id, transformation_id):
+    """Short human label for any of the 5 source kinds — used on the list
+    page and in the masthead's 'Source:' line. Returns None if the
+    referenced row no longer exists (e.g. deleted since this creation was
+    made)."""
+    kind = kind or "video"
+    if kind == "video_section":
+        r = conn.execute(
+            "SELECT vs.section_title, v.title AS parent_title FROM video_sections vs "
+            "JOIN videos v ON v.video_id = vs.video_id WHERE vs.section_id = ?", (section_id,),
+        ).fetchone()
+        return f"{r['parent_title']} — {r['section_title']}" if r else None
+    if kind == "book_section":
+        r = conn.execute(
+            "SELECT bs.section_title, b.title AS parent_title FROM book_sections bs "
+            "JOIN books b ON b.book_id = bs.book_id WHERE bs.section_id = ?", (section_id,),
+        ).fetchone()
+        return f"{r['parent_title']} — {r['section_title']}" if r else None
+    if kind == "book":
+        r = conn.execute("SELECT title FROM books WHERE book_id = ?", (book_id,)).fetchone()
+        return r["title"] if r else None
+    if kind == "creation":
+        r = conn.execute("SELECT generated_title FROM transformations WHERE transformation_id = ?", (transformation_id,)).fetchone()
+        return (r["generated_title"] or f"Creation #{transformation_id}") if r else None
+    r = conn.execute("SELECT title FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+    return r["title"] if r else None
+
+
+def _production_creation_source_content(conn, kind, video_id, book_id, section_id, transformation_id, limit=6000):
+    """Returns (label, content_block) for any of the 5 supported source
+    kinds — the single-video/single-book cases reuse the existing
+    breakdown fetchers; chapter and Studio-Creation cases are built here.
+    Returns (None, None) if the source row no longer exists."""
+    kind = kind or "video"
+    label = _production_creation_source_label(conn, kind, video_id, book_id, section_id, transformation_id)
+    if label is None:
+        return None, None
+
+    if kind == "video":
+        return label, _video_full_breakdown_block(conn, video_id, limit)
+
+    if kind == "video_section":
+        s = conn.execute(
+            "SELECT vs.*, v.title AS parent_title FROM video_sections vs "
+            "JOIN videos v ON v.video_id = vs.video_id WHERE vs.section_id = ?", (section_id,),
+        ).fetchone()
+        pts = conn.execute(
+            "SELECT point_text FROM video_points WHERE section_id = ? ORDER BY point_id", (section_id,)
+        ).fetchall()
+        points_text = "\n".join(f"- {p['point_text']}" for p in pts)
+        content = f"Title: {s['parent_title']}\n\nChapter: {s['section_title']}\nSummary: {s['summary']}\nPoints:\n{points_text}"
+        return label, content[:limit]
+
+    if kind == "book":
+        b = conn.execute("SELECT title, summary, full_text FROM books WHERE book_id = ?", (book_id,)).fetchone()
+        content = f"Title: {b['title']}\n\n{(b['summary'] or '')}\n\n{(b['full_text'] or '')}".strip()
+        return label, content[:limit]
+
+    if kind == "book_section":
+        s = conn.execute(
+            "SELECT bs.*, b.title AS parent_title FROM book_sections bs "
+            "JOIN books b ON b.book_id = bs.book_id WHERE bs.section_id = ?", (section_id,),
+        ).fetchone()
+        pts = conn.execute(
+            "SELECT point_text FROM book_points WHERE section_id = ? ORDER BY point_id", (section_id,)
+        ).fetchall()
+        points_text = "\n".join(f"- {p['point_text']}" for p in pts)
+        content = f"Title: {s['parent_title']}\n\nChapter: {s['section_title']}\nSummary: {s['summary']}\nPoints:\n{points_text}"
+        return label, content[:limit]
+
+    # 'creation' — an existing Studio Creation's already-generated text
+    t = conn.execute(
+        "SELECT generated_title, generated_text FROM transformations WHERE transformation_id = ?", (transformation_id,)
+    ).fetchone()
+    content = f"Title: {label}\n\n{t['generated_text']}"
+    return label, content[:limit]
+
+
+def _production_profile_fingerprint(conn, profile_id):
+    """Returns {numeric: {attr: row}, categorical: {attr: [rows]}, n_videos_analysed}
+    for a ProductionSpec profile — same tables production_profile_detail() reads."""
+    profile = conn.execute("SELECT n_videos_analysed FROM style_profiles WHERE profile_id = ?", (profile_id,)).fetchone()
+    numeric_rows = conn.execute(
+        "SELECT attribute, mean_val, std_val, min_val, max_val, median_val FROM profile_fingerprint_numeric WHERE profile_id = ?",
+        (profile_id,),
+    ).fetchall()
+    categorical_rows = conn.execute(
+        "SELECT attribute, value, share_pct FROM profile_fingerprint_categorical WHERE profile_id = ? ORDER BY share_pct DESC",
+        (profile_id,),
+    ).fetchall()
+    categorical = {}
+    for r in categorical_rows:
+        categorical.setdefault(r["attribute"], []).append({"value": r["value"], "share_pct": r["share_pct"]})
+    return {
+        "numeric": {r["attribute"]: dict(r) for r in numeric_rows},
+        "categorical": categorical,
+        "n_videos_analysed": profile["n_videos_analysed"] if profile else 0,
+    }
+
+
+def _build_production_creation_prompt(conn, content_block, style_profile_id, production_profile_id):
+    prod_fp = _production_profile_fingerprint(conn, production_profile_id)
+    style_row = conn.execute(
+        """SELECT p.overview, c.channel_name FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.profile_id = ?""", (style_profile_id,),
+    ).fetchone()
+    prod_row = conn.execute(
+        """SELECT c.channel_name FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.profile_id = ?""", (production_profile_id,),
+    ).fetchone()
+
+    avg_shot_length = (prod_fp["numeric"].get("avg_shot_length_sec") or {}).get("mean_val") or 2.5
+    shot_mix_summary = ", ".join(
+        f"{label} {prod_fp['numeric'][attr]['mean_val']:.0f}%"
+        for attr, label in PRODUCTION_CREATION_SHOT_MIX_FIELDS if attr in prod_fp["numeric"]
+    ) or "no shot-mix data yet"
+    style_overview = (style_row["overview"] or "").strip() if style_row else ""
+
+    return PRODUCTION_CREATION_PROMPT.format(
+        content_block=content_block,
+        production_channel_name=prod_row["channel_name"] if prod_row else "the production profile",
+        n_analysed=prod_fp["n_videos_analysed"],
+        avg_shot_length=avg_shot_length,
+        shot_mix_summary=shot_mix_summary,
+        style_channel_name=style_row["channel_name"] if style_row else "the style profile",
+        style_overview_suffix=f" — {style_overview[:300]}" if style_overview else "",
+    )
+
+
+def _generate_production_creation(creation_id):
+    """Runs the LLM generation for a just-created production_spec_creations
+    row and saves the result. Runtime/shot-count totals are computed here
+    from the beats, not taken from the LLM, so they can't drift from what's
+    actually in beats_json."""
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM production_spec_creations WHERE creation_id = ?", (creation_id,)).fetchone()
+    if not row:
+        conn.close()
+        return
+    try:
+        label, content_block = _production_creation_source_content(
+            conn, row["source_kind"], row["source_video_id"], row["source_book_id"],
+            row["source_section_id"], row["source_transformation_id"],
+        )
+        if content_block is None:
+            raise ValueError("Source content not found — it may have been deleted since this creation was started.")
+        prompt = _build_production_creation_prompt(conn, content_block, row["style_profile_id"], row["production_profile_id"])
+        data = generate_json(prompt, max_tokens=4096)
+        beats = data.get("beats") or []
+        runtime = sum(
+            ((b.get("duration_sec_min") or 0) + (b.get("duration_sec_max") or 0)) / 2
+            for b in beats
+        )
+        shot_min = sum(b.get("shot_count_min") or 0 for b in beats)
+        shot_max = sum(b.get("shot_count_max") or 0 for b in beats)
+        conn.execute(
+            """UPDATE production_spec_creations SET
+               title = COALESCE(NULLIF(title, ''), ?), dek = ?, beats_json = ?, production_notes_json = ?,
+               target_runtime_sec = ?, target_shot_count_min = ?, target_shot_count_max = ?,
+               status = 'generated', generation_error = NULL, generated_at = datetime('now')
+               WHERE creation_id = ?""",
+            (
+                data.get("title"), data.get("dek"), json.dumps(beats), json.dumps(data.get("production_notes") or []),
+                runtime, shot_min, shot_max, creation_id,
+            ),
+        )
+        conn.commit()
+    except Exception as e:
+        conn.execute(
+            "UPDATE production_spec_creations SET status = 'failed', generation_error = ? WHERE creation_id = ?",
+            (str(e), creation_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+PRODUCTION_CREATION_SOURCE_KIND_LABELS = {
+    "video": "Video", "video_section": "Video chapter",
+    "book": "Book", "book_section": "Book chapter", "creation": "Studio Creation",
+}
+
+
 @app.route("/production/spec-creations")
 def production_spec_creations_list():
     conn = get_conn()
     rows = conn.execute(
-        """SELECT c.creation_id, c.title, c.view_url, c.created_at,
-                  v.video_id AS source_video_id, v.title AS source_title,
+        """SELECT c.creation_id, c.title, c.view_url, c.created_at, c.status,
+                  c.source_kind, c.source_video_id, c.source_book_id, c.source_section_id, c.source_transformation_id,
                   sp.profile_code AS style_profile_code,
                   pp.profile_code AS production_profile_code
            FROM production_spec_creations c
-           LEFT JOIN videos v ON v.video_id = c.source_video_id
            LEFT JOIN style_profiles sp ON sp.profile_id = c.style_profile_id
            LEFT JOIN style_profiles pp ON pp.profile_id = c.production_profile_id
            ORDER BY c.created_at DESC"""
     ).fetchall()
+    rows = [
+        dict(r, source_title=_production_creation_source_label(
+            conn, r["source_kind"], r["source_video_id"], r["source_book_id"],
+            r["source_section_id"], r["source_transformation_id"],
+        ), source_kind_label=PRODUCTION_CREATION_SOURCE_KIND_LABELS.get(r["source_kind"] or "video", "Video"))
+        for r in rows
+    ]
     conn.close()
     return render_template("production_spec_creations_list.html", active="production-spec-creations", rows=rows)
 
@@ -2977,24 +3231,58 @@ def production_spec_creation_create():
     conn = get_conn()
     if request.method == "POST":
         title = (request.form.get("title") or "").strip()
-        source_video_id = request.form.get("source_video_id") or None
+        source = request.form.get("source") or ""
         style_profile_id = request.form.get("style_profile_id") or None
         production_profile_id = request.form.get("production_profile_id") or None
         view_url = (request.form.get("view_url") or "").strip() or None
-        if not title:
-            flash("Title is required.")
+        source_kind, _, source_id = source.partition(":")
+        if source_kind not in ("video", "video_section", "book", "book_section", "creation") or not source_id:
+            source_kind = None
+        if not (source_kind and style_profile_id and production_profile_id):
+            flash("Source, profile style, and production profile are all required to generate a spec creation.")
         else:
-            conn.execute(
+            source_video_id = source_id if source_kind == "video" else None
+            source_book_id = source_id if source_kind == "book" else None
+            source_section_id = source_id if source_kind in ("video_section", "book_section") else None
+            source_transformation_id = source_id if source_kind == "creation" else None
+            cur = conn.execute(
                 "INSERT INTO production_spec_creations "
-                "(title, source_video_id, style_profile_id, production_profile_id, view_url) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (title, source_video_id, style_profile_id, production_profile_id, view_url),
+                "(title, source_kind, source_video_id, source_book_id, source_section_id, source_transformation_id, "
+                "style_profile_id, production_profile_id, view_url) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (title, source_kind, source_video_id, source_book_id, source_section_id, source_transformation_id,
+                 style_profile_id, production_profile_id, view_url),
             )
             conn.commit()
+            creation_id = cur.lastrowid
             conn.close()
-            return redirect(url_for("production_spec_creations_list"))
+            _generate_production_creation(creation_id)
+            conn = get_conn()
+            status = conn.execute(
+                "SELECT status, generation_error FROM production_spec_creations WHERE creation_id = ?", (creation_id,)
+            ).fetchone()
+            conn.close()
+            if status and status["status"] == "failed":
+                flash(f"Generation failed: {status['generation_error']}")
+            return redirect(url_for("production_spec_creation_detail", creation_id=creation_id))
 
     videos = conn.execute("SELECT video_id, title FROM videos ORDER BY ingested_at DESC LIMIT 500").fetchall()
+    video_sections = conn.execute(
+        """SELECT vs.section_id, vs.section_title, v.title AS parent_title FROM video_sections vs
+           JOIN videos v ON v.video_id = vs.video_id
+           ORDER BY v.ingested_at DESC, vs.section_number LIMIT 300"""
+    ).fetchall()
+    books = conn.execute("SELECT book_id, title FROM books ORDER BY ingested_at DESC LIMIT 200").fetchall()
+    book_sections = conn.execute(
+        """SELECT bs.section_id, bs.section_title, b.title AS parent_title FROM book_sections bs
+           JOIN books b ON b.book_id = bs.book_id
+           ORDER BY b.ingested_at DESC, bs.section_number LIMIT 300"""
+    ).fetchall()
+    creations = conn.execute(
+        """SELECT t.transformation_id, t.generated_title, p.profile_code FROM transformations t
+           LEFT JOIN style_profiles p ON p.profile_id = t.target_profile_id
+           ORDER BY t.generated_at DESC LIMIT 200"""
+    ).fetchall()
     style_profiles = conn.execute(
         """SELECT p.profile_id, p.profile_code, c.channel_name FROM style_profiles p
            JOIN channels c ON c.channel_id = p.channel_id
@@ -3009,8 +3297,67 @@ def production_spec_creation_create():
     conn.close()
     return render_template(
         "production_spec_creation_form.html", active="production-spec-creations",
-        videos=videos, style_profiles=style_profiles, production_profiles=production_profiles,
+        videos=videos, video_sections=video_sections, books=books, book_sections=book_sections,
+        creations=creations, style_profiles=style_profiles, production_profiles=production_profiles,
     )
+
+
+@app.route("/production/spec-creations/<int:creation_id>")
+def production_spec_creation_detail(creation_id):
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT c.*, sp.profile_code AS style_profile_code, sc.channel_name AS style_channel_name,
+                  pp.profile_code AS production_profile_code, pc.channel_name AS production_channel_name,
+                  pp.n_videos_analysed AS production_n_analysed
+           FROM production_spec_creations c
+           LEFT JOIN style_profiles sp ON sp.profile_id = c.style_profile_id
+           LEFT JOIN channels sc ON sc.channel_id = sp.channel_id
+           LEFT JOIN style_profiles pp ON pp.profile_id = c.production_profile_id
+           LEFT JOIN channels pc ON pc.channel_id = pp.channel_id
+           WHERE c.creation_id = ?""",
+        (creation_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        flash(f"No such production spec creation: {creation_id}")
+        return redirect(url_for("production_spec_creations_list"))
+
+    row = dict(row)
+    row["source_title"] = _production_creation_source_label(
+        conn, row["source_kind"], row["source_video_id"], row["source_book_id"],
+        row["source_section_id"], row["source_transformation_id"],
+    )
+    row["source_kind_label"] = PRODUCTION_CREATION_SOURCE_KIND_LABELS.get(row["source_kind"] or "video", "Video")
+
+    beats = json.loads(row["beats_json"]) if row["beats_json"] else []
+    production_notes = json.loads(row["production_notes_json"]) if row["production_notes_json"] else []
+
+    shot_mix = {}
+    if row["production_profile_id"]:
+        fp = _production_profile_fingerprint(conn, row["production_profile_id"])
+        for attr, label in PRODUCTION_CREATION_SHOT_MIX_FIELDS:
+            v = (fp["numeric"].get(attr) or {}).get("mean_val")
+            if v is not None:
+                shot_mix[label] = round(v, 1)
+    conn.close()
+
+    return render_template(
+        "production_creation_detail.html", active="production-spec-creations",
+        creation=row, beats=beats, production_notes=production_notes, shot_mix=shot_mix,
+    )
+
+
+@app.route("/production/spec-creations/<int:creation_id>/regenerate", methods=["POST"])
+def production_spec_creation_regenerate(creation_id):
+    _generate_production_creation(creation_id)
+    conn = get_conn()
+    status = conn.execute(
+        "SELECT status, generation_error FROM production_spec_creations WHERE creation_id = ?", (creation_id,)
+    ).fetchone()
+    conn.close()
+    if status and status["status"] == "failed":
+        flash(f"Generation failed: {status['generation_error']}")
+    return redirect(url_for("production_spec_creation_detail", creation_id=creation_id))
 
 
 @app.route("/production/spec-creations/<int:creation_id>/delete", methods=["POST"])

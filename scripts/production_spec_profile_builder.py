@@ -51,11 +51,21 @@ def build_profile(channel_name, profile_code, min_n=1):
         raise ValueError(f"No channel found named '{channel_name}'.")
     channel_id = channel["channel_id"]
 
+    # Dedupe by content_hash: the same source video has been submitted for
+    # shot analysis twice before (a known duplicate-submission issue), which
+    # would otherwise double-count its shot-pacing numbers in every mean/std
+    # below. Inputs sharing a hash keep only the earliest (MIN input_id); a
+    # NULL hash (hashing failed) is never collapsed with another NULL — each
+    # forms its own singleton group via the input_id fallback key.
     rows = conn.execute(
         """SELECT a.*, i.title FROM production_spec_attributes a
            JOIN production_spec_inputs i ON i.input_id = a.input_id
-           WHERE i.channel_id = ? AND a.classified_by IS NOT NULL AND a.classified_by != 'pending'""",
-        (channel_id,),
+           WHERE i.channel_id = ? AND a.classified_by IS NOT NULL AND a.classified_by != 'pending'
+             AND i.input_id IN (
+               SELECT MIN(input_id) FROM production_spec_inputs WHERE channel_id = ?
+               GROUP BY COALESCE(content_hash, 'i' || input_id)
+             )""",
+        (channel_id, channel_id),
     ).fetchall()
     n = len(rows)
 

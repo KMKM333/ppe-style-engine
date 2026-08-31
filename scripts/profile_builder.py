@@ -112,11 +112,21 @@ def build_profile(channel_name, profile_code, length_band, min_n=10):
         raise ValueError(f"No such channel: {channel_name}")
     channel_id = ch["channel_id"]
 
+    # Dedupe by content_hash: a video re-submitted twice (a known issue with
+    # bulk Instagram batches) would otherwise double-count that one video's
+    # numbers in every mean/std/share_pct below. Videos sharing a hash keep
+    # only the earliest (MIN video_id); a NULL hash (pre-dates the field, or
+    # hashing failed) is never collapsed with another NULL — each forms its
+    # own singleton group via the video_id fallback key.
     rows = conn.execute(
         """SELECT a.* FROM video_attributes a
            JOIN videos v ON v.video_id = a.video_id
-           WHERE v.channel_id = ?""",
-        (channel_id,),
+           WHERE v.channel_id = ?
+             AND v.video_id IN (
+               SELECT MIN(video_id) FROM videos WHERE channel_id = ?
+               GROUP BY COALESCE(content_hash, 'v' || video_id)
+             )""",
+        (channel_id, channel_id),
     ).fetchall()
     n = len(rows)
 

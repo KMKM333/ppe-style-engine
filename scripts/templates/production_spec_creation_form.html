@@ -2,40 +2,62 @@
 {% block title %}New Spec Creation — PPE Engine{% endblock %}
 {% block content %}
 <h1>New Production Spec Creation</h1>
-<div class="sub">Track a written production spec document — the content source it's built from, the writing-style profile it references, and the Production Spec (shot-pacing) profile it recreates.</div>
+<div class="sub">Pick a content source, a writing-style profile, and a Production Spec (shot-pacing) profile — Claude generates the beat sheet, title, and dek from them. This can take up to a minute.</div>
 
 <form method="post" action="{{ url_for('production_spec_creation_create') }}" class="card">
-  <label for="title">Title</label>
-  <input type="text" id="title" name="title" placeholder="e.g. PPE Engine · Production Spec, The Militia Divide" required>
+  <label for="title">Title <span class="muted">(optional — generated automatically if left blank)</span></label>
+  <input type="text" id="title" name="title" placeholder="e.g. The Militia Divide">
 
-  <label for="source_video_id">Source input (content video)</label>
-  <select id="source_video_id" name="source_video_id">
-    <option value="">None</option>
-    {% for v in videos %}
-    <option value="{{ v.video_id }}">{{ v.title }}</option>
-    {% endfor %}
+  <label for="source">Source content</label>
+  <select id="source" name="source" required>
+    <option value="">Select a source…</option>
+    <optgroup label="Videos">
+      {% for v in videos %}
+      <option value="video:{{ v.video_id }}">{{ v.title }}</option>
+      {% endfor %}
+    </optgroup>
+    <optgroup label="Video chapters">
+      {% for s in video_sections %}
+      <option value="video_section:{{ s.section_id }}">{{ s.parent_title }} — {{ s.section_title }}</option>
+      {% endfor %}
+    </optgroup>
+    <optgroup label="Books">
+      {% for b in books %}
+      <option value="book:{{ b.book_id }}">{{ b.title }}</option>
+      {% endfor %}
+    </optgroup>
+    <optgroup label="Book chapters">
+      {% for s in book_sections %}
+      <option value="book_section:{{ s.section_id }}">{{ s.parent_title }} — {{ s.section_title }}</option>
+      {% endfor %}
+    </optgroup>
+    <optgroup label="Studio Creations">
+      {% for c in creations %}
+      <option value="creation:{{ c.transformation_id }}">{{ c.generated_title or ('Creation #' ~ c.transformation_id) }}{% if c.profile_code %} ({{ c.profile_code }}){% endif %}</option>
+      {% endfor %}
+    </optgroup>
   </select>
 
   <label for="style_profile_id">Profile style (writing/content style)</label>
-  <select id="style_profile_id" name="style_profile_id">
-    <option value="">None</option>
+  <select id="style_profile_id" name="style_profile_id" required>
+    <option value="">Select a style profile…</option>
     {% for p in style_profiles %}
     <option value="{{ p.profile_id }}">{{ p.profile_code }} ({{ p.channel_name }})</option>
     {% endfor %}
   </select>
 
   <label for="production_profile_id">Production profile (shot-pacing style)</label>
-  <select id="production_profile_id" name="production_profile_id">
-    <option value="">None</option>
+  <select id="production_profile_id" name="production_profile_id" required>
+    <option value="">Select a production profile…</option>
     {% for p in production_profiles %}
     <option value="{{ p.profile_id }}">{{ p.profile_code }} ({{ p.channel_name }})</option>
     {% endfor %}
   </select>
 
-  <label for="view_url">View URL</label>
+  <label for="view_url">External view URL <span class="muted">(optional — e.g. a hand-built artifact link)</span></label>
   <input type="text" id="view_url" name="view_url" placeholder="https://claude.ai/code/artifact/...">
 
-  <button type="submit">Create</button>
+  <button type="submit">Generate</button>
   <a href="{{ url_for('production_spec_creations_list') }}" class="btn secondary">Cancel</a>
 </form>
 {% endblock %}

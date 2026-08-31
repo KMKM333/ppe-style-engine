@@ -669,5 +669,18 @@ CREATE TABLE IF NOT EXISTS production_spec_creations (
     style_profile_id            INTEGER REFERENCES style_profiles(profile_id),
     production_profile_id          INTEGER REFERENCES style_profiles(profile_id),
     view_url                          TEXT,
+    source_kind                          TEXT DEFAULT 'video',  -- 'video' / 'video_section' / 'book' / 'book_section' / 'creation'
+    source_book_id                          INTEGER REFERENCES books(book_id),
+    source_section_id                          INTEGER,  -- a video_sections.section_id or book_sections.section_id, per source_kind
+    source_transformation_id                      INTEGER REFERENCES transformations(transformation_id),
+    dek                                   TEXT,    -- one-sentence generated summary line
+    beats_json                              TEXT,  -- JSON array of the generated beat sheet (step/title/duration/shots/content/illustration/punch tags)
+    production_notes_json                      TEXT,  -- JSON array of {heading, text} craft notes
+    target_runtime_sec                            REAL,    -- computed from beats_json, not the LLM
+    target_shot_count_min                            INTEGER,
+    target_shot_count_max                               INTEGER,
+    status                                                  TEXT DEFAULT 'draft',  -- draft / generated / failed
+    generation_error                                           TEXT,
+    generated_at                                                  TEXT,
     created_at                           TEXT DEFAULT (datetime('now'))
 );

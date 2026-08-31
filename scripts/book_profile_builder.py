@@ -80,11 +80,20 @@ def get_or_create_profile(conn, code, channel_id):
 
 def build_author_profile(author_name, profile_code, min_n=1):
     conn = get_conn()
+    # Dedupe by (title, author): books have no content_hash column like
+    # videos/production-spec inputs do, but the same book re-uploaded twice
+    # under an identical title would otherwise double-count it in every
+    # mean/std/share_pct below. Keeps only the earliest (MIN book_id) per
+    # title — same reasoning as the content_hash dedup in profile_builder.py
+    # and production_spec_profile_builder.py.
     rows = conn.execute(
         """SELECT a.*, b.subject, b.summary, b.title FROM book_attributes a
            JOIN books b ON b.book_id = a.book_id
-           WHERE b.author = ? AND a.classified_by IS NOT NULL AND a.classified_by != 'pending'""",
-        (author_name,),
+           WHERE b.author = ? AND a.classified_by IS NOT NULL AND a.classified_by != 'pending'
+             AND b.book_id IN (
+               SELECT MIN(book_id) FROM books WHERE author = ? GROUP BY title
+             )""",
+        (author_name, author_name),
     ).fetchall()
     n = len(rows)
 

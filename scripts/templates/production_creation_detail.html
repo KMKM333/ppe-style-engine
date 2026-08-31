@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}{{ creation.title or ('Spec creation #' ~ creation.creation_id) }} — PPE Engine{% endblock %}
+{% block content %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Expanded:wght@700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<h1>{{ creation.title or ('Spec creation #' ~ creation.creation_id) }}</h1>
+<div class="sub">
+  <a href="{{ url_for('production_spec_creations_list') }}">&larr; Production Specs Creations</a>
+  &middot;
+  {% if creation.status == 'generated' %}<span class="pill confirmed">generated {{ creation.generated_at }}</span>
+  {% elif creation.status == 'failed' %}<span class="pill bad">failed</span>
+  {% else %}<span class="pill draft">draft</span>{% endif %}
+  &middot;
+  <form method="post" action="{{ url_for('production_spec_creation_regenerate', creation_id=creation.creation_id) }}" style="display:inline">
+    <button type="submit" class="btn secondary" style="margin:0;padding:3px 10px;font-size:12.5px;vertical-align:middle">{{ 'Regenerate' if creation.status == 'generated' else 'Retry generation' }}</button>
+  </form>
+</div>
+
+{% if creation.status == 'failed' %}
+<div class="card" style="border-color:#f87171;margin-top:14px">
+  <strong style="color:#f87171">Generation failed:</strong> {{ creation.generation_error }}
+</div>
+{% endif %}
+
+{% if creation.status == 'generated' %}
+<div class="pc-doc" style="margin-top:20px">
+  <header class="pc-masthead">
+    <div class="pc-mast-row">
+      <span class="pc-kicker">PPE Engine &middot; Production Spec</span>
+      <span class="pc-mast-source pc-mono">
+        Source ({{ creation.source_kind_label }}): {{ creation.source_title or '—' }}
+        {% if creation.style_channel_name %} &middot; voice: {{ creation.style_channel_name }} ({{ creation.style_profile_code }}){% endif %}
+        {% if creation.production_channel_name %} &middot; pacing: {{ creation.production_channel_name }} ({{ creation.production_profile_code }}){% endif %}
+      </span>
+    </div>
+    {% if creation.dek %}<p class="pc-dek">{{ creation.dek }}</p>{% endif %}
+    <div class="pc-stat-strip">
+      <div class="pc-stat"><span class="pc-stat-value pc-mono">{{ creation.target_runtime_sec|round|int if creation.target_runtime_sec else '—' }}s</span><span class="pc-stat-label">Target runtime</span></div>
+      <div class="pc-stat"><span class="pc-stat-value pc-mono">{{ creation.target_shot_count_min|int if creation.target_shot_count_min else '—' }}&ndash;{{ creation.target_shot_count_max|int if creation.target_shot_count_max else '—' }}</span><span class="pc-stat-label">Target shot count</span></div>
+      <div class="pc-stat"><span class="pc-stat-value pc-mono">{{ beats|length }}</span><span class="pc-stat-label">Beats</span></div>
+      <div class="pc-stat"><span class="pc-stat-value pc-mono">n={{ creation.production_n_analysed or 0 }}</span><span class="pc-stat-label">Pacing sample size</span></div>
+    </div>
+  </header>
+
+  {% if beats %}
+  <section>
+    <div class="pc-section-head"><span class="pc-section-num pc-mono">01</span><h2>Beat-length overview</h2></div>
+    <p class="pc-section-note">Each beat's target duration, relative to the longest beat — a per-beat view, not a per-shot pacing curve, since shot-level sequencing isn't generated yet.</p>
+    <div class="pc-chart-card">
+      {% set max_dur = (beats | map(attribute='duration_sec_max') | select('number') | list | max) if beats else 1 %}
+      {% for b in beats %}
+      {% set dur = ((b.duration_sec_min or 0) + (b.duration_sec_max or 0)) / 2 %}
+      <div class="pc-beatbar-row">
+        <span class="pc-beatbar-label pc-mono">{{ b.step }}</span>
+        <div class="pc-beatbar-track"><div class="pc-beatbar-fill" style="width:{{ ((dur / max_dur) * 100) if max_dur else 0 }}%"></div></div>
+        <span class="pc-beatbar-dur pc-mono">{{ b.duration_sec_min }}&ndash;{{ b.duration_sec_max }}s</span>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section>
+    <div class="pc-section-head"><span class="pc-section-num pc-mono">02</span><h2>Beat sheet</h2></div>
+    <p class="pc-section-note">Content drawn from PPE Engine's classification of the source; illustration direction and captions generated against it.</p>
+    {% for b in beats %}
+    <div class="pc-beat">
+      <div class="pc-beat-head">
+        <span class="pc-beat-step pc-mono">{{ b.step }}</span>
+        <span class="pc-beat-title">{{ b.title }}</span>
+        <div class="pc-beat-meta">
+          <span class="m">dur <b>{{ b.duration_sec_min }}&ndash;{{ b.duration_sec_max }}s</b></span>
+          <span class="m">shots <b>{{ b.shot_count_min }}&ndash;{{ b.shot_count_max }}</b></span>
+        </div>
+      </div>
+      <div class="pc-beat-body">
+        <div class="pc-beat-col">
+          <h4>Content</h4>
+          <ul>{% for p in b.content_points %}<li>{{ p }}</li>{% endfor %}</ul>
+        </div>
+        <div class="pc-beat-col">
+          <h4>Illustration &amp; caption</h4>
+          <ul>{% for c in b.illustration_captions %}<li>{{ c }}</li>{% endfor %}</ul>
+          {% if b.punch_tags %}<div class="pc-punch">{% for t in b.punch_tags %}<span>{{ t }}</span>{% endfor %}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </section>
+  {% endif %}
+
+  {% if shot_mix %}
+  <section>
+    <div class="pc-section-head"><span class="pc-section-num pc-mono">03</span><h2>Shot-type mix</h2></div>
+    <p class="pc-section-note">Measured from {{ creation.production_channel_name }}'s real production-spec analysis (n={{ creation.production_n_analysed }} video{{ 's' if creation.production_n_analysed != 1 else '' }} classified so far).</p>
+    <div class="pc-mix-bar">
+      {% for label, pct in shot_mix.items() %}{% if pct > 0 %}<div class="pc-mix-seg pc-mono" style="width:{{ pct }}%">{{ label }} {{ pct }}%</div>{% endif %}{% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  {% if production_notes %}
+  <section>
+    <div class="pc-section-head"><span class="pc-section-num pc-mono">04</span><h2>Production notes</h2></div>
+    <div class="pc-notes-grid">
+      {% for n in production_notes %}
+      <div class="pc-note"><h4>{{ n.heading }}</h4><p>{{ n.text }}</p></div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <footer class="pc-colophon">
+    <span>Built from {{ creation.source_title or 'the source' }} &middot; classification &amp; breakdown by Claude</span>
+    <span>Pacing template &middot; {{ creation.production_channel_name or '—' }}, n={{ creation.production_n_analysed or 0 }}</span>
+  </footer>
+</div>
+{% elif creation.status == 'draft' %}
+<div class="card" style="margin-top:20px">
+  <div class="empty-state">
+    <p>Not generated yet.</p>
+  </div>
+</div>
+{% endif %}
+
+<style>
+  .pc-doc{
+    --pc-bg:#18140F; --pc-surface:#211C18; --pc-surface-2:#251F1B; --pc-ink:#F1E8E2;
+    --pc-ink-muted:#B7ABA3; --pc-ink-faint:#8A7D75; --pc-rule:#3B322C; --pc-rule-strong:#4C4038;
+    --pc-accent:#E24951; --pc-accent-ink:#18140F; --pc-slate:#9DB0BB; --pc-slate-soft:#516069; --pc-chip-bg:#332A25;
+  }
+  :root[data-theme="light"] .pc-doc{
+    --pc-bg:#F2EBE9; --pc-surface:#FFFFFF; --pc-surface-2:#FBF6F4; --pc-ink:#1C1A19;
+    --pc-ink-muted:#5B5551; --pc-ink-faint:#8A827C; --pc-rule:#DCD1CC; --pc-rule-strong:#C7B9B3;
+    --pc-accent:#C1272D; --pc-accent-ink:#FFFFFF; --pc-slate:#3E4C57; --pc-slate-soft:#93A2AC; --pc-chip-bg:#EFE2DF;
+  }
+  .pc-doc{ background:var(--pc-bg); color:var(--pc-ink); font-family:"IBM Plex Sans",-apple-system,sans-serif;
+    font-size:16px; line-height:1.55; padding:32px 28px 60px; border-radius:12px; border:1px solid var(--pc-rule); }
+  .pc-doc h1,.pc-doc h2,.pc-doc h3{ font-family:"Archivo Expanded","IBM Plex Sans",sans-serif; text-wrap:balance; margin:0; }
+  .pc-mono{ font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums; }
+  .pc-masthead{ padding-bottom:24px; border-bottom:2px solid var(--pc-ink); }
+  .pc-mast-row{ display:flex; justify-content:space-between; align-items:baseline; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
+  .pc-kicker{ font-family:"IBM Plex Mono",monospace; font-size:12px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--pc-accent); }
+  .pc-mast-source{ font-family:"IBM Plex Mono",monospace; font-size:11.5px; color:var(--pc-ink-faint); text-align:right; }
+  .pc-doc h1{ font-size:clamp(1.9rem,4.5vw,2.8rem); font-weight:900; letter-spacing:-.01em; line-height:1; color:var(--pc-ink); }
+  .pc-dek{ max-width:62ch; margin:12px 0 0; font-size:1.02rem; color:var(--pc-ink-muted); }
+  .pc-stat-strip{ display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--pc-rule-strong); border:1px solid var(--pc-rule-strong); margin-top:22px; }
+  .pc-stat{ background:var(--pc-surface); padding:12px 14px 14px; }
+  .pc-stat-value{ display:block; font-family:"IBM Plex Mono",monospace; font-weight:600; font-size:1.35rem; color:var(--pc-ink); }
+  .pc-stat-label{ display:block; margin-top:3px; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--pc-ink-faint); }
+  .pc-doc section{ margin-top:44px; }
+  .pc-section-head{ display:flex; align-items:baseline; gap:12px; margin-bottom:16px; }
+  .pc-section-num{ font-size:12.5px; color:var(--pc-accent); font-weight:600; }
+  .pc-doc h2{ font-size:1.35rem; font-weight:800; color:var(--pc-ink); }
+  .pc-section-note{ max-width:66ch; color:var(--pc-ink-muted); font-size:.95rem; margin:0 0 18px; }
+  .pc-chart-card{ background:var(--pc-surface); border:1px solid var(--pc-rule); padding:16px 18px; }
+  .pc-beatbar-row{ display:grid; grid-template-columns:24px 1fr 70px; align-items:center; gap:10px; margin-bottom:8px; }
+  .pc-beatbar-label{ color:var(--pc-accent); font-size:12px; }
+  .pc-beatbar-track{ height:14px; background:var(--pc-surface-2); border:1px solid var(--pc-rule); border-radius:2px; overflow:hidden; }
+  .pc-beatbar-fill{ height:100%; background:var(--pc-slate-soft); }
+  .pc-beatbar-dur{ font-size:11px; color:var(--pc-ink-faint); text-align:right; }
+  .pc-beat{ border:1px solid var(--pc-rule); background:var(--pc-surface); margin-bottom:12px; }
+  .pc-beat-head{ display:grid; grid-template-columns:44px 1fr auto; align-items:center; gap:12px; padding:12px 16px; background:var(--pc-surface-2); border-bottom:1px solid var(--pc-rule); }
+  .pc-beat-step{ font-family:"Archivo Expanded",sans-serif; font-weight:900; font-size:1.35rem; color:var(--pc-accent); line-height:1; }
+  .pc-beat-title{ font-family:"Archivo Expanded",sans-serif; font-weight:800; font-size:1.02rem; color:var(--pc-ink); }
+  .pc-beat-meta{ display:flex; gap:12px; flex-wrap:wrap; justify-self:end; }
+  .pc-beat-meta .m{ font-family:"IBM Plex Mono",monospace; font-size:11px; color:var(--pc-ink-muted); white-space:nowrap; }
+  .pc-beat-meta .m b{ color:var(--pc-ink); font-weight:600; }
+  .pc-beat-body{ display:grid; grid-template-columns:1.15fr 1fr; gap:0; }
+  .pc-beat-col{ padding:14px 16px; }
+  .pc-beat-col + .pc-beat-col{ border-left:1px solid var(--pc-rule); }
+  .pc-beat-col h4{ margin:0 0 8px; font-size:10.5px; letter-spacing:.07em; text-transform:uppercase; color:var(--pc-ink-faint); font-weight:600; }
+  .pc-beat-col ul{ margin:0; padding:0 0 0 15px; }
+  .pc-beat-col li{ margin-bottom:5px; font-size:.9rem; color:var(--pc-ink); }
+  .pc-beat-col li:last-child{ margin-bottom:0; }
+  .pc-punch{ margin-top:10px; display:flex; flex-wrap:wrap; gap:6px; }
+  .pc-punch span{ font-family:"IBM Plex Mono",monospace; font-size:11px; background:var(--pc-chip-bg); color:var(--pc-ink); padding:3px 8px; border-radius:3px; }
+  .pc-mix-bar{ display:flex; height:32px; border:1px solid var(--pc-rule-strong); overflow:hidden; border-radius:2px; }
+  .pc-mix-seg{ display:flex; align-items:center; justify-content:center; font-size:10.5px; color:var(--pc-accent-ink); white-space:nowrap; overflow:hidden; }
+  .pc-mix-seg:nth-child(6n+1){ background:var(--pc-slate-soft); }
+  .pc-mix-seg:nth-child(6n+2){ background:var(--pc-accent); }
+  .pc-mix-seg:nth-child(6n+3){ background:var(--pc-ink); color:var(--pc-bg); }
+  .pc-mix-seg:nth-child(6n+4){ background:var(--pc-slate); }
+  .pc-mix-seg:nth-child(6n+5){ background:var(--pc-rule-strong); color:var(--pc-ink); }
+  .pc-mix-seg:nth-child(6n){ background:var(--pc-chip-bg); color:var(--pc-ink); }
+  .pc-notes-grid{ display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--pc-rule); border:1px solid var(--pc-rule); }
+  .pc-note{ background:var(--pc-surface); padding:16px 18px; }
+  .pc-note h4{ margin:0 0 6px; font-size:.95rem; font-weight:700; color:var(--pc-ink); }
+  .pc-note p{ margin:0; font-size:.88rem; color:var(--pc-ink-muted); }
+  .pc-colophon{ margin-top:24px; padding-top:14px; border-top:1px solid var(--pc-rule); font-family:"IBM Plex Mono",monospace; font-size:10.5px; color:var(--pc-ink-faint); display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+  @media (max-width:640px){
+    .pc-stat-strip{ grid-template-columns:repeat(2,1fr); }
+    .pc-beat-body{ grid-template-columns:1fr; }
+    .pc-beat-col + .pc-beat-col{ border-left:none; border-top:1px solid var(--pc-rule); }
+    .pc-notes-grid{ grid-template-columns:1fr; }
+  }
+</style>
+{% endblock %}

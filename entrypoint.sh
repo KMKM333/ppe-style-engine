@@ -60,4 +60,26 @@ python3 migrate_add_swipe_candidates.py
 # swipe candidates — same idempotent pattern, safe on every boot.
 python3 migrate_add_swipe_sources_json.py
 
+# Adds the Production Spec pipeline tables (production_spec_inputs/shots/
+# attributes + video_creations) — these were previously only ever created
+# by a manual one-off run against the live disk, so a fresh disk would be
+# missing them; same idempotent pattern, safe on every boot.
+python3 migrate_add_production_spec.py
+
+# Adds production_spec_creations, the written-production-spec-document
+# tracker (e.g. "The Militia Divide") — same idempotent pattern, safe on
+# every boot.
+python3 migrate_add_production_spec_creations.py
+
+# Adds production_spec_creations' generated-content columns (dek,
+# beats_json, production_notes_json, target runtime/shot-count, status),
+# upgrading it from a manual link tracker into a real generation target —
+# same idempotent pattern, safe on every boot.
+python3 migrate_add_production_creation_content.py
+
+# Generalizes production_spec_creations' source from "always a whole
+# video" to a video/book chapter or an existing Studio Creation — same
+# idempotent pattern, safe on every boot.
+python3 migrate_add_production_creation_source_kinds.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

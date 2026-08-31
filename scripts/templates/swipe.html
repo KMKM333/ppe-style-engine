@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Swipe — PPE Engine</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
+    --text: #e6e8ec; --muted: #8b93a3; --accent: #6ea8fe; --accent-rgb: 110,168,254;
+    --good: #4ade80; --bad: #f87171;
+  }
+  :root[data-theme="light"] {
+    --bg: #f7f8fa; --panel: #ffffff; --panel2: #f1f3f6; --border: #e2e5ea;
+    --text: #14161c; --muted: #6b7280; --accent: #2563eb; --accent-rgb: 37,99,235;
+    --good: #16a34a; --bad: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; overscroll-behavior-y: contain; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); display: flex; flex-direction: column;
+  }
+  .top {
+    display: flex; align-items: center; justify-content: space-between; padding: 14px 18px;
+    padding-top: max(14px, env(safe-area-inset-top)); flex-shrink: 0;
+  }
+  .top a {
+    color: var(--muted); text-decoration: none; font-size: 13px; display: inline-flex;
+    align-items: center; gap: 6px;
+  }
+  .top a:hover { color: var(--text); }
+  .top .brand { font-weight: 700; font-size: 14.5px; display: flex; align-items: center; gap: 8px; }
+  .top .brand-icon { width: 20px; height: 20px; border-radius: 6px; background: var(--accent); }
+
+  .stage {
+    flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 8px 18px 18px; min-height: 0;
+  }
+
+  .deck { position: relative; width: 100%; max-width: 380px; height: min(66vh, 560px); }
+  .card {
+    position: absolute; inset: 0; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 20px; padding: 24px 22px; display: flex; flex-direction: column;
+    box-shadow: 0 12px 40px rgba(0,0,0,.25); touch-action: none; cursor: grab;
+    transition: transform .25s ease, opacity .25s ease;
+  }
+  .card:active { cursor: grabbing; }
+  @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
+  .card.dragging { transition: none; }
+  .card.exit-left { transform: translate(-140%, 10%) rotate(-18deg); opacity: 0; }
+  .card.exit-right { transform: translate(140%, 10%) rotate(18deg); opacity: 0; }
+
+  .card-kind {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10.5px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; color: var(--accent);
+    background: rgba(var(--accent-rgb), .13); display: inline-flex; align-self: flex-start;
+    padding: 3px 9px; border-radius: 999px; margin-bottom: 12px;
+  }
+  .card-channel { font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+  .card-hook {
+    font-size: 21px; font-weight: 700; line-height: 1.3; margin: 0 0 14px;
+  }
+  .card-summary { font-size: 14px; line-height: 1.55; color: var(--text); margin: 0 0 16px; overflow-y: auto; flex: 1; min-height: 0; }
+  .card-block-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--muted); margin: 10px 0 6px;
+  }
+  .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+  .tag {
+    font-size: 11.5px; background: var(--panel2); border: 1px solid var(--border); color: var(--muted);
+    padding: 3px 9px; border-radius: 999px;
+  }
+  .ex-list { margin: 0; padding-left: 16px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+  .empty-card, .loading-card {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; color: var(--muted); font-size: 14px; gap: 10px;
+    padding: 20px;
+  }
+
+  .actions { display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 26px; }
+  .action-btn {
+    width: 58px; height: 58px; border-radius: 50%; border: 1px solid var(--border);
+    background: var(--panel); display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--text); box-shadow: 0 6px 18px rgba(0,0,0,.18);
+  }
+  .action-btn:active { transform: scale(.94); }
+  .action-btn svg { width: 24px; height: 24px; }
+  .action-btn.dislike { color: var(--bad); }
+  .action-btn.like { color: var(--good); }
+  .action-btn.like svg { width: 26px; height: 26px; }
+  .action-btn:disabled { opacity: .4; cursor: default; }
+
+  /* --- matches (after a like) --- */
+  .matches { width: 100%; max-width: 380px; }
+  .matches h2 { font-size: 18px; margin: 0 0 4px; }
+  .matches .sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  .match-card {
+    display: block; text-decoration: none; color: inherit; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
+  }
+  .match-card:hover { border-color: var(--accent); }
+  .match-code { font-weight: 700; font-size: 15px; }
+  .match-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .match-arrow { float: right; color: var(--muted); }
+  .keep-swiping {
+    display: block; width: 100%; margin-top: 6px; padding: 12px; border-radius: 12px; border: none;
+    background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+
+  a.icon-link { color: var(--muted); }
+</style>
+</head>
+<body data-page="swipe">
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('ppe-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  })();
+</script>
+
+<div class="top">
+  <div class="brand"><span class="brand-icon"></span>Swipe</div>
+  <a href="{{ url_for('dashboard') }}">← PPE Engine</a>
+</div>
+
+<div class="stage">
+  <div class="deck" id="deck">
+    <div class="loading-card" id="loading-card">Finding something…</div>
+  </div>
+
+  <div class="actions" id="actions" style="display:none">
+    <button type="button" class="action-btn dislike" id="btn-dislike" title="Not this one">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/></svg>
+    </button>
+    <button type="button" class="action-btn like" id="btn-like" title="Like this one">
+      <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+    </button>
+  </div>
+
+  <div class="matches" id="matches" style="display:none"></div>
+</div>
+
+<script>
+  var current = null;
+  var deck = document.getElementById('deck');
+  var actions = document.getElementById('actions');
+  var matchesEl = document.getElementById('matches');
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
+
+  function renderCard(c) {
+    deck.innerHTML = '';
+    matchesEl.style.display = 'none';
+    actions.style.display = 'flex';
+
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'active-card';
+
+    var kindLabel = c.kind === 'video' ? 'Video' : 'Book';
+    var termsHtml = (c.terms || []).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('');
+    var exHtml = (c.examples || []).map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('');
+
+    card.innerHTML =
+      '<div class="card-kind">' + kindLabel + '</div>' +
+      '<div class="card-channel">' + esc(c.channel_name || '') + '</div>' +
+      '<div class="card-hook">' + esc(c.hook || c.title) + '</div>' +
+      '<div class="card-summary">' + esc(c.summary || '') +
+        (termsHtml ? '<div class="card-block-label">Terms</div><div class="tag-row">' + termsHtml + '</div>' : '') +
+        (exHtml ? '<div class="card-block-label">Examples</div><ul class="ex-list">' + exHtml + '</ul>' : '') +
+      '</div>';
+    deck.appendChild(card);
+    wireDrag(card);
+  }
+
+  function renderEmpty(message) {
+    deck.innerHTML = '<div class="empty-card">' + esc(message || 'No more inputs to swipe on right now.') + '</div>';
+    actions.style.display = 'none';
+  }
+
+  function loadNext() {
+    current = null;
+    deck.innerHTML = '<div class="loading-card">Finding something…</div>';
+    actions.style.display = 'none';
+    fetch('/api/swipe/next').then(function (r) { return r.json(); }).then(function (data) {
+      if (!data.ok || !data.candidate) { renderEmpty(data.message); return; }
+      current = data.candidate;
+      renderCard(current);
+    }).catch(function () { renderEmpty('Something went wrong loading the next input.'); });
+  }
+
+  function act(action, exitClass) {
+    if (!current) return;
+    var card = document.getElementById('active-card');
+    var candidateId = current.candidate_id;
+    if (card) card.classList.add(exitClass);
+    actions.style.display = 'none';
+
+    fetch('/api/swipe/action', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidate_id: candidateId, action: action }),
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      if (action === 'like' && data.ok && data.matches && data.matches.length) {
+        setTimeout(function () { renderMatches(data.matches, data.source); }, 220);
+      } else {
+        setTimeout(loadNext, 220);
+      }
+    }).catch(function () { setTimeout(loadNext, 220); });
+  }
+
+  function renderMatches(matches, source) {
+    deck.innerHTML = '';
+    var html = '<h2>Liked. Here are 3 profiles for it</h2><div class="sub">Pick one to open it straight in Transform.</div>';
+    matches.forEach(function (m) {
+      var href = '/transform?source=' + encodeURIComponent(source) + '&profile=' + encodeURIComponent(m.profile_code);
+      html += '<a class="match-card" href="' + href + '">' +
+        '<span class="match-arrow">→</span>' +
+        '<div class="match-code">' + esc(m.profile_code) + '</div>' +
+        '<div class="match-meta">' + esc(m.channel_name) + (m.subject ? ' · ' + esc(m.subject) : '') + '</div>' +
+        '</a>';
+    });
+    html += '<button type="button" class="keep-swiping" id="btn-keep-swiping">Keep swiping</button>';
+    matchesEl.innerHTML = html;
+    matchesEl.style.display = 'block';
+    document.getElementById('btn-keep-swiping').addEventListener('click', loadNext);
+  }
+
+  document.getElementById('btn-dislike').addEventListener('click', function () { act('dislike', 'exit-left'); });
+  document.getElementById('btn-like').addEventListener('click', function () { act('like', 'exit-right'); });
+
+  // Basic drag-to-swipe on top of the buttons, which remain the reliable path.
+  function wireDrag(card) {
+    var startX = 0, startY = 0, dx = 0, dragging = false;
+    function down(x, y) { dragging = true; startX = x; startY = y; card.classList.add('dragging'); }
+    function move(x, y) {
+      if (!dragging) return;
+      dx = x - startX;
+      var rot = Math.max(-18, Math.min(18, dx / 8));
+      card.style.transform = 'translate(' + dx + 'px, ' + (Math.abs(y - startY) * 0.15) + 'px) rotate(' + rot + 'deg)';
+    }
+    function up() {
+      if (!dragging) return;
+      dragging = false;
+      card.classList.remove('dragging');
+      if (dx > 110) { act('like', 'exit-right'); }
+      else if (dx < -110) { act('dislike', 'exit-left'); }
+      else { card.style.transform = ''; }
+      dx = 0;
+    }
+    card.addEventListener('pointerdown', function (e) { down(e.clientX, e.clientY); card.setPointerCapture(e.pointerId); });
+    card.addEventListener('pointermove', function (e) { move(e.clientX, e.clientY); });
+    card.addEventListener('pointerup', up);
+    card.addEventListener('pointercancel', up);
+  }
+
+  loadNext();
+</script>
+</body>
+</html>

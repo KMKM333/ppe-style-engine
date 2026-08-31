@@ -11,6 +11,7 @@ import base64
 import json
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -26,7 +27,7 @@ from profile_builder import build_profile
 from score_engine import rate_input, score_intrinsic, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
 from transform import build_transform_prompt, build_data_output_prompt, save_transformation, score_transformation, FORM_SPECS
 from hybrid_profile_builder import create_hybrid_profile
-from llm_client import generate_transform, LLMConfigError
+from llm_client import generate_transform, generate_json, LLMConfigError
 from ingest_book import ingest_book_text
 from ingest_video import ingest_video_row
 import gatekeeper
@@ -4320,6 +4321,233 @@ def transform_save():
         return redirect(url_for("transform_form"))
 
     return render_template("transform_result.html", active="transform", result=result)
+
+
+# ============================================================
+# SWIPE MECHANISM (v1 — single-source candidates only)
+# ============================================================
+# A phone-first way to triage the existing corpus: one source item at a
+# time, swipe past or keep, and a "like" surfaces three style profiles
+# worth writing it up for. Deliberately single-source for now — combining
+# 2-3 inputs into one candidate is a harder, separate problem to tackle
+# once this core loop is validated. See swipe.html for the frontend.
+
+SWIPE_BUFFER_TARGET = 6  # keep at least this many 'queued' candidates on hand
+SWIPE_PITCH_PROMPT = """You're curating short-form video ideas from an archive of source material for a creator who makes Instagram Reels.
+
+SOURCE TYPE: {kind}
+TITLE: {title}
+CONTENT (may be truncated):
+{content}
+
+Return raw JSON only, matching exactly this shape — no markdown fence, no commentary:
+{{
+  "hook": "a punchy one-line hook for the video this source could become, under 90 characters",
+  "summary": "2-3 sentences: what this source covers and why it could make an interesting Instagram script",
+  "terms": ["up to 4 short key terms or concepts from this source"],
+  "examples": ["up to 3 concrete named examples or case studies from this source, if any exist"]
+}}"""
+
+
+def _pick_unswiped_source(conn):
+    """Returns (kind, row) for a random item never turned into a swipe
+    candidate before, or (None, None) once both pools are exhausted.
+    Coin-flips video vs. book each call so the queue doesn't skew toward
+    whichever table happens to be bigger."""
+    kinds = ["video", "book"]
+    random.shuffle(kinds)
+    for kind in kinds:
+        if kind == "video":
+            row = conn.execute(
+                """SELECT v.video_id, v.title, v.script AS content, c.channel_name
+                   FROM videos v JOIN channels c ON c.channel_id = v.channel_id
+                   WHERE NOT EXISTS (SELECT 1 FROM swipe_candidates sc WHERE sc.source_video_id = v.video_id)
+                   ORDER BY RANDOM() LIMIT 1"""
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """SELECT b.book_id, b.title, COALESCE(b.summary, substr(b.full_text, 1, 4000)) AS content,
+                          b.author AS channel_name
+                   FROM books b
+                   WHERE NOT EXISTS (SELECT 1 FROM swipe_candidates sc WHERE sc.source_book_id = b.book_id)
+                   ORDER BY RANDOM() LIMIT 1"""
+            ).fetchone()
+        if row:
+            return kind, row
+    return None, None
+
+
+def _generate_swipe_candidate(conn):
+    """Picks one never-swiped source item, asks Claude for a pitch, and
+    stores it as a fresh 'queued' candidate. Returns the new candidate_id,
+    or None if the corpus has nothing left to turn into a candidate (or
+    the LLM call itself fails, e.g. no ANTHROPIC_API_KEY configured)."""
+    kind, row = _pick_unswiped_source(conn)
+    if not row:
+        return None
+
+    content = (row["content"] or "")[:4000]
+    prompt = SWIPE_PITCH_PROMPT.format(kind=kind, title=row["title"], content=content)
+    try:
+        pitch = generate_json(prompt, max_tokens=600)
+    except Exception as e:
+        print(f"[swipe] pitch generation failed for {kind} #{row[0]}: {e}")
+        return None
+
+    cur = conn.execute(
+        """INSERT INTO swipe_candidates
+           (source_kind, source_video_id, source_book_id, hook, pitch_summary, terms_json, examples_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (
+            kind,
+            row["video_id"] if kind == "video" else None,
+            row["book_id"] if kind == "book" else None,
+            pitch.get("hook"), pitch.get("summary"),
+            json.dumps(pitch.get("terms") or []), json.dumps(pitch.get("examples") or []),
+        ),
+    )
+    conn.commit()
+    return cur.lastrowid
+
+
+def _ensure_swipe_buffer(conn, target=SWIPE_BUFFER_TARGET, max_new=3):
+    """Tops the queued buffer back up, generating at most max_new candidates
+    per call so a single request never blocks on more than a few LLM
+    round-trips. A real background job (per the roadmap) replaces this
+    on-demand top-up once the buffer needs to stay warm without a request
+    triggering it."""
+    queued = conn.execute("SELECT COUNT(*) FROM swipe_candidates WHERE status = 'queued'").fetchone()[0]
+    made = 0
+    while queued + made < target and made < max_new:
+        if _generate_swipe_candidate(conn) is None:
+            break  # corpus exhausted, or generation failed — don't loop forever
+        made += 1
+    return made
+
+
+def _serialize_candidate(row):
+    return {
+        "candidate_id": row["candidate_id"],
+        "kind": row["source_kind"],
+        "title": row["title"],
+        "channel_name": row["channel_name"],
+        "hook": row["hook"],
+        "summary": row["pitch_summary"],
+        "terms": json.loads(row["terms_json"]) if row["terms_json"] else [],
+        "examples": json.loads(row["examples_json"]) if row["examples_json"] else [],
+        "source_url": row["source_url"],
+    }
+
+
+@app.route("/swipe")
+def swipe_page():
+    return render_template("swipe.html", active="swipe")
+
+
+@app.route("/api/swipe/next")
+def api_swipe_next():
+    conn = get_conn()
+    _ensure_swipe_buffer(conn)
+    row = conn.execute(
+        """SELECT sc.*,
+                  COALESCE(v.title, b.title) AS title,
+                  COALESCE(c.channel_name, b.author) AS channel_name,
+                  v.url AS source_url
+           FROM swipe_candidates sc
+           LEFT JOIN videos v ON v.video_id = sc.source_video_id
+           LEFT JOIN channels c ON c.channel_id = v.channel_id
+           LEFT JOIN books b ON b.book_id = sc.source_book_id
+           WHERE sc.status = 'queued'
+           ORDER BY sc.created_at LIMIT 1"""
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"ok": True, "candidate": None, "message": "No more inputs to swipe on right now."})
+    return jsonify({"ok": True, "candidate": _serialize_candidate(row)})
+
+
+@app.route("/api/swipe/action", methods=["POST"])
+def api_swipe_action():
+    payload = request.get_json(silent=True) or {}
+    candidate_id = payload.get("candidate_id")
+    action = payload.get("action")
+    if not candidate_id or action not in ("like", "dislike"):
+        return jsonify({"ok": False, "error": "'candidate_id' and action ('like'/'dislike') are required"}), 400
+
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM swipe_candidates WHERE candidate_id = ?", (candidate_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such candidate"}), 404
+
+    status = "liked" if action == "like" else "disliked"
+    conn.execute(
+        "UPDATE swipe_candidates SET status = ?, decided_at = datetime('now') WHERE candidate_id = ?",
+        (status, candidate_id),
+    )
+    conn.commit()
+
+    matches = []
+    if action == "like":
+        # Exclude the profile belonging to this candidate's own source
+        # channel — matching an input to its own channel's profile isn't
+        # an interesting suggestion. v1 match heuristic: same subject
+        # first (highest-analysed within it), then pad with the overall
+        # highest-analysed profiles. A real fingerprint-fit score (like
+        # the Production track's P4) can replace this later.
+        own_channel_id = None
+        if row["source_kind"] == "video":
+            v = conn.execute("SELECT channel_id FROM videos WHERE video_id = ?", (row["source_video_id"],)).fetchone()
+            own_channel_id = v["channel_id"] if v else None
+        else:
+            b = conn.execute("SELECT author FROM books WHERE book_id = ?", (row["source_book_id"],)).fetchone()
+            if b and b["author"]:
+                c = conn.execute(
+                    "SELECT channel_id FROM channels WHERE channel_name = ? AND platform = 'Book'", (b["author"],)
+                ).fetchone()
+                own_channel_id = c["channel_id"] if c else None
+
+        source_subject = None
+        if own_channel_id:
+            sp = conn.execute("SELECT subject FROM style_profiles WHERE channel_id = ?", (own_channel_id,)).fetchone()
+            source_subject = sp["subject"] if sp else None
+
+        exclude_clause = "AND p.channel_id != ?" if own_channel_id else ""
+        base_params = [own_channel_id] if own_channel_id else []
+
+        subject_matches = []
+        if source_subject:
+            subject_matches = conn.execute(
+                f"""SELECT p.profile_code, p.subject, c.channel_name, p.n_videos_analysed
+                    FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+                    WHERE p.subject = ? {exclude_clause}
+                    ORDER BY p.n_videos_analysed DESC LIMIT 3""",
+                [source_subject] + base_params,
+            ).fetchall()
+
+        have_codes = [r["profile_code"] for r in subject_matches]
+        remaining = 3 - len(subject_matches)
+        fallback = []
+        if remaining > 0:
+            exclude_codes_clause = ""
+            fb_params = base_params[:]
+            if have_codes:
+                exclude_codes_clause = f"AND p.profile_code NOT IN ({','.join('?' * len(have_codes))})"
+                fb_params += have_codes
+            fallback = conn.execute(
+                f"""SELECT p.profile_code, p.subject, c.channel_name, p.n_videos_analysed
+                    FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+                    WHERE 1=1 {exclude_clause} {exclude_codes_clause}
+                    ORDER BY p.n_videos_analysed DESC LIMIT ?""",
+                fb_params + [remaining],
+            ).fetchall()
+
+        matches = [dict(r) for r in (list(subject_matches) + list(fallback))]
+
+    conn.close()
+    source_id = row["source_video_id"] if row["source_kind"] == "video" else row["source_book_id"]
+    source = f"{row['source_kind']}:{source_id}"
+    return jsonify({"ok": True, "status": status, "matches": matches, "source": source})
 
 
 if __name__ == "__main__":

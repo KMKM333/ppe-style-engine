@@ -628,6 +628,30 @@ CREATE TABLE IF NOT EXISTS video_creations (
     updated_at                                        TEXT DEFAULT (datetime('now'))
 );
 
+-- ============================================================
+-- 9. SWIPE CANDIDATES (mobile input-triage mechanism, v1)
+-- ============================================================
+-- One row per generated "pitch" for a single source item (a video or a
+-- book) — v1 is deliberately single-source only, no multi-input
+-- combining yet. The pitch (hook/summary/terms/examples) is generated
+-- once by Claude and cached here so swiping never waits on a live call.
+CREATE TABLE IF NOT EXISTS swipe_candidates (
+    candidate_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_kind       TEXT NOT NULL,                              -- 'video' / 'book'
+    source_video_id   INTEGER REFERENCES videos(video_id),
+    source_book_id    INTEGER REFERENCES books(book_id),
+    hook              TEXT,                                       -- punchy one-line hook
+    pitch_summary     TEXT,                                       -- 2-3 sentence "why this could work" summary
+    terms_json        TEXT,                                       -- JSON array of a few key terms
+    examples_json     TEXT,                                       -- JSON array of a few named examples
+    status            TEXT DEFAULT 'queued',                      -- queued / liked / disliked
+    decided_at        TEXT,
+    created_at        TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_swipe_candidates_status ON swipe_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_swipe_candidates_source_video ON swipe_candidates(source_video_id);
+CREATE INDEX IF NOT EXISTS idx_swipe_candidates_source_book ON swipe_candidates(source_book_id);
+
 -- Written production spec documents (e.g. "The Militia Divide") that combine
 -- a content source video, a writing-style profile, and a Production Spec
 -- (shot-pacing) profile, with a link out to the published document.

@@ -59,6 +59,7 @@
     border-radius: 20px; padding: 24px 22px; display: flex; flex-direction: column;
     box-shadow: 0 12px 40px rgba(0,0,0,.25); touch-action: none; cursor: grab;
     transition: transform .25s ease, opacity .25s ease;
+    user-select: none; -webkit-user-select: none;
   }
   .card:active { cursor: grabbing; }
   @media (prefers-reduced-motion: reduce) { .card { transition: none; } }
@@ -76,7 +77,18 @@
   .card-hook {
     font-size: 21px; font-weight: 700; line-height: 1.3; margin: 0 0 14px;
   }
-  .card-summary { font-size: 14px; line-height: 1.55; color: var(--text); margin: 0 0 16px; overflow-y: auto; flex: 1; min-height: 0; }
+  .card-summary {
+    font-size: 14px; line-height: 1.55; color: var(--text); margin: 0 0 16px; overflow-y: auto; flex: 1; min-height: 0;
+    /* This box scrolls vertically (long summaries), but the card itself
+       needs to catch horizontal drags to swipe — touch-action: none on the
+       parent .card doesn't reach in here, so without this the browser
+       claims every touch that starts on the visible text for native
+       scrolling before the JS pointer-drag handler ever sees it, which is
+       most of the card's surface. pan-y lets vertical touches still
+       scroll natively, but a horizontal-leaning touch falls through to
+       the parent's pointer events instead of being claimed for scroll. */
+    touch-action: pan-y;
+  }
   .card-block-label {
     font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
     color: var(--muted); margin: 10px 0 6px;
@@ -339,7 +351,10 @@
   document.getElementById('btn-dislike').addEventListener('click', function () { act('dislike', 'exit-left'); });
   document.getElementById('btn-like').addEventListener('click', function () { act('like', 'exit-right'); });
 
-  // Basic drag-to-swipe on top of the buttons, which remain the reliable path.
+  // Drag-to-swipe. .card-summary's touch-action:pan-y means a vertical-
+  // leaning touch there becomes a native scroll instead of pointer events
+  // (fires pointercancel), while a horizontal-leaning touch anywhere on
+  // the card falls through to these handlers as normal.
   function wireDrag(card) {
     var startX = 0, startY = 0, dx = 0, dragging = false;
     function down(x, y) { dragging = true; startX = x; startY = y; card.classList.add('dragging'); }
@@ -349,19 +364,22 @@
       var rot = Math.max(-18, Math.min(18, dx / 8));
       card.style.transform = 'translate(' + dx + 'px, ' + (Math.abs(y - startY) * 0.15) + 'px) rotate(' + rot + 'deg)';
     }
-    function up() {
+    function up(commit) {
       if (!dragging) return;
       dragging = false;
       card.classList.remove('dragging');
-      if (dx > 110) { act('like', 'exit-right'); }
-      else if (dx < -110) { act('dislike', 'exit-left'); }
+      if (commit && dx > 110) { act('like', 'exit-right'); }
+      else if (commit && dx < -110) { act('dislike', 'exit-left'); }
       else { card.style.transform = ''; }
       dx = 0;
     }
     card.addEventListener('pointerdown', function (e) { down(e.clientX, e.clientY); card.setPointerCapture(e.pointerId); });
     card.addEventListener('pointermove', function (e) { move(e.clientX, e.clientY); });
-    card.addEventListener('pointerup', up);
-    card.addEventListener('pointercancel', up);
+    card.addEventListener('pointerup', function () { up(true); });
+    // A cancel (e.g. the browser taking over for a native vertical scroll
+    // inside .card-summary) should just snap the card back, never count
+    // as a like/dislike decision the user didn't actually make.
+    card.addEventListener('pointercancel', function () { up(false); });
   }
 
   loadNext();

@@ -5221,7 +5221,18 @@ def _score_profile_matches(conn, candidate_row):
 
     pitch_text = _build_pitch_text(candidate_row)
     features = extract_auto_features(pitch_text, candidate_row["hook"] or "")
-    voice_raw = score_against_profiles(features, raw_text=pitch_text)
+    # No raw_text here, deliberately: score_against_profiles' membership
+    # check pulls every video's FULL SCRIPT per channel and runs a
+    # difflib.SequenceMatcher comparison against it for every profile —
+    # meant to catch a real Transform input that's literally a duplicate
+    # of a training video. A swipe candidate's synthetic pitch can never
+    # be a literal duplicate of a real script, so that check was always
+    # going to fail here while still paying its full O(profiles x videos)
+    # cost — this was the actual ~5s bottleneck behind a slow swipe-right,
+    # not the topical-overlap query. Omitting raw_text skips straight to
+    # attribute-correlation scoring, which is the only axis that's
+    # actually meaningful for a synthetic pitch anyway.
+    voice_raw = score_against_profiles(features)
     voice_by_code = {r["profile_code"]: (r["total_score"] or 0) / 100.0 for r in voice_raw}
 
     cand_words = _significant_words(

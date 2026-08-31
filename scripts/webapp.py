@@ -5036,6 +5036,18 @@ def swipe_page():
     return render_template("swipe.html", active="swipe", format_choices=SWIPE_FORM_CHOICES)
 
 
+@app.route("/sw.js")
+def swipe_service_worker():
+    """Served at the root path (not /static/sw.js) so its default scope is
+    '/' and it can actually control /swipe — a service worker's scope is
+    the directory it's served from unless widened by a
+    Service-Worker-Allowed header, and PWA install criteria require an
+    active service worker controlling the page being installed."""
+    resp = send_file(os.path.join(app.static_folder, "sw.js"), mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    return resp
+
+
 @app.route("/api/swipe/next")
 def api_swipe_next():
     conn = get_conn()

@@ -4,6 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Swipe — PPE Engine</title>
+
+<link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+<meta name="theme-color" content="#0f1115">
+
+<!-- iOS "Add to Home Screen" doesn't reliably read the manifest above, so
+     it needs its own tags: apple-touch-icon for the home-screen icon,
+     apple-mobile-web-app-capable to open without Safari's UI chrome
+     (standalone mode), and apple-mobile-web-app-title for the name shown
+     under the icon (defaults to the page <title> otherwise, which would
+     read "Swipe — PPE Engine" instead of just "Swipe"). -->
+<link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Swipe">
+
 <style>
   :root {
     --bg: #0f1115; --panel: #171a21; --panel2: #1e222b; --border: #2a2f3a;
@@ -146,6 +161,11 @@
       document.documentElement.setAttribute('data-theme', t);
     } catch (e) {}
   })();
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('{{ url_for("swipe_service_worker") }}').catch(function () {});
+    });
+  }
 </script>
 
 <div class="top">

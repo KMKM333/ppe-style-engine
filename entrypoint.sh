@@ -82,4 +82,10 @@ python3 migrate_add_production_creation_content.py
 # idempotent pattern, safe on every boot.
 python3 migrate_add_production_creation_source_kinds.py
 
+# One-time content backfill for the pre-existing "The Militia Divide" row
+# (predates the generation pipeline) — transcribes its real hand-authored
+# beat sheet in, rather than leaving it stuck on "Not generated yet."
+# Safe on every boot: only touches the row if beats_json is still NULL.
+python3 migrate_backfill_militia_divide_creation.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

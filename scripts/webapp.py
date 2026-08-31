@@ -5134,40 +5134,53 @@ def _significant_words(texts):
     return words
 
 
-def _topical_overlap_score(conn, channel_id, cand_words):
+def _channel_topical_vocab(conn):
+    """Precomputes every channel's own topical vocabulary (terms + examples,
+    video-side and book-side) in 4 bulk queries total — replaces the old
+    per-profile version of this (4-6+ queries PER profile), which is what
+    made liking a swipe candidate take ~3.5s: with ~38 profiles that was
+    150-250+ sequential SQL queries on every single like. Returns
+    {channel_id: set(significant_words)}, built once per request and reused
+    across every profile being scored."""
+    texts_by_channel = {}
+
+    def add(channel_id, *parts):
+        if channel_id is None:
+            return
+        texts_by_channel.setdefault(channel_id, []).extend(p for p in parts if p)
+
+    for r in conn.execute(
+        "SELECT v.channel_id, vt.term, vt.definition FROM video_terms vt JOIN videos v ON v.video_id = vt.video_id"
+    ).fetchall():
+        add(r["channel_id"], r["term"], r["definition"])
+    for r in conn.execute(
+        "SELECT v.channel_id, ve.example_title, ve.example_text FROM video_examples ve JOIN videos v ON v.video_id = ve.video_id"
+    ).fetchall():
+        add(r["channel_id"], r["example_title"], r["example_text"])
+    for r in conn.execute(
+        "SELECT c.channel_id, bt.term, bt.definition FROM channels c "
+        "JOIN books b ON b.author = c.channel_name JOIN book_terms bt ON bt.book_id = b.book_id"
+    ).fetchall():
+        add(r["channel_id"], r["term"], r["definition"])
+    for r in conn.execute(
+        "SELECT c.channel_id, be.example_title, be.example_text FROM channels c "
+        "JOIN books b ON b.author = c.channel_name JOIN book_examples be ON be.book_id = b.book_id"
+    ).fetchall():
+        add(r["channel_id"], r["example_title"], r["example_text"])
+
+    return {cid: _significant_words(texts) for cid, texts in texts_by_channel.items()}
+
+
+def _topical_overlap_score(cand_words, profile_words):
     """Fraction of the candidate's own vocabulary (terms + examples) that
-    also shows up in this profile's own real content (its channel's terms/
-    examples, or for a book-author channel, that author's books' terms/
-    examples). Asymmetric on purpose: it asks "does this profile actually
-    talk about the same specific things this candidate mentions", not
-    "how similar are the two vocabularies overall" — a profile with a much
-    larger vocabulary shouldn't be penalized for it."""
-    if not channel_id or not cand_words:
-        return 0.0
-    texts = []
-    for r in conn.execute(
-        "SELECT term, definition FROM video_terms vt JOIN videos v ON v.video_id = vt.video_id "
-        "WHERE v.channel_id = ? LIMIT 100", (channel_id,)
-    ).fetchall():
-        texts.append(r["term"]); texts.append(r["definition"])
-    for r in conn.execute(
-        "SELECT example_title, example_text FROM video_examples ve JOIN videos v ON v.video_id = ve.video_id "
-        "WHERE v.channel_id = ? LIMIT 100", (channel_id,)
-    ).fetchall():
-        texts.append(r["example_title"]); texts.append(r["example_text"])
-
-    ch = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
-    if ch:
-        for book in conn.execute("SELECT book_id FROM books WHERE author = ?", (ch["channel_name"],)).fetchall():
-            for r in conn.execute("SELECT term, definition FROM book_terms WHERE book_id = ? LIMIT 100", (book["book_id"],)).fetchall():
-                texts.append(r["term"]); texts.append(r["definition"])
-            for r in conn.execute(
-                "SELECT example_title, example_text FROM book_examples WHERE book_id = ? LIMIT 100", (book["book_id"],)
-            ).fetchall():
-                texts.append(r["example_title"]); texts.append(r["example_text"])
-
-    profile_words = _significant_words(texts)
-    if not profile_words:
+    also shows up in a profile's own real content. Asymmetric on purpose:
+    it asks "does this profile actually talk about the same specific
+    things this candidate mentions", not "how similar are the two
+    vocabularies overall" — a profile with a much larger vocabulary
+    shouldn't be penalized for it. Takes precomputed word sets (see
+    _channel_topical_vocab) rather than querying, so this is a pure,
+    near-free set intersection now."""
+    if not cand_words or not profile_words:
         return 0.0
     return len(cand_words & profile_words) / max(1, len(cand_words))
 
@@ -5201,12 +5214,13 @@ def _score_profile_matches(conn, candidate_row):
         "SELECT p.profile_code, p.subject, p.channel_id, p.n_videos_analysed, c.channel_name "
         "FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id"
     ).fetchall()
+    channel_vocab = _channel_topical_vocab(conn)
 
     scored = []
     for p in profiles:
         subject_score = 1.0 if (p["subject"] and p["subject"] in source_subjects) else 0.0
         voice_score = voice_by_code.get(p["profile_code"], 0.0)
-        topical_score = _topical_overlap_score(conn, p["channel_id"], cand_words)
+        topical_score = _topical_overlap_score(cand_words, channel_vocab.get(p["channel_id"]))
         blended = 0.6 * subject_score + 0.2 * voice_score + 0.2 * topical_score
         scored.append({
             "profile_code": p["profile_code"], "subject": p["subject"], "channel_name": p["channel_name"],

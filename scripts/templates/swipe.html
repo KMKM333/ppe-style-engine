@@ -215,8 +215,22 @@
   function renderMatches(matches, source) {
     deck.innerHTML = '';
     var html = '<h2>Liked. Here are 3 profiles for it</h2><div class="sub">Pick one to open it straight in Transform.</div>';
+    // Pass the candidate's own short pitch as pasted text rather than
+    // source=kind:id — the latter makes Transform pull the FULL book or
+    // video text as the source, which for a whole book is tens of
+    // thousands of words and made the generation call slow enough to hang
+    // a production worker thread. The pitch is exactly what a script
+    // should be built from anyway: the hook, summary, and terms/examples
+    // already extracted for this candidate.
+    var pitchLines = [current.hook || '', current.summary || ''];
+    if (current.terms && current.terms.length) pitchLines.push('Terms: ' + current.terms.join(', '));
+    if (current.examples && current.examples.length) pitchLines.push('Examples: ' + current.examples.join('; '));
+    var pastedText = pitchLines.filter(Boolean).join('\n\n');
+    var pastedTitle = current.hook || current.title || '';
     matches.forEach(function (m) {
-      var href = '/transform?source=' + encodeURIComponent(source) + '&profile=' + encodeURIComponent(m.profile_code);
+      var href = '/transform?pasted_title=' + encodeURIComponent(pastedTitle) +
+        '&pasted_text=' + encodeURIComponent(pastedText) +
+        '&profile=' + encodeURIComponent(m.profile_code);
       html += '<a class="match-card" href="' + href + '">' +
         '<span class="match-arrow">→</span>' +
         '<div class="match-code">' + esc(m.profile_code) + '</div>' +

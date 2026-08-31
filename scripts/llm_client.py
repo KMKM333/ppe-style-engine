@@ -52,15 +52,23 @@ def _log_usage(model, usage, call_site):
 
 def generate_transform(prompt_text: str, model: str = DEFAULT_MODEL) -> dict:
     """Sends a transform.TRANSFORM_PROMPT-shaped prompt to Claude and parses
-    the TITLE:/SCRIPT: reply into {"title": ..., "script": ..., "raw_reply": ...}."""
+    the TITLE:/SCRIPT: reply into {"title": ..., "script": ..., "raw_reply": ...}.
+    Streams like generate_json() does — a large prompt (e.g. a full book's
+    text as the source) makes the non-streaming call take long enough to
+    hit the SDK's own timeout, which previously showed up as a multi-minute
+    hang tying up a production worker thread instead of a clean error."""
     client = _client()
-    message = client.messages.create(
+    reply_parts = []
+    with client.messages.stream(
         model=model,
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt_text}],
-    )
-    _log_usage(model, message.usage, "generate_transform")
-    reply = "".join(block.text for block in message.content if block.type == "text")
+    ) as stream:
+        for chunk in stream.text_stream:
+            reply_parts.append(chunk)
+        final_message = stream.get_final_message()
+    _log_usage(model, getattr(final_message, "usage", None), "generate_transform")
+    reply = "".join(reply_parts)
     return _parse_reply(reply)
 
 

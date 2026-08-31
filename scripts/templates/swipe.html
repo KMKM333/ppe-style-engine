@@ -92,21 +92,43 @@
   .action-btn.like svg { width: 26px; height: 26px; }
   .action-btn:disabled { opacity: .4; cursor: default; }
 
-  /* --- matches (after a like) --- */
+  /* --- matches (after a like) / format picker / creating (steps 2-4) --- */
   .matches { width: 100%; max-width: 380px; }
   .matches h2 { font-size: 18px; margin: 0 0 4px; }
   .matches .sub { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
   .match-card {
-    display: block; text-decoration: none; color: inherit; background: var(--panel);
+    display: block; width: 100%; text-decoration: none; color: inherit; background: var(--panel);
     border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px;
+    font: inherit; text-align: left; cursor: pointer;
   }
   .match-card:hover { border-color: var(--accent); }
+  .match-card:disabled { opacity: .5; cursor: default; }
   .match-code { font-weight: 700; font-size: 15px; }
   .match-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .match-arrow { float: right; color: var(--muted); }
   .keep-swiping {
     display: block; width: 100%; margin-top: 6px; padding: 12px; border-radius: 12px; border: none;
     background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+  .back-link {
+    background: none; border: none; color: var(--muted); font-size: 13px; padding: 0 0 14px;
+    cursor: pointer; font-family: inherit;
+  }
+  .back-link:hover { color: var(--text); }
+  .format-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .format-btn {
+    padding: 22px 14px; border-radius: 14px; border: 1px solid var(--border); background: var(--panel);
+    color: var(--text); font-weight: 700; font-size: 14.5px; cursor: pointer; text-align: center;
+  }
+  .format-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .format-btn:disabled { opacity: .5; cursor: default; }
+  .creating-state {
+    display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 30px 0;
+    color: var(--muted); font-size: 14px; text-align: center;
+  }
+  .error-box {
+    background: rgba(248, 113, 113, .12); border: 1px solid rgba(248, 113, 113, .3); color: var(--bad);
+    border-radius: 12px; padding: 12px 14px; font-size: 13px; margin-top: 12px;
   }
 
   a.icon-link { color: var(--muted); }
@@ -182,8 +204,11 @@
     actions.style.display = 'none';
   }
 
+  var lastMatches = null;
+
   function loadNext() {
     current = null;
+    lastMatches = null;
     deck.innerHTML = '<div class="loading-card">Finding something…</div>';
     actions.style.display = 'none';
     fetch('/api/swipe/next').then(function (r) { return r.json(); }).then(function (data) {
@@ -205,42 +230,72 @@
       body: JSON.stringify({ candidate_id: candidateId, action: action }),
     }).then(function (r) { return r.json(); }).then(function (data) {
       if (action === 'like' && data.ok && data.matches && data.matches.length) {
-        setTimeout(function () { renderMatches(data.matches, data.source); }, 220);
+        lastMatches = data.matches;
+        setTimeout(function () { renderMatches(data.matches); }, 220);
       } else {
         setTimeout(loadNext, 220);
       }
     }).catch(function () { setTimeout(loadNext, 220); });
   }
 
-  function renderMatches(matches, source) {
+  var FORMAT_CHOICES = {{ format_choices | tojson }};
+
+  function renderMatches(matches) {
     deck.innerHTML = '';
-    var html = '<h2>Liked. Here are 3 profiles for it</h2><div class="sub">Pick one to open it straight in Transform.</div>';
-    // Pass the candidate's own short pitch as pasted text rather than
-    // source=kind:id — the latter makes Transform pull the FULL book or
-    // video text as the source, which for a whole book is tens of
-    // thousands of words and made the generation call slow enough to hang
-    // a production worker thread. The pitch is exactly what a script
-    // should be built from anyway: the hook, summary, and terms/examples
-    // already extracted for this candidate.
-    var pitchLines = [current.hook || '', current.summary || ''];
-    if (current.terms && current.terms.length) pitchLines.push('Terms: ' + current.terms.join(', '));
-    if (current.examples && current.examples.length) pitchLines.push('Examples: ' + current.examples.join('; '));
-    var pastedText = pitchLines.filter(Boolean).join('\n\n');
-    var pastedTitle = current.hook || current.title || '';
+    var html = '<h2>Liked. Here are 3 profiles for it</h2><div class="sub">Pick a voice to write it in.</div>';
     matches.forEach(function (m) {
-      var href = '/transform?pasted_title=' + encodeURIComponent(pastedTitle) +
-        '&pasted_text=' + encodeURIComponent(pastedText) +
-        '&profile=' + encodeURIComponent(m.profile_code);
-      html += '<a class="match-card" href="' + href + '">' +
+      html += '<button type="button" class="match-card" data-profile="' + esc(m.profile_code) + '">' +
         '<span class="match-arrow">→</span>' +
         '<div class="match-code">' + esc(m.profile_code) + '</div>' +
         '<div class="match-meta">' + esc(m.channel_name) + (m.subject ? ' · ' + esc(m.subject) : '') + '</div>' +
-        '</a>';
+        '</button>';
     });
     html += '<button type="button" class="keep-swiping" id="btn-keep-swiping">Keep swiping</button>';
     matchesEl.innerHTML = html;
     matchesEl.style.display = 'block';
     document.getElementById('btn-keep-swiping').addEventListener('click', loadNext);
+    matchesEl.querySelectorAll('.match-card').forEach(function (btn) {
+      btn.addEventListener('click', function () { renderFormatPicker(btn.dataset.profile); });
+    });
+  }
+
+  function renderFormatPicker(profileCode) {
+    var html = '<button type="button" class="back-link" id="btn-back-to-profiles">‹ Back to profiles</button>' +
+      '<h2>Write it as…</h2><div class="sub">' + esc(profileCode) + ' — pick the format.</div>' +
+      '<div class="format-grid">';
+    FORMAT_CHOICES.forEach(function (fc) {
+      html += '<button type="button" class="format-btn" data-format="' + esc(fc[0]) + '">' + esc(fc[1]) + '</button>';
+    });
+    html += '</div>';
+    matchesEl.innerHTML = html;
+    document.getElementById('btn-back-to-profiles').addEventListener('click', function () {
+      lastMatches ? renderMatches(lastMatches) : loadNext();
+    });
+    matchesEl.querySelectorAll('.format-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () { createFromSwipe(profileCode, btn.dataset.format); });
+    });
+  }
+
+  function createFromSwipe(profileCode, format) {
+    var candidateId = current.candidate_id;
+    matchesEl.innerHTML = '<div class="creating-state">Writing it up…<br>This takes a few seconds.</div>';
+    fetch('/api/swipe/create', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ candidate_id: candidateId, profile_code: profileCode, format: format }),
+    }).then(function (r) { return r.json(); }).then(function (data) {
+      if (data.ok && data.redirect_url) {
+        window.location.href = data.redirect_url;
+      } else {
+        matchesEl.innerHTML = '<div class="creating-state">Couldn\'t create it.<div class="error-box">' +
+          esc(data.error || 'Unknown error') + '</div></div>' +
+          '<button type="button" class="keep-swiping" id="btn-retry-format" style="margin-top:14px">Try again</button>';
+        document.getElementById('btn-retry-format').addEventListener('click', function () { renderFormatPicker(profileCode); });
+      }
+    }).catch(function () {
+      matchesEl.innerHTML = '<div class="creating-state">Something went wrong.</div>' +
+        '<button type="button" class="keep-swiping" id="btn-retry-format2">Try again</button>';
+      document.getElementById('btn-retry-format2').addEventListener('click', function () { renderFormatPicker(profileCode); });
+    });
   }
 
   document.getElementById('btn-dislike').addEventListener('click', function () { act('dislike', 'exit-left'); });

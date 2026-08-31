@@ -26,7 +26,7 @@ from db_init import get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR, VIDEO_VISUALS_DIR,
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
 from score_engine import rate_input, score_intrinsic, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
-from transform import build_transform_prompt, build_data_output_prompt, save_transformation, score_transformation, FORM_SPECS
+from transform import build_transform_prompt, build_data_output_prompt, save_transformation, score_transformation, FORM_SPECS, SWIPE_FORM_CHOICES
 from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, generate_json, LLMConfigError
 from ingest_book import ingest_book_text
@@ -4476,7 +4476,7 @@ def _serialize_candidate(row):
 
 @app.route("/swipe")
 def swipe_page():
-    return render_template("swipe.html", active="swipe")
+    return render_template("swipe.html", active="swipe", format_choices=SWIPE_FORM_CHOICES)
 
 
 @app.route("/api/swipe/next")
@@ -4590,6 +4590,61 @@ def api_swipe_action():
     source_id = row["source_video_id"] if row["source_kind"] == "video" else row["source_book_id"]
     source = f"{row['source_kind']}:{source_id}"
     return jsonify({"ok": True, "status": status, "matches": matches, "source": source})
+
+
+@app.route("/api/swipe/create", methods=["POST"])
+def api_swipe_create():
+    """Step 4 of the swipe loop: candidate liked, profile chosen, format
+    chosen (Instagram / Short video / Long video / News) — generate the
+    script and save it straight into Studio Creations, scored, the same
+    way a normal Transform run does. Always builds the prompt from the
+    candidate's own short pitch (never the full source book/video text) —
+    see the 071c959 fix this follows on from."""
+    payload = request.get_json(silent=True) or {}
+    candidate_id = payload.get("candidate_id")
+    profile_code = (payload.get("profile_code") or "").strip()
+    form = (payload.get("format") or "").strip()
+
+    if not candidate_id or not profile_code or form not in FORM_SPECS:
+        return jsonify({"ok": False, "error": "'candidate_id', 'profile_code', and a valid 'format' are required"}), 400
+
+    conn = get_conn()
+    row = conn.execute("SELECT * FROM swipe_candidates WHERE candidate_id = ?", (candidate_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such candidate"}), 404
+    profile = conn.execute("SELECT profile_id FROM style_profiles WHERE profile_code = ?", (profile_code,)).fetchone()
+    conn.close()
+    if not profile:
+        return jsonify({"ok": False, "error": f"no such profile: {profile_code}"}), 404
+
+    pitch_lines = [row["hook"] or "", row["pitch_summary"] or ""]
+    terms = json.loads(row["terms_json"]) if row["terms_json"] else []
+    examples = json.loads(row["examples_json"]) if row["examples_json"] else []
+    if terms:
+        pitch_lines.append("Terms: " + ", ".join(terms))
+    if examples:
+        pitch_lines.append("Examples: " + "; ".join(examples))
+    pitch_text = "\n\n".join(line for line in pitch_lines if line)
+    title = row["hook"] or f"Swipe candidate #{candidate_id}"
+
+    try:
+        result = rate_input(pitch_text, title=title, source_label=f"Swipe candidate #{candidate_id}", input_type="swipe_candidate")
+        test_id = result["test_id"]
+        prompt_text = build_data_output_prompt(test_id, profile_code, form)
+        gen_result = generate_transform(prompt_text)
+        transformation_id = save_transformation(test_id, profile_code, gen_result["title"], gen_result["script"], generated_by="swipe")
+        score_transformation(transformation_id)
+    except LLMConfigError as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Generation failed: {e}"}), 500
+
+    return jsonify({
+        "ok": True,
+        "transformation_id": transformation_id,
+        "redirect_url": url_for("creation_detail", transformation_id=transformation_id),
+    })
 
 
 if __name__ == "__main__":

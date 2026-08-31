@@ -122,7 +122,64 @@ FORM_SPECS = {
             "- Voice: expository, varied vocabulary, reads like a nonfiction case study excerpt"
         ),
     },
+    # The three below are hand-written targets (not corpus-derived like the
+    # two above) for the Swipe mechanism's format picker — see swipe.html /
+    # api_swipe_create(). "Short video" and "Instagram" both land in the
+    # short-form world; short_video_script exists as a distinct, slightly
+    # longer option so the picker isn't offering two identical choices.
+    "short_video_script": {
+        "label": "Short video script",
+        "spec": (
+            "- Target length: ~500 words\n"
+            "- Target sentence length: ~20 words/sentence on average\n"
+            "- Direct address (\"you\"): ~2 per 100 words\n"
+            "- Include roughly 2-3 questions across the piece, spaced out to re-hook attention\n"
+            "- Title format: a curiosity-gap or \"what happened when...\" style hook\n"
+            "- Hook: a pattern-interrupt in the first two sentences — a surprising fact or reversal\n"
+            "- Close: a clear takeaway plus a soft engagement prompt (follow/comment), not hard-sell\n"
+            "- Voice: conversational, a little more explanatory than a 60-second script, built to be read aloud in ~2-3 minutes"
+        ),
+    },
+    "long_video_script": {
+        "label": "Long-form video script",
+        "spec": (
+            "- Target length: ~1800 words\n"
+            "- Target sentence length: ~18 words/sentence on average, varied for pacing\n"
+            "- Direct address (\"you\"): ~1 per 100 words — present but not constant\n"
+            "- Structure: a cold open (a specific claim, question, or scene), then 3-4 distinct segments "
+            "that each develop one part of the argument, then a synthesis/outro\n"
+            "- Title format: descriptive and specific rather than a single punchy line — this is a video "
+            "someone chooses deliberately, not a scroll-stopper\n"
+            "- Hook: the cold open must land within the first couple of sentences — no throat-clearing intro\n"
+            "- Close: restate the throughline, end on a considered final thought, invite a comment/subscribe\n"
+            "- Voice: narrative and explanatory, room for asides, examples, and building an argument across "
+            "segments; built to be read aloud in ~10-15 minutes"
+        ),
+    },
+    "news_article": {
+        "label": "News article",
+        "spec": (
+            "- Target length: ~600 words\n"
+            "- Target sentence length: ~20 words/sentence on average\n"
+            "- Third person throughout — no direct address (\"you\"), no questions, no CTA\n"
+            "- Structure: inverted pyramid — lead with the core fact/claim in the first paragraph, then "
+            "supporting detail and context in descending order of importance\n"
+            "- Title format: a specific, factual headline — no clickbait phrasing, no rhetorical questions\n"
+            "- Voice: neutral and reportorial; attribute claims (\"according to...\") rather than asserting "
+            "them as the narrator's own opinion"
+        ),
+    },
 }
+
+# Order the Swipe format picker presents these in, plus the short label
+# shown on each button — kept separate from FORM_SPECS's own labels since
+# the picker's copy is meant to be scannable at a glance, not descriptive.
+SWIPE_FORM_CHOICES = [
+    ("insta_script", "Instagram"),
+    ("short_video_script", "Short video"),
+    ("long_video_script", "Long video"),
+    ("news_article", "News"),
+]
 
 
 def _voice_traits(conn, profile_id, max_numeric=6, max_categorical=8):

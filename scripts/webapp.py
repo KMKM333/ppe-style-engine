@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from collections import Counter
 from urllib.parse import quote
 
@@ -5134,14 +5135,29 @@ def _significant_words(texts):
     return words
 
 
+_CHANNEL_VOCAB_CACHE = {"data": None, "computed_at": 0.0}
+_CHANNEL_VOCAB_TTL_SEC = 900  # 15 min — this is a soft matching signal, not
+                              # something that needs per-second freshness;
+                              # a newly-classified video's terms show up in
+                              # the next cache refresh, not instantly.
+
+
 def _channel_topical_vocab(conn):
     """Precomputes every channel's own topical vocabulary (terms + examples,
-    video-side and book-side) in 4 bulk queries total — replaces the old
-    per-profile version of this (4-6+ queries PER profile), which is what
-    made liking a swipe candidate take ~3.5s: with ~38 profiles that was
-    150-250+ sequential SQL queries on every single like. Returns
-    {channel_id: set(significant_words)}, built once per request and reused
-    across every profile being scored."""
+    video-side and book-side) in 4 bulk queries total, cached process-wide
+    for _CHANNEL_VOCAB_TTL_SEC — replaces the original per-profile version
+    (4-6+ queries PER profile scored on every like) that measured ~3.5s in
+    production. The first bulk-query version (no cache) was actually
+    SLOWER end to end (~5s) despite far fewer queries: with no LIMIT, it
+    regex-tokenizes every term/example in the entire database on every
+    single like, not just the ~100-per-table slice the old per-profile
+    version capped itself to. The cache is what actually fixes it — this
+    heavy pass now only runs once every 15 minutes, not on every swipe.
+    Returns {channel_id: set(significant_words)}."""
+    now = time.time()
+    if _CHANNEL_VOCAB_CACHE["data"] is not None and (now - _CHANNEL_VOCAB_CACHE["computed_at"]) < _CHANNEL_VOCAB_TTL_SEC:
+        return _CHANNEL_VOCAB_CACHE["data"]
+
     texts_by_channel = {}
 
     def add(channel_id, *parts):
@@ -5168,7 +5184,10 @@ def _channel_topical_vocab(conn):
     ).fetchall():
         add(r["channel_id"], r["example_title"], r["example_text"])
 
-    return {cid: _significant_words(texts) for cid, texts in texts_by_channel.items()}
+    result = {cid: _significant_words(texts) for cid, texts in texts_by_channel.items()}
+    _CHANNEL_VOCAB_CACHE["data"] = result
+    _CHANNEL_VOCAB_CACHE["computed_at"] = now
+    return result
 
 
 def _topical_overlap_score(cand_words, profile_words):

@@ -52,4 +52,8 @@ python3 migrate_add_video_longform_fields.py
 # idempotent pattern, safe on every boot.
 python3 migrate_add_video_visuals.py
 
+# Adds swipe_candidates, storage for the /swipe mechanism's generated
+# pitches — same idempotent pattern, safe on every boot.
+python3 migrate_add_swipe_candidates.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

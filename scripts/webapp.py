@@ -25,7 +25,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from db_init import get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR, VIDEO_VISUALS_DIR, PRODUCTION_SPEC_SHOTS_DIR
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
-from score_engine import rate_input, score_intrinsic, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
+from score_engine import rate_input, score_intrinsic, score_against_profiles, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
 from transform import build_transform_prompt, build_data_output_prompt, save_transformation, score_transformation, FORM_SPECS, SWIPE_FORM_CHOICES
 from hybrid_profile_builder import create_hybrid_profile
 from llm_client import generate_transform, generate_json, LLMConfigError
@@ -4334,7 +4334,14 @@ def transform_save():
 # once this core loop is validated. See swipe.html for the frontend.
 
 SWIPE_BUFFER_TARGET = 6  # keep at least this many 'queued' candidates on hand
-SWIPE_PITCH_PROMPT = """You're curating short-form video ideas from an archive of source material for a creator who makes Instagram Reels.
+
+# Weighted random source count for each new candidate: mostly single-source
+# (the proven core loop), sometimes 2 or 3 combined. Not user-configurable
+# yet — a reasonable starting split, easy to retune once there's a sense
+# of how often multi-source combos actually land well.
+SWIPE_SOURCE_COUNT_WEIGHTS = [(1, 0.60), (2, 0.25), (3, 0.15)]
+
+SWIPE_PITCH_PROMPT_SINGLE = """You're curating short-form video ideas from an archive of source material for a creator who makes Instagram Reels.
 
 SOURCE TYPE: {kind}
 TITLE: {title}
@@ -4349,74 +4356,165 @@ Return raw JSON only, matching exactly this shape — no markdown fence, no comm
   "examples": ["up to 3 concrete named examples or case studies from this source, if any exist"]
 }}"""
 
+# Cross-subject combining is allowed on purpose (see the "Combining"
+# decision) — the prompt explicitly asks Claude to find a real connecting
+# thread rather than default to combining only same-subject sources.
+SWIPE_PITCH_PROMPT_MULTI = """You're curating short-form video ideas from an archive of source material for a creator who makes Instagram Reels. You've been given {n} different sources, possibly on different subjects. Find a genuine connecting thread between them — a real link, not a forced one — and pitch ONE combined video idea that weaves them together. If you can't find a real connection, it's fine for the thread to be a shared theme, tension, or contrast between them rather than a shared topic.
 
-def _pick_unswiped_source(conn):
+{sources_block}
+
+Return raw JSON only, matching exactly this shape — no markdown fence, no commentary:
+{{
+  "hook": "a punchy one-line hook for the combined video, under 90 characters",
+  "summary": "2-3 sentences: the connecting thread across these sources and why combining them makes an interesting Instagram script",
+  "terms": ["up to 4 short key terms or concepts spanning the sources"],
+  "examples": ["up to 3 concrete named examples or case studies drawn from the sources"]
+}}"""
+
+
+def _excluded_source_keys(conn):
+    """(kind, id) pairs that must not be picked as a new candidate source:
+    anything referenced by a currently queued or already-liked candidate,
+    whether as that candidate's sole source (legacy source_video_id/
+    source_book_id) or as one of several combined ones (sources_json).
+    Disliked candidates' sources are deliberately NOT excluded here — see
+    _pick_unswiped_source()."""
+    excluded = set()
+    for r in conn.execute(
+        "SELECT source_kind, source_video_id, source_book_id, sources_json "
+        "FROM swipe_candidates WHERE status != 'disliked'"
+    ).fetchall():
+        if r["source_video_id"] is not None:
+            excluded.add(("video", r["source_video_id"]))
+        if r["source_book_id"] is not None:
+            excluded.add(("book", r["source_book_id"]))
+        if r["sources_json"]:
+            for s in json.loads(r["sources_json"]):
+                excluded.add((s["kind"], s["id"]))
+    return excluded
+
+
+def _pick_unswiped_source(conn, excluded=None):
     """Returns (kind, row) for a random item eligible to become a swipe
-    candidate, or (None, None) once both pools are exhausted. Coin-flips
-    video vs. book each call so the queue doesn't skew toward whichever
-    table happens to be bigger.
+    candidate source, or (None, None) once both pools are exhausted.
+    Coin-flips video vs. book each call so the queue doesn't skew toward
+    whichever table happens to be bigger.
 
-    "Eligible" excludes anything currently queued or already liked (never
-    re-show something on deck or already turned into a candidate), but
-    NOT anything whose only candidate rows are disliked — a disliked
-    source goes back into the same random pool everything else is drawn
-    from, so it can resurface later. There's no cooldown/delay logic:
-    with hundreds of other never-tried items in the pool, ORDER BY
-    RANDOM() naturally makes "later" mean later, not next card."""
+    `excluded` is a set of (kind, id) pairs to skip — pass the same set
+    across multiple calls (see _pick_unswiped_sources()) so a multi-source
+    candidate never picks the same item twice. Defaults to
+    _excluded_source_keys(conn) when not given.
+
+    Excluding a source doesn't mean "gone forever": a disliked candidate's
+    sources are NOT in the default excluded set, so they're eligible again
+    the same as anything never swiped — there's no cooldown/delay logic,
+    with hundreds of other never-tried items in the pool, ORDER BY RANDOM()
+    naturally makes "later" mean later, not next card."""
+    if excluded is None:
+        excluded = _excluded_source_keys(conn)
     kinds = ["video", "book"]
     random.shuffle(kinds)
     for kind in kinds:
+        excluded_ids = [k[1] for k in excluded if k[0] == kind]
+        placeholders = ",".join("?" * len(excluded_ids))
         if kind == "video":
+            where = f"WHERE v.video_id NOT IN ({placeholders})" if excluded_ids else ""
             row = conn.execute(
-                """SELECT v.video_id, v.title, v.script AS content, c.channel_name
-                   FROM videos v JOIN channels c ON c.channel_id = v.channel_id
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM swipe_candidates sc
-                       WHERE sc.source_video_id = v.video_id AND sc.status != 'disliked'
-                   )
-                   ORDER BY RANDOM() LIMIT 1"""
+                f"""SELECT v.video_id, v.title, v.script AS content, c.channel_id, c.channel_name
+                    FROM videos v JOIN channels c ON c.channel_id = v.channel_id
+                    {where} ORDER BY RANDOM() LIMIT 1""",
+                excluded_ids,
             ).fetchone()
         else:
+            where = f"WHERE b.book_id NOT IN ({placeholders})" if excluded_ids else ""
             row = conn.execute(
-                """SELECT b.book_id, b.title, COALESCE(b.summary, substr(b.full_text, 1, 4000)) AS content,
-                          b.author AS channel_name
-                   FROM books b
-                   WHERE NOT EXISTS (
-                       SELECT 1 FROM swipe_candidates sc
-                       WHERE sc.source_book_id = b.book_id AND sc.status != 'disliked'
-                   )
-                   ORDER BY RANDOM() LIMIT 1"""
+                f"""SELECT b.book_id, b.title, COALESCE(b.summary, substr(b.full_text, 1, 4000)) AS content,
+                           b.author AS channel_name,
+                           (SELECT channel_id FROM channels WHERE channel_name = b.author AND platform = 'Book') AS channel_id
+                    FROM books b {where} ORDER BY RANDOM() LIMIT 1""",
+                excluded_ids,
             ).fetchone()
         if row:
             return kind, row
     return None, None
 
 
+def _choose_source_count():
+    r = random.random()
+    cumulative = 0.0
+    for count, weight in SWIPE_SOURCE_COUNT_WEIGHTS:
+        cumulative += weight
+        if r < cumulative:
+            return count
+    return SWIPE_SOURCE_COUNT_WEIGHTS[-1][0]
+
+
+def _pick_unswiped_sources(conn, n):
+    """Picks up to n distinct eligible sources for one candidate. May
+    return fewer than n if the corpus runs out mid-pick."""
+    excluded = _excluded_source_keys(conn)
+    picked = []
+    for _ in range(n):
+        kind, row = _pick_unswiped_source(conn, excluded=excluded)
+        if not row:
+            break
+        picked.append((kind, row))
+        excluded.add((kind, row[0]))
+    return picked
+
+
+def _build_pitch_prompt(sources):
+    """sources: list of (kind, row) tuples, length 1-3."""
+    if len(sources) == 1:
+        kind, row = sources[0]
+        content = (row["content"] or "")[:4000]
+        return SWIPE_PITCH_PROMPT_SINGLE.format(kind=kind, title=row["title"], content=content)
+    blocks = []
+    for i, (kind, row) in enumerate(sources, start=1):
+        content = (row["content"] or "")[:2000]
+        blocks.append(f'SOURCE {i} ({kind}): "{row["title"]}"\nCONTENT (may be truncated):\n{content}')
+    return SWIPE_PITCH_PROMPT_MULTI.format(n=len(sources), sources_block="\n\n".join(blocks))
+
+
 def _generate_swipe_candidate(conn):
-    """Picks one never-swiped source item, asks Claude for a pitch, and
-    stores it as a fresh 'queued' candidate. Returns the new candidate_id,
-    or None if the corpus has nothing left to turn into a candidate (or
-    the LLM call itself fails, e.g. no ANTHROPIC_API_KEY configured)."""
-    kind, row = _pick_unswiped_source(conn)
-    if not row:
+    """Picks 1-3 never-swiped source items (weighted toward 1, see
+    SWIPE_SOURCE_COUNT_WEIGHTS), asks Claude for a pitch spanning all of
+    them, and stores it as a fresh 'queued' candidate. Returns the new
+    candidate_id, or None if the corpus has nothing left to turn into a
+    candidate (or the LLM call itself fails, e.g. no ANTHROPIC_API_KEY
+    configured)."""
+    n = _choose_source_count()
+    sources = _pick_unswiped_sources(conn, n)
+    if not sources:
         return None
 
-    content = (row["content"] or "")[:4000]
-    prompt = SWIPE_PITCH_PROMPT.format(kind=kind, title=row["title"], content=content)
+    prompt = _build_pitch_prompt(sources)
     try:
-        pitch = generate_json(prompt, max_tokens=600)
+        pitch = generate_json(prompt, max_tokens=700)
     except Exception as e:
-        print(f"[swipe] pitch generation failed for {kind} #{row[0]}: {e}")
+        print(f"[swipe] pitch generation failed for {len(sources)} source(s): {e}")
         return None
 
+    sources_payload = [
+        {
+            "kind": kind, "id": row[0], "title": row["title"],
+            "channel_id": row["channel_id"], "channel_name": row["channel_name"],
+        }
+        for kind, row in sources
+    ]
+    # Legacy singular columns stay populated only for a true single-source
+    # candidate (kept for cheap indexed lookups / older-row compatibility);
+    # a combined candidate relies entirely on sources_json.
+    single_kind, single_row = sources[0] if len(sources) == 1 else (None, None)
     cur = conn.execute(
         """INSERT INTO swipe_candidates
-           (source_kind, source_video_id, source_book_id, hook, pitch_summary, terms_json, examples_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           (source_kind, source_video_id, source_book_id, sources_json, hook, pitch_summary, terms_json, examples_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
-            kind,
-            row["video_id"] if kind == "video" else None,
-            row["book_id"] if kind == "book" else None,
+            single_kind or "mixed",
+            single_row["video_id"] if single_kind == "video" else None,
+            single_row["book_id"] if single_kind == "book" else None,
+            json.dumps(sources_payload),
             pitch.get("hook"), pitch.get("summary"),
             json.dumps(pitch.get("terms") or []), json.dumps(pitch.get("examples") or []),
         ),
@@ -4475,16 +4573,21 @@ def _maybe_start_swipe_buffer_fill():
 
 
 def _serialize_candidate(row):
+    if row["sources_json"]:
+        sources = json.loads(row["sources_json"])
+    else:
+        # Legacy single-source row from before sources_json existed —
+        # build an equivalent one-item list from the joined title/
+        # channel_name columns (see the query in api_swipe_next()).
+        sid = row["source_video_id"] if row["source_kind"] == "video" else row["source_book_id"]
+        sources = [{"kind": row["source_kind"], "id": sid, "title": row["title"], "channel_name": row["channel_name"]}]
     return {
         "candidate_id": row["candidate_id"],
-        "kind": row["source_kind"],
-        "title": row["title"],
-        "channel_name": row["channel_name"],
+        "sources": sources,
         "hook": row["hook"],
         "summary": row["pitch_summary"],
         "terms": json.loads(row["terms_json"]) if row["terms_json"] else [],
         "examples": json.loads(row["examples_json"]) if row["examples_json"] else [],
-        "source_url": row["source_url"],
     }
 
 
@@ -4522,6 +4625,171 @@ def api_swipe_next():
     return jsonify({"ok": True, "candidate": _serialize_candidate(row)})
 
 
+def _build_pitch_text(row):
+    """The candidate's pitch (hook + summary + terms + examples), flattened
+    to plain text — used both as the Transform source in api_swipe_create()
+    and as the raw_text fed into the voice-fit scoring in
+    _score_profile_matches(). Never the full source book/video text — see
+    the 071c959 fix."""
+    lines = [row["hook"] or "", row["pitch_summary"] or ""]
+    terms = json.loads(row["terms_json"]) if row["terms_json"] else []
+    examples = json.loads(row["examples_json"]) if row["examples_json"] else []
+    if terms:
+        lines.append("Terms: " + ", ".join(terms))
+    if examples:
+        lines.append("Examples: " + "; ".join(examples))
+    return "\n\n".join(line for line in lines if line)
+
+
+def _candidate_source_channels(conn, row):
+    """Returns (channel_ids, subjects) for a candidate's contributing
+    source(s) — channel_ids is every channel behind its 1-3 sources
+    (for exclusion), subjects is the set of subjects those channels'
+    profiles carry (for the blended score's subject component)."""
+    if row["sources_json"]:
+        channel_ids = [s["channel_id"] for s in json.loads(row["sources_json"]) if s.get("channel_id")]
+    else:
+        # Legacy single-source row: resolve its one channel directly.
+        channel_ids = []
+        if row["source_kind"] == "video" and row["source_video_id"]:
+            v = conn.execute("SELECT channel_id FROM videos WHERE video_id = ?", (row["source_video_id"],)).fetchone()
+            if v:
+                channel_ids.append(v["channel_id"])
+        elif row["source_kind"] == "book" and row["source_book_id"]:
+            b = conn.execute("SELECT author FROM books WHERE book_id = ?", (row["source_book_id"],)).fetchone()
+            if b and b["author"]:
+                c = conn.execute(
+                    "SELECT channel_id FROM channels WHERE channel_name = ? AND platform = 'Book'", (b["author"],)
+                ).fetchone()
+                if c:
+                    channel_ids.append(c["channel_id"])
+    subjects = set()
+    for cid in channel_ids:
+        sp = conn.execute("SELECT subject FROM style_profiles WHERE channel_id = ?", (cid,)).fetchone()
+        if sp and sp["subject"]:
+            subjects.add(sp["subject"])
+    return channel_ids, subjects
+
+
+_SWIPE_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "of", "to", "in", "on", "for", "with", "is", "are", "was", "were",
+    "this", "that", "it", "its", "as", "by", "at", "from", "be", "how", "what", "why", "your", "you", "their",
+    "his", "her", "he", "she", "they", "not", "no", "do", "does", "did", "if", "so", "we", "our", "us", "i",
+    "my", "me", "can", "could", "would", "should", "will", "just", "about", "into", "than", "then", "there",
+    "these", "those", "which", "who", "whom", "when", "where", "been", "have", "has", "had", "one", "over",
+}
+
+
+def _significant_words(texts):
+    """Lowercased, stopword-and-short-word-filtered vocabulary from a list
+    of strings — the basis for the topical-overlap component of the match
+    score. Deliberately simple (no stemming/lemmatizing): this only needs
+    to catch shared specific nouns/terms, not do real NLP."""
+    words = set()
+    for t in texts:
+        if not t:
+            continue
+        for w in re.findall(r"[a-zA-Z']+", t.lower()):
+            if len(w) > 3 and w not in _SWIPE_STOPWORDS:
+                words.add(w)
+    return words
+
+
+def _topical_overlap_score(conn, channel_id, cand_words):
+    """Fraction of the candidate's own vocabulary (terms + examples) that
+    also shows up in this profile's own real content (its channel's terms/
+    examples, or for a book-author channel, that author's books' terms/
+    examples). Asymmetric on purpose: it asks "does this profile actually
+    talk about the same specific things this candidate mentions", not
+    "how similar are the two vocabularies overall" — a profile with a much
+    larger vocabulary shouldn't be penalized for it."""
+    if not channel_id or not cand_words:
+        return 0.0
+    texts = []
+    for r in conn.execute(
+        "SELECT term, definition FROM video_terms vt JOIN videos v ON v.video_id = vt.video_id "
+        "WHERE v.channel_id = ? LIMIT 100", (channel_id,)
+    ).fetchall():
+        texts.append(r["term"]); texts.append(r["definition"])
+    for r in conn.execute(
+        "SELECT example_title, example_text FROM video_examples ve JOIN videos v ON v.video_id = ve.video_id "
+        "WHERE v.channel_id = ? LIMIT 100", (channel_id,)
+    ).fetchall():
+        texts.append(r["example_title"]); texts.append(r["example_text"])
+
+    ch = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
+    if ch:
+        for book in conn.execute("SELECT book_id FROM books WHERE author = ?", (ch["channel_name"],)).fetchall():
+            for r in conn.execute("SELECT term, definition FROM book_terms WHERE book_id = ? LIMIT 100", (book["book_id"],)).fetchall():
+                texts.append(r["term"]); texts.append(r["definition"])
+            for r in conn.execute(
+                "SELECT example_title, example_text FROM book_examples WHERE book_id = ? LIMIT 100", (book["book_id"],)
+            ).fetchall():
+                texts.append(r["example_title"]); texts.append(r["example_text"])
+
+    profile_words = _significant_words(texts)
+    if not profile_words:
+        return 0.0
+    return len(cand_words & profile_words) / max(1, len(cand_words))
+
+
+def _score_profile_matches(conn, candidate_row):
+    """The comprehensive match score: 60% subject match + 20% voice-fit
+    (the same fingerprint-correlation scoring already used to score real
+    Transform inputs against every profile, reused here rather than
+    invented fresh) + 20% topical overlap (shared vocabulary with the
+    profile's own real content). No hard subject pre-filter — every
+    profile is scored and ranked on the full blend.
+
+    A profile belonging to one of the candidate's own source channels is
+    excluded from the results UNLESS it would rank #1 overall even before
+    exclusion, in which case it's let through anyway and the remaining two
+    slots still come from eligible (non-excluded) profiles."""
+    source_channel_ids, source_subjects = _candidate_source_channels(conn, candidate_row)
+    excluded_channel_ids = set(source_channel_ids)
+
+    pitch_text = _build_pitch_text(candidate_row)
+    features = extract_auto_features(pitch_text, candidate_row["hook"] or "")
+    voice_raw = score_against_profiles(features, raw_text=pitch_text)
+    voice_by_code = {r["profile_code"]: (r["total_score"] or 0) / 100.0 for r in voice_raw}
+
+    cand_words = _significant_words(
+        (json.loads(candidate_row["terms_json"]) if candidate_row["terms_json"] else [])
+        + (json.loads(candidate_row["examples_json"]) if candidate_row["examples_json"] else [])
+    )
+
+    profiles = conn.execute(
+        "SELECT p.profile_code, p.subject, p.channel_id, p.n_videos_analysed, c.channel_name "
+        "FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id"
+    ).fetchall()
+
+    scored = []
+    for p in profiles:
+        subject_score = 1.0 if (p["subject"] and p["subject"] in source_subjects) else 0.0
+        voice_score = voice_by_code.get(p["profile_code"], 0.0)
+        topical_score = _topical_overlap_score(conn, p["channel_id"], cand_words)
+        blended = 0.6 * subject_score + 0.2 * voice_score + 0.2 * topical_score
+        scored.append({
+            "profile_code": p["profile_code"], "subject": p["subject"], "channel_name": p["channel_name"],
+            "channel_id": p["channel_id"], "n_videos_analysed": p["n_videos_analysed"],
+            "match_score": round(blended * 100),
+        })
+    scored.sort(key=lambda r: -r["match_score"])
+
+    final, seen = [], set()
+    if scored and scored[0]["channel_id"] in excluded_channel_ids:
+        final.append(scored[0])
+        seen.add(scored[0]["profile_code"])
+    for r in scored:
+        if len(final) >= 3:
+            break
+        if r["profile_code"] in seen or r["channel_id"] in excluded_channel_ids:
+            continue
+        final.append(r)
+        seen.add(r["profile_code"])
+    return final
+
+
 @app.route("/api/swipe/action", methods=["POST"])
 def api_swipe_action():
     payload = request.get_json(silent=True) or {}
@@ -4545,65 +4813,17 @@ def api_swipe_action():
 
     matches = []
     if action == "like":
-        # Exclude the profile belonging to this candidate's own source
-        # channel — matching an input to its own channel's profile isn't
-        # an interesting suggestion. v1 match heuristic: same subject
-        # first (highest-analysed within it), then pad with the overall
-        # highest-analysed profiles. A real fingerprint-fit score (like
-        # the Production track's P4) can replace this later.
-        own_channel_id = None
-        if row["source_kind"] == "video":
-            v = conn.execute("SELECT channel_id FROM videos WHERE video_id = ?", (row["source_video_id"],)).fetchone()
-            own_channel_id = v["channel_id"] if v else None
-        else:
-            b = conn.execute("SELECT author FROM books WHERE book_id = ?", (row["source_book_id"],)).fetchone()
-            if b and b["author"]:
-                c = conn.execute(
-                    "SELECT channel_id FROM channels WHERE channel_name = ? AND platform = 'Book'", (b["author"],)
-                ).fetchone()
-                own_channel_id = c["channel_id"] if c else None
-
-        source_subject = None
-        if own_channel_id:
-            sp = conn.execute("SELECT subject FROM style_profiles WHERE channel_id = ?", (own_channel_id,)).fetchone()
-            source_subject = sp["subject"] if sp else None
-
-        exclude_clause = "AND p.channel_id != ?" if own_channel_id else ""
-        base_params = [own_channel_id] if own_channel_id else []
-
-        subject_matches = []
-        if source_subject:
-            subject_matches = conn.execute(
-                f"""SELECT p.profile_code, p.subject, c.channel_name, p.n_videos_analysed
-                    FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
-                    WHERE p.subject = ? {exclude_clause}
-                    ORDER BY p.n_videos_analysed DESC LIMIT 3""",
-                [source_subject] + base_params,
-            ).fetchall()
-
-        have_codes = [r["profile_code"] for r in subject_matches]
-        remaining = 3 - len(subject_matches)
-        fallback = []
-        if remaining > 0:
-            exclude_codes_clause = ""
-            fb_params = base_params[:]
-            if have_codes:
-                exclude_codes_clause = f"AND p.profile_code NOT IN ({','.join('?' * len(have_codes))})"
-                fb_params += have_codes
-            fallback = conn.execute(
-                f"""SELECT p.profile_code, p.subject, c.channel_name, p.n_videos_analysed
-                    FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
-                    WHERE 1=1 {exclude_clause} {exclude_codes_clause}
-                    ORDER BY p.n_videos_analysed DESC LIMIT ?""",
-                fb_params + [remaining],
-            ).fetchall()
-
-        matches = [dict(r) for r in (list(subject_matches) + list(fallback))]
+        matches = [
+            {
+                "profile_code": m["profile_code"], "subject": m["subject"],
+                "channel_name": m["channel_name"], "n_videos_analysed": m["n_videos_analysed"],
+                "match_score": m["match_score"],
+            }
+            for m in _score_profile_matches(conn, row)
+        ]
 
     conn.close()
-    source_id = row["source_video_id"] if row["source_kind"] == "video" else row["source_book_id"]
-    source = f"{row['source_kind']}:{source_id}"
-    return jsonify({"ok": True, "status": status, "matches": matches, "source": source})
+    return jsonify({"ok": True, "status": status, "matches": matches})
 
 
 @app.route("/api/swipe/create", methods=["POST"])
@@ -4632,14 +4852,7 @@ def api_swipe_create():
     if not profile:
         return jsonify({"ok": False, "error": f"no such profile: {profile_code}"}), 404
 
-    pitch_lines = [row["hook"] or "", row["pitch_summary"] or ""]
-    terms = json.loads(row["terms_json"]) if row["terms_json"] else []
-    examples = json.loads(row["examples_json"]) if row["examples_json"] else []
-    if terms:
-        pitch_lines.append("Terms: " + ", ".join(terms))
-    if examples:
-        pitch_lines.append("Examples: " + "; ".join(examples))
-    pitch_text = "\n\n".join(line for line in pitch_lines if line)
+    pitch_text = _build_pitch_text(row)
     title = row["hook"] or f"Swipe candidate #{candidate_id}"
 
     try:

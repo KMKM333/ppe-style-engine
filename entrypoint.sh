@@ -56,4 +56,8 @@ python3 migrate_add_video_visuals.py
 # pitches — same idempotent pattern, safe on every boot.
 python3 migrate_add_swipe_candidates.py
 
+# Adds swipe_candidates.sources_json, needed for multi-source (2-3 input)
+# swipe candidates — same idempotent pattern, safe on every boot.
+python3 migrate_add_swipe_sources_json.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

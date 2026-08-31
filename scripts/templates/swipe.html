@@ -106,6 +106,10 @@
   .match-code { font-weight: 700; font-size: 15px; }
   .match-meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
   .match-arrow { float: right; color: var(--muted); }
+  .match-score {
+    float: right; font-size: 11px; font-weight: 700; color: var(--accent);
+    background: rgba(var(--accent-rgb), .13); padding: 2px 8px; border-radius: 999px; margin-right: 8px;
+  }
   .keep-swiping {
     display: block; width: 100%; margin-top: 6px; padding: 12px; border-radius: 12px; border: none;
     background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
@@ -183,14 +187,18 @@
     card.className = 'card';
     card.id = 'active-card';
 
-    var kindLabel = c.kind === 'video' ? 'Video' : 'Book';
+    var sources = c.sources || [];
+    var kindLabel = sources.length > 1 ? sources.length + ' SOURCES' : (sources[0] && sources[0].kind === 'video' ? 'Video' : 'Book');
+    var channelLine = sources.map(function (s) {
+      return (s.kind === 'video' ? 'Video' : 'Book') + ' · ' + (s.channel_name || s.title || '');
+    }).join('  +  ');
     var termsHtml = (c.terms || []).map(function (t) { return '<span class="tag">' + esc(t) + '</span>'; }).join('');
     var exHtml = (c.examples || []).map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('');
 
     card.innerHTML =
-      '<div class="card-kind">' + kindLabel + '</div>' +
-      '<div class="card-channel">' + esc(c.channel_name || '') + '</div>' +
-      '<div class="card-hook">' + esc(c.hook || c.title) + '</div>' +
+      '<div class="card-kind">' + esc(kindLabel) + '</div>' +
+      '<div class="card-channel">' + esc(channelLine) + '</div>' +
+      '<div class="card-hook">' + esc(c.hook || (sources[0] && sources[0].title) || '') + '</div>' +
       '<div class="card-summary">' + esc(c.summary || '') +
         (termsHtml ? '<div class="card-block-label">Terms</div><div class="tag-row">' + termsHtml + '</div>' : '') +
         (exHtml ? '<div class="card-block-label">Examples</div><ul class="ex-list">' + exHtml + '</ul>' : '') +
@@ -246,6 +254,7 @@
     matches.forEach(function (m) {
       html += '<button type="button" class="match-card" data-profile="' + esc(m.profile_code) + '">' +
         '<span class="match-arrow">→</span>' +
+        (typeof m.match_score === 'number' ? '<span class="match-score">' + m.match_score + '% match</span>' : '') +
         '<div class="match-code">' + esc(m.profile_code) + '</div>' +
         '<div class="match-meta">' + esc(m.channel_name) + (m.subject ? ' · ' + esc(m.subject) : '') + '</div>' +
         '</button>';

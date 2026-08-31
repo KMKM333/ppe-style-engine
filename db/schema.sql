@@ -629,17 +629,23 @@ CREATE TABLE IF NOT EXISTS video_creations (
 );
 
 -- ============================================================
--- 9. SWIPE CANDIDATES (mobile input-triage mechanism, v1)
+-- 9. SWIPE CANDIDATES (mobile input-triage mechanism)
 -- ============================================================
--- One row per generated "pitch" for a single source item (a video or a
--- book) — v1 is deliberately single-source only, no multi-input
--- combining yet. The pitch (hook/summary/terms/examples) is generated
--- once by Claude and cached here so swiping never waits on a live call.
+-- One row per generated "pitch". v1 was single-source only
+-- (source_video_id/source_book_id); sources_json now carries 1-3
+-- combined sources as [{"kind","id","title","channel_id","channel_name"}]
+-- for both new multi-source candidates AND single-source ones going
+-- forward — source_video_id/source_book_id stay populated only for a
+-- single-source candidate (kept for the older rows already in the table
+-- and for cheap indexed lookups) and are both NULL for a 2-3 source one.
+-- The pitch (hook/summary/terms/examples) is generated once by Claude
+-- and cached here so swiping never waits on a live call.
 CREATE TABLE IF NOT EXISTS swipe_candidates (
     candidate_id      INTEGER PRIMARY KEY AUTOINCREMENT,
-    source_kind       TEXT NOT NULL,                              -- 'video' / 'book'
+    source_kind       TEXT NOT NULL,                              -- 'video' / 'book' / 'mixed'
     source_video_id   INTEGER REFERENCES videos(video_id),
     source_book_id    INTEGER REFERENCES books(book_id),
+    sources_json      TEXT,                                       -- JSON list of all contributing sources
     hook              TEXT,                                       -- punchy one-line hook
     pitch_summary     TEXT,                                       -- 2-3 sentence "why this could work" summary
     terms_json        TEXT,                                       -- JSON array of a few key terms

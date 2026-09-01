@@ -110,7 +110,17 @@ def build_combined_prompt(title, script, timed_segments, skip_visuals=None):
 
     classification_body = _classification_body()
     breakdown_body = _breakdown_body()
-    timestamped = dv.build_timestamped_transcript(timed_segments) if timed_segments else script
+    # The [MM:SS] markers exist ONLY so the visuals step can point at a
+    # timestamp — nothing in the classification or breakdown bodies refers to
+    # them. When visuals are skipped (the default), injecting them every
+    # MARKER_EVERY_WORDS words spent ~500 input tokens per long-form video on
+    # noise, and worse: the sentence that EXPLAINS the markers lives only in
+    # the with-visuals prompt tail below, so the model was reading unexplained
+    # bracketed text scattered through the transcript it was classifying.
+    timestamped = (
+        dv.build_timestamped_transcript(timed_segments)
+        if (timed_segments and not skip_visuals) else script
+    )
 
     if skip_visuals:
         intro = (

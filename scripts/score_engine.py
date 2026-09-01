@@ -77,7 +77,19 @@ CROSS_MEDIA_SHARED_FIELDS = [
     "prose_rhythm", "noun_verb_ratio_style", "pacing",
     "avg_sentence_len", "readability_score",
 ]
-CROSS_MEDIA_SHARED_NUMERIC = {"avg_sentence_len", "readability_score"}
+# Which of the shared fields live in profile_fingerprint_NUMERIC rather than
+# profile_fingerprint_categorical, and so must be scored via
+# _numeric_subscore. curiosity_loop/identity_framing/rhythmic_repetition are
+# booleans that book_profile_builder.BOOLEAN_ATTRS rolls up as a share-true
+# MEAN into the numeric table — they were previously absent from this set, so
+# the scorer looked for them in the categorical table, always missed, and
+# returned _categorical_subscore's flat 20.0 floor. That froze three of the
+# 25 shared fields (~12% of every book comparison) at a constant, regardless
+# of what the input actually did.
+CROSS_MEDIA_SHARED_NUMERIC = {
+    "avg_sentence_len", "readability_score",
+    "curiosity_loop", "identity_framing", "rhythmic_repetition",
+}
 
 
 # ------------------------------------------------------------------
@@ -158,6 +170,25 @@ def _numeric_subscore(value, fp_row):
     if values_json:
         vals = json.loads(values_json)
         rng = max_v - min_v
+
+        # Degenerate profile: every observation is the same value (n=1, or
+        # several identical), so min_val == max_val and there is no observed
+        # spread to measure against. The old code still divided by
+        # max(rng, 1e-6), which made ANY deviation — even 19.14 against a
+        # profile of 19.15 — overshoot by ~10^6 range-widths and floor at
+        # 0.0, collapsing this into a 100-or-0 step function. Most book
+        # profiles are built from a single book, so that silently broke the
+        # entire readability/sentence-length axis of every book comparison.
+        # With no spread to go on, decay smoothly from the single observed
+        # value using a tolerance proportional to its own magnitude (with an
+        # absolute floor so a median of 0 — e.g. a boolean attribute that is
+        # always false — doesn't divide by ~zero). A boolean mismatch lands
+        # on 20.0, matching _categorical_subscore's "never seen" floor.
+        if rng <= 1e-9:
+            tolerance = max(abs(median_v) * 0.15, 0.5)
+            dist = abs(value - median_v)
+            return round(max(0.0, 100 - 40 * (dist / tolerance)), 1)
+
         half_range = max(rng / 2, 1e-6)
         if min_v <= value <= max_v:
             # within the profile's own observed range -> 60-100 band,
@@ -191,10 +222,28 @@ def _categorical_subscore(value, profile_id, attribute, conn):
         "SELECT share_pct FROM profile_fingerprint_categorical WHERE profile_id=? AND attribute=? AND value=?",
         (profile_id, attribute, value),
     ).fetchone()
-    share = row["share_pct"] if row else 0.0
-    # scale share (0-100%) into a score, with a floor so "never seen" isn't
-    # literally zero-out-of-hand (some allowance for genuine novelty)
-    return round(20 + share * 0.8, 1)
+    if row:
+        # scale share (0-100%) into a score, with a floor so "never seen" isn't
+        # literally zero-out-of-hand (some allowance for genuine novelty)
+        return round(20 + row["share_pct"] * 0.8, 1)
+
+    # No row for this exact value — but "this profile uses this attribute and
+    # never this value" and "this profile has no data for this attribute at
+    # all" are completely different situations that used to be
+    # indistinguishable, both scoring the 20.0 floor. The second case is not
+    # a measurement, and treating it as one is how a profile built entirely
+    # from unclassified videos still produced a plausible total: it has no
+    # fingerprint rows for the ~40 LLM-derived attributes, so nearly every
+    # sub-score was this floor rather than anything observed. Return None
+    # (caller skips the attribute) when the profile has never recorded this
+    # attribute at all, so a thin profile scores on what it actually knows.
+    has_attribute = conn.execute(
+        "SELECT 1 FROM profile_fingerprint_categorical WHERE profile_id=? AND attribute=? LIMIT 1",
+        (profile_id, attribute),
+    ).fetchone()
+    if not has_attribute:
+        return None
+    return 20.0
 
 
 def score_against_profiles(features: dict, weights: dict | None = None, raw_text: str | None = None,
@@ -226,6 +275,21 @@ def score_against_profiles(features: dict, weights: dict | None = None, raw_text
     for p in profiles:
         pid = p["profile_id"]
         breakdown = {}
+
+        # ProductionSpec (PS.*) profiles measure shot pacing and on-screen
+        # composition — total_shots, avg_shot_length_sec, pct_illustration_panel
+        # and friends. None of that intersects a written script's attributes,
+        # so they are not a candidate for this ranking at all. Excluded
+        # outright rather than given the Book branch's explicit None: a book
+        # profile IS a legitimate comparison target that can fail to compare
+        # (same medium, shared vocabulary), whereas a shot-pacing profile is
+        # simply not in this comparison set. Previously PS profiles fell
+        # through to the video branch below, missed on all ~23 attribute
+        # lookups, and every miss returned _categorical_subscore's 20.0
+        # floor — producing a confident-looking 20.0 total that was then
+        # persisted into test_scores and ranked alongside real matches.
+        if p["media_type"] == "ProductionSpec":
+            continue
 
         # --- membership check (content axis) ---
         is_member, match_video_id, match_sim, match_type = False, None, 0.0, None

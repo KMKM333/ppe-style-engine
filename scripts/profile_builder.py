@@ -118,10 +118,21 @@ def build_profile(channel_name, profile_code, length_band, min_n=10):
     # only the earliest (MIN video_id); a NULL hash (pre-dates the field, or
     # hashing failed) is never collapsed with another NULL — each forms its
     # own singleton group via the video_id fallback key.
+    # classified_by = 'auto' means only feature_extraction's regex pass ran —
+    # no LLM classification, so none of the ~40 Class attributes exist for
+    # that row. Counting those rows made n (and therefore n_videos_analysed
+    # and the confirmed/draft decision) mean "videos ingested" rather than
+    # "videos analysed": a channel could read status='confirmed' with 146
+    # videos while having a fingerprint covering only the 3 auto-derived
+    # categorical attributes. book_profile_builder and
+    # production_spec_profile_builder have always filtered this way; this
+    # builder was the outlier.
     rows = conn.execute(
         """SELECT a.* FROM video_attributes a
            JOIN videos v ON v.video_id = a.video_id
            WHERE v.channel_id = ?
+             AND a.classified_by IS NOT NULL
+             AND a.classified_by NOT IN ('auto', 'pending')
              AND v.video_id IN (
                SELECT MIN(video_id) FROM videos WHERE channel_id = ?
                GROUP BY COALESCE(content_hash, 'v' || video_id)

@@ -178,6 +178,69 @@ def _profiles():
     return [dict(r) for r in rows]
 
 
+@app.route("/usage")
+def usage_summary():
+    """Reads db/api_usage_log.jsonl (appended by gatekeeper.record_usage()
+    on every real llm_client.py call) and breaks it down by call type, to
+    answer "is the bill driven by input or output tokens" by looking at
+    real numbers instead of guessing.
+
+    call_site alone can't tell a 32k-budget long-form video classification
+    apart from a small swipe-pitch generate_json() call — both log as
+    "generate_json". So entries are also bucketed by output-token
+    magnitude: only the long-form combined classification call
+    (COMBINED_MAX_TOKENS=32000 in classify_video_combined.py) can
+    realistically produce more than a few thousand output tokens, so a
+    high-output-token generate_json() call is that classification call in
+    practice, not any of the small ones."""
+    LARGE_OUTPUT_THRESHOLD = 5000
+    rows = []
+    if gatekeeper.USAGE_LOG_PATH.exists():
+        with open(gatekeeper.USAGE_LOG_PATH) as f:
+            for line in f:
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+    buckets = {}
+    for r in rows:
+        site = r.get("call_site", "?")
+        bucket_name = f"{site} — large output (likely long-form video classification)" \
+            if r.get("output_tokens", 0) > LARGE_OUTPUT_THRESHOLD else site
+        b = buckets.setdefault(bucket_name, {"n": 0, "input_tokens": 0, "output_tokens": 0, "cost": 0.0})
+        b["n"] += 1
+        b["input_tokens"] += r.get("input_tokens", 0)
+        b["output_tokens"] += r.get("output_tokens", 0)
+        b["cost"] += r.get("estimated_cost_usd", 0.0)
+
+    summary = []
+    for name, b in sorted(buckets.items(), key=lambda kv: -kv[1]["cost"]):
+        input_cost = (b["input_tokens"] / 1_000_000) * gatekeeper.PRICE_PER_MTOK_INPUT
+        output_cost = (b["output_tokens"] / 1_000_000) * gatekeeper.PRICE_PER_MTOK_OUTPUT
+        summary.append({
+            "call_site": name, "n": b["n"],
+            "avg_input": round(b["input_tokens"] / b["n"]) if b["n"] else 0,
+            "avg_output": round(b["output_tokens"] / b["n"]) if b["n"] else 0,
+            "total_cost": round(b["cost"], 4),
+            "output_pct_of_cost": round(output_cost / b["cost"] * 100, 1) if b["cost"] else 0,
+        })
+
+    total_cost = sum(r.get("estimated_cost_usd", 0.0) for r in rows)
+    total_input_tokens = sum(r.get("input_tokens", 0) for r in rows)
+    total_output_tokens = sum(r.get("output_tokens", 0) for r in rows)
+    total_input_cost = (total_input_tokens / 1_000_000) * gatekeeper.PRICE_PER_MTOK_INPUT
+    total_output_cost = (total_output_tokens / 1_000_000) * gatekeeper.PRICE_PER_MTOK_OUTPUT
+
+    return render_template(
+        "usage_summary.html", active="usage", summary=summary, n_rows=len(rows),
+        total_cost=round(total_cost, 2), total_input_tokens=total_input_tokens,
+        total_output_tokens=total_output_tokens,
+        total_input_cost=round(total_input_cost, 2), total_output_cost=round(total_output_cost, 2),
+        output_pct_of_total=round(total_output_cost / total_cost * 100, 1) if total_cost else 0,
+    )
+
+
 @app.route("/")
 def dashboard():
     conn = get_conn()

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}API Usage — PPE Engine{% endblock %}
+{% block content %}
+<h1>API Usage</h1>
+<div class="sub">
+  {{ n_rows }} logged Claude API call{{ 's' if n_rows != 1 else '' }} · total estimated cost ${{ total_cost }}
+  · pricing: $2/Mtok input, $10/Mtok output (5x)
+</div>
+
+<div class="card" style="margin-top:16px">
+  <table>
+    <tr><th>Call type</th><th>Count</th><th>Avg input tok</th><th>Avg output tok</th><th>Total cost</th><th>% of that cost from output tokens</th></tr>
+    {% for s in summary %}
+    <tr>
+      <td>{{ s.call_site }}</td>
+      <td>{{ s.n }}</td>
+      <td class="mono">{{ s.avg_input }}</td>
+      <td class="mono">{{ s.avg_output }}</td>
+      <td class="mono">${{ s.total_cost }}</td>
+      <td class="mono">{{ s.output_pct_of_cost }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<h2 style="margin-top:28px">Overall split</h2>
+<div class="card" style="display:flex;gap:28px;flex-wrap:wrap">
+  <div><div class="muted" style="font-size:12px;text-transform:uppercase">Input tokens</div>
+    <div style="font-size:20px;font-weight:700">{{ "{:,}".format(total_input_tokens) }}</div>
+    <div class="muted">${{ total_input_cost }}</div></div>
+  <div><div class="muted" style="font-size:12px;text-transform:uppercase">Output tokens</div>
+    <div style="font-size:20px;font-weight:700">{{ "{:,}".format(total_output_tokens) }}</div>
+    <div class="muted">${{ total_output_cost }}</div></div>
+  <div><div class="muted" style="font-size:12px;text-transform:uppercase">Output share of total cost</div>
+    <div style="font-size:20px;font-weight:700;color:var(--accent)">{{ output_pct_of_total }}%</div></div>
+</div>
+{% if n_rows == 0 %}
+<div class="card" style="margin-top:16px">
+  <div class="empty">No usage logged yet — this only has data from real llm_client.py calls made on THIS deployment since gatekeeper's usage logging shipped (mid-August 2026). Older spend isn't in here.</div>
+</div>
+{% endif %}
+{% endblock %}

@@ -2710,7 +2710,11 @@ def api_classify_production_spec(input_id):
     Optional JSON body {"batch_size": N} overrides the default 15
     shots-per-vision-call for this one run — useful for retrying an input
     that keeps failing at the default size (e.g. an empty/malformed reply
-    from Claude on a particular batch)."""
+    from Claude on a particular batch). Optional {"skip_shots": [16, ...]}
+    leaves specific shot_numbers out of every vision call entirely (e.g. a
+    specific frame that reliably triggers an empty reply from Claude) —
+    those shots end up content_category='other', classified_by='skipped'
+    instead of unclassified."""
     if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
         abort(403)
     conn = get_conn()
@@ -2727,14 +2731,20 @@ def api_classify_production_spec(input_id):
         batch_size = int(payload["batch_size"]) if payload.get("batch_size") else None
     except (TypeError, ValueError):
         batch_size = None
+    try:
+        skip_shots = [int(n) for n in payload.get("skip_shots") or []]
+    except (TypeError, ValueError):
+        skip_shots = []
 
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classify_production_spec_shots.py")
     cmd = [sys.executable, script_path, "--input_id", str(input_id)]
     if batch_size:
         cmd += ["--batch_size", str(batch_size)]
+    if skip_shots:
+        cmd += ["--skip_shots", ",".join(str(n) for n in skip_shots)]
     subprocess.Popen(cmd, start_new_session=True)
 
-    return jsonify({"ok": True, "input_id": input_id, "status": "classifying", "batch_size": batch_size})
+    return jsonify({"ok": True, "input_id": input_id, "status": "classifying", "batch_size": batch_size, "skip_shots": skip_shots})
 
 
 @app.route("/api/production-spec/inputs/<int:input_id>/status")

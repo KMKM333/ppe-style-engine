@@ -60,7 +60,8 @@ def _mark_needs_review(input_id, reason):
     print(f"[classify_production_spec_shots] input_id={input_id} needs review: {reason}")
 
 
-def classify_and_build_profile(input_id, batch_size=BATCH_SIZE):
+def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_numbers=None):
+    skip_shot_numbers = set(skip_shot_numbers or [])
     conn = get_conn()
     input_row = conn.execute(
         """SELECT i.input_id, i.title, i.channel_id, c.channel_name
@@ -92,7 +93,9 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE):
     shot_dir = PRODUCTION_SPEC_SHOTS_DIR / str(input_id)
     category_by_shot = {}
     for i in range(0, len(shots), batch_size):
-        batch = shots[i:i + batch_size]
+        batch = [s for s in shots[i:i + batch_size] if s["shot_number"] not in skip_shot_numbers]
+        if not batch:
+            continue
         images = []
         for s in batch:
             frame_path = shot_dir / f"shot_{s['shot_id']}.png"
@@ -119,10 +122,12 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE):
 
     conn = get_conn()
     for s in shots:
-        cat = category_by_shot.get(s["shot_number"], "other")
+        skipped = s["shot_number"] in skip_shot_numbers
+        cat = "other" if skipped else category_by_shot.get(s["shot_number"], "other")
+        classified_by = "skipped" if skipped else "claude"
         conn.execute(
-            "UPDATE production_spec_shots SET content_category = ?, classified_by = 'claude' WHERE shot_id = ?",
-            (cat, s["shot_id"]),
+            "UPDATE production_spec_shots SET content_category = ?, classified_by = ? WHERE shot_id = ?",
+            (cat, classified_by, s["shot_id"]),
         )
     conn.commit()
     conn.close()
@@ -196,5 +201,10 @@ if __name__ == "__main__":
     ap.add_argument("--batch_size", type=int, default=BATCH_SIZE,
                      help="Shots per vision call — lower this for a stubborn input that keeps failing "
                           "at the default batch size (e.g. an empty/malformed reply from Claude).")
+    ap.add_argument("--skip_shots", default="",
+                     help="Comma-separated shot_numbers to leave out of every vision call entirely "
+                          "(e.g. one specific frame that reliably triggers an empty reply from Claude) "
+                          "— those shots are marked content_category='other', classified_by='skipped'.")
     args = ap.parse_args()
-    classify_and_build_profile(args.input_id, batch_size=args.batch_size)
+    skip_shot_numbers = [int(x) for x in args.skip_shots.split(",") if x.strip()]
+    classify_and_build_profile(args.input_id, batch_size=args.batch_size, skip_shot_numbers=skip_shot_numbers)

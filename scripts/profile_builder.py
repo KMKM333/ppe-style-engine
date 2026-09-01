@@ -118,6 +118,12 @@ def build_profile(channel_name, profile_code, length_band, min_n=10):
     # only the earliest (MIN video_id); a NULL hash (pre-dates the field, or
     # hashing failed) is never collapsed with another NULL — each forms its
     # own singleton group via the video_id fallback key.
+    # 'needs_review' is here for the same reason as 'auto': gatekeeper sets it
+    # BEFORE any Claude call happens (length/topic/budget hold), so such a row
+    # has no Class attributes either — counting it as analysed inflates n
+    # exactly the way 'auto' did. Caught when a backlog run left A.1 reading
+    # n_videos_analysed=12 while only 11 videos were actually classified.
+    #
     # classified_by = 'auto' means only feature_extraction's regex pass ran —
     # no LLM classification, so none of the ~40 Class attributes exist for
     # that row. Counting those rows made n (and therefore n_videos_analysed
@@ -132,7 +138,7 @@ def build_profile(channel_name, profile_code, length_band, min_n=10):
            JOIN videos v ON v.video_id = a.video_id
            WHERE v.channel_id = ?
              AND a.classified_by IS NOT NULL
-             AND a.classified_by NOT IN ('auto', 'pending')
+             AND a.classified_by NOT IN ('auto', 'pending', 'needs_review')
              AND v.video_id IN (
                SELECT MIN(video_id) FROM videos WHERE channel_id = ?
                GROUP BY COALESCE(content_hash, 'v' || video_id)

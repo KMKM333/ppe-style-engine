@@ -18,27 +18,33 @@
         <input type="text" id="input-search" autocomplete="off" placeholder="Filter this type by title, channel, or author…">
         <div id="input-checklist" class="input-checklist"></div>
       </div>
-      <div class="field-panel" style="position:relative">
-        <label for="profile-search">Target profile</label>
-        <input type="text" id="profile-search" autocomplete="off" placeholder="Search profiles by code or channel…">
-        <div id="profile-search-results" class="input-search-results" style="display:none"></div>
-        <select id="profile" name="profile" required style="margin-top:6px">
-          <option value="">— choose a profile —</option>
+      <div class="field-panel" style="position:relative;min-width:300px">
+        <label>Target profile</label>
+        <div class="input-type-tabs" id="profile-type-tabs">
+          <button type="button" class="input-type-tab" data-type="Instagram">Insta channels</button>
+          <button type="button" class="input-type-tab" data-type="Book">Book authors</button>
+          <button type="button" class="input-type-tab" data-type="ProductionSpec">Production spec</button>
+        </div>
+        <input type="text" id="profile-search" autocomplete="off" placeholder="Filter by code or channel…">
+        <div id="profile-checklist" class="input-checklist">
           {% for p in profiles %}
-          <option value="{{ p.profile_code }}" {{ 'selected' if selected_profile == p.profile_code else '' }}>{{ p.profile_code }} ({{ p.channel_name }})</option>
+          <label class="input-checklist-row" data-media-type="{{ p.media_type }}" data-search="{{ (p.profile_code ~ ' ' ~ p.channel_name)|lower }}">
+            <input type="radio" name="profile" value="{{ p.profile_code }}" required {{ 'checked' if selected_profile == p.profile_code else '' }}>
+            {{ p.profile_code }} ({{ p.channel_name }})
+          </label>
           {% endfor %}
-        </select>
+        </div>
       </div>
       <div class="field-panel" style="position:relative">
-        <label for="form-search">Output form <span class="muted">(for Data Output)</span></label>
-        <input type="text" id="form-search" autocomplete="off" placeholder="Search output forms…">
-        <div id="form-search-results" class="input-search-results" style="display:none"></div>
-        <select id="form" name="form" style="margin-top:6px">
-          <option value="">— choose an output form —</option>
+        <label>Output form <span class="muted">(for Data Output)</span></label>
+        <div class="output-form-buttons" id="output-form-buttons">
           {% for code, def in form_specs.items() %}
-          <option value="{{ code }}" {{ 'selected' if selected_form == code else '' }}>{{ def.label }}</option>
+          <label class="output-form-btn {{ 'active' if selected_form == code else '' }}">
+            <input type="radio" name="form" value="{{ code }}" {{ 'checked' if selected_form == code else '' }}>
+            {{ def.label }}
+          </label>
           {% endfor %}
-        </select>
+        </div>
       </div>
     </div>
 
@@ -143,61 +149,6 @@
 {% endif %}
 
 <script>
-function initSearchableSelect(searchId, resultsId, selectId, options) {
-  var BY_VALUE = {};
-  options.forEach(function (o) { BY_VALUE[o.value] = o; });
-
-  var searchBox = document.getElementById(searchId);
-  var resultsBox = document.getElementById(resultsId);
-  var select = document.getElementById(selectId);
-
-  var preselected = BY_VALUE[select.value];
-  if (preselected) searchBox.value = preselected.label;
-
-  function renderResults(q) {
-    resultsBox.innerHTML = '';
-    var matches = options.filter(function (o) { return o.search.indexOf(q) !== -1; }).slice(0, 40);
-    if (!matches.length) {
-      var empty = document.createElement('div');
-      empty.className = 'input-search-empty';
-      empty.textContent = 'No matches';
-      resultsBox.appendChild(empty);
-    } else {
-      matches.forEach(function (o) {
-        var row = document.createElement('div');
-        row.className = 'input-search-row';
-        row.innerHTML = (o.kind ? '<span class="input-search-kind">' + o.kind + '</span>' : '') + o.label;
-        row.addEventListener('click', function () {
-          select.value = o.value;
-          searchBox.value = o.label;
-          resultsBox.style.display = 'none';
-        });
-        resultsBox.appendChild(row);
-      });
-    }
-    resultsBox.style.display = '';
-  }
-
-  searchBox.addEventListener('input', function () {
-    var q = searchBox.value.trim().toLowerCase();
-    if (!q) { resultsBox.style.display = 'none'; return; }
-    renderResults(q);
-  });
-  searchBox.addEventListener('focus', function () {
-    if (searchBox.value.trim()) renderResults(searchBox.value.trim().toLowerCase());
-  });
-  select.addEventListener('change', function () {
-    var o = BY_VALUE[select.value];
-    searchBox.value = o ? o.label : '';
-  });
-  document.addEventListener('click', function (e) {
-    if (e.target !== searchBox && !resultsBox.contains(e.target)) resultsBox.style.display = 'none';
-  });
-}
-
-initSearchableSelect('profile-search', 'profile-search-results', 'profile', {{ profile_options|tojson }});
-initSearchableSelect('form-search', 'form-search-results', 'form', {{ output_form_options|tojson }});
-
 (function () {
   var TYPE_OPTIONS = {
     insta_video: {{ insta_options|tojson }},
@@ -208,7 +159,7 @@ initSearchableSelect('form-search', 'form-search-results', 'form', {{ output_for
   var selected = {{ selected_sources|tojson }};
   var activeType = selected.length ? selected[0].split(':')[0] : 'insta_video';
 
-  var tabs = document.querySelectorAll('.input-type-tab');
+  var tabs = document.querySelectorAll('#input-type-tabs .input-type-tab');
   var checklist = document.getElementById('input-checklist');
   var searchBox = document.getElementById('input-search');
 
@@ -273,6 +224,45 @@ initSearchableSelect('form-search', 'form-search-results', 'form', {{ output_for
 
   tabs.forEach(function (t) { t.classList.toggle('active', t.dataset.type === activeType); });
   renderChecklist(activeType, '');
+})();
+
+(function () {
+  var tabs = document.querySelectorAll('#profile-type-tabs .input-type-tab');
+  var rows = document.querySelectorAll('#profile-checklist .input-checklist-row');
+  var searchBox = document.getElementById('profile-search');
+  var activeType = 'Instagram';
+  var checkedRow = document.querySelector('#profile-checklist input[type=radio]:checked');
+  if (checkedRow) activeType = checkedRow.closest('.input-checklist-row').dataset.mediaType;
+
+  function applyFilter() {
+    var q = searchBox.value.trim().toLowerCase();
+    rows.forEach(function (row) {
+      var matchesType = row.dataset.mediaType === activeType;
+      var matchesQuery = !q || row.dataset.search.indexOf(q) !== -1;
+      row.style.display = (matchesType && matchesQuery) ? '' : 'none';
+    });
+  }
+
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      activeType = t.dataset.type;
+      tabs.forEach(function (o) { o.classList.toggle('active', o === t); });
+      applyFilter();
+    });
+  });
+  searchBox.addEventListener('input', applyFilter);
+
+  tabs.forEach(function (t) { t.classList.toggle('active', t.dataset.type === activeType); });
+  applyFilter();
+})();
+
+(function () {
+  var buttons = document.querySelectorAll('.output-form-btn');
+  buttons.forEach(function (btn) {
+    btn.querySelector('input[type=radio]').addEventListener('change', function () {
+      buttons.forEach(function (b) { b.classList.toggle('active', b === btn); });
+    });
+  });
 })();
 </script>
 {% endblock %}

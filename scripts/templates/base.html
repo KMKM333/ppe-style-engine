@@ -264,7 +264,7 @@
   }
   .input-search-empty { padding:10px; font-size:13px; color: var(--muted); }
   .field-panel {
-    border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+    display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; padding:14px 16px;
   }
   .field-panel > label:first-child { margin-top:0; }
   .input-type-tabs { display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto; margin:6px 0 8px; }
@@ -276,7 +276,7 @@
   .input-type-tab.active { background: rgba(var(--accent-rgb),.18); color: var(--accent); border-color: rgba(var(--accent-rgb),.4); }
   .input-type-tab:disabled { opacity:.5; cursor:default; }
   .input-checklist {
-    max-height:260px; overflow-y:auto; background: var(--panel2); border:1px solid var(--border);
+    flex:1; max-height:260px; overflow-y:auto; background: var(--panel2); border:1px solid var(--border);
     border-radius:8px; margin-top:6px;
   }
   .input-checklist-row {
@@ -285,8 +285,19 @@
   }
   .input-checklist-row:last-child { border-bottom:none; }
   .input-checklist-row:hover { background: rgba(var(--accent-rgb),.1); }
-  .input-checklist-row input[type=checkbox] { margin-top:2px; flex-shrink:0; }
+  .input-checklist-row input[type=checkbox], .input-checklist-row input[type=radio] { margin-top:2px; flex-shrink:0; }
   .input-checklist-row input[type=checkbox]:disabled ~ * { opacity:.5; }
+  .output-form-buttons {
+    flex:1; display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px;
+  }
+  .output-form-btn {
+    display:flex; align-items:center; justify-content:center; text-align:center; gap:8px;
+    background: var(--panel2); border:1px solid var(--border); border-radius:10px;
+    padding:12px; font-size:14px; font-weight:600; color: var(--text); cursor:pointer;
+  }
+  .output-form-btn:hover { border-color: var(--muted); }
+  .output-form-btn.active { background: rgba(var(--accent-rgb),.18); color: var(--accent); border-color: rgba(var(--accent-rgb),.4); }
+  .output-form-btn input[type=radio] { flex-shrink:0; }
   .valuation-pie { width:160px; height:160px; min-width:160px; border-radius:50%; flex-shrink:0; }
   .valuation-swatch {
     display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:8px; vertical-align:middle;

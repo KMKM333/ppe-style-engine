@@ -4702,25 +4702,6 @@ def _resolve_transform_sources(source_values):
     return raw_text, title, source_label, src_type
 
 
-def _transform_profile_options(profiles):
-    """Flattens the target-profile <select> options for the same
-    search-box-over-a-select pattern as the Input field."""
-    options = [
-        {"value": p["profile_code"], "label": f"{p['profile_code']} ({p['channel_name']})", "kind": p.get("media_type") or ""}
-        for p in profiles
-    ]
-    for o in options:
-        o["search"] = o["label"].lower()
-    return options
-
-
-def _transform_output_form_options():
-    options = [{"value": code, "label": spec["label"], "kind": ""} for code, spec in FORM_SPECS.items()]
-    for o in options:
-        o["search"] = o["label"].lower()
-    return options
-
-
 @app.route("/transform", methods=["GET"])
 def transform_form():
     sources = [s for s in request.args.getlist("source") if s]
@@ -4734,8 +4715,6 @@ def transform_form():
     insta_options, book_chapter_options, yt_section_options = _transform_input_options(
         insta_rows, book_chapter_rows, yt_section_rows
     )
-    profile_options = _transform_profile_options(_profiles())
-    output_form_options = _transform_output_form_options()
 
     prompt_text = None
     selected_test_id = None
@@ -4774,7 +4753,6 @@ def transform_form():
     return render_template(
         "transform_form.html", active="transform",
         insta_options=insta_options, book_chapter_options=book_chapter_options, yt_section_options=yt_section_options,
-        profile_options=profile_options, output_form_options=output_form_options,
         max_transform_sources=MAX_TRANSFORM_SOURCES,
         profiles=_profiles(),
         selected_sources=sources, selected_profile=profile, prompt_text=prompt_text,
@@ -4798,8 +4776,6 @@ def transform_generate():
     insta_options, book_chapter_options, yt_section_options = _transform_input_options(
         insta_rows, book_chapter_rows, yt_section_rows
     )
-    profile_options = _transform_profile_options(_profiles())
-    output_form_options = _transform_output_form_options()
 
     if not test_id or not profile:
         flash("Generate the prompt first (pick an input + target profile above).")
@@ -4830,7 +4806,6 @@ def transform_generate():
     return render_template(
         "transform_form.html", active="transform",
         insta_options=insta_options, book_chapter_options=book_chapter_options, yt_section_options=yt_section_options,
-        profile_options=profile_options, output_form_options=output_form_options,
         max_transform_sources=MAX_TRANSFORM_SOURCES,
         profiles=_profiles(),
         selected_sources=sources, selected_profile=profile, prompt_text=prompt_text,

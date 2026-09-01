@@ -4503,7 +4503,7 @@ def hybrid_profile_create():
     weights = [request.form.get(f"weight__{c}", default=1.0, type=float) or 1.0 for c in codes]
 
     carry = {
-        "source": request.form.get("source", ""),
+        "source": request.form.getlist("source"),
         "pasted_title": request.form.get("pasted_title", ""),
         "pasted_text": request.form.get("pasted_text", ""),
     }
@@ -4520,48 +4520,186 @@ def hybrid_profile_create():
 
 
 def _transform_inputs():
+    """Transform inputs are restricted to three categories — see the 2026-09
+    cost investigation: picking a whole book (or a whole long-form video
+    script) as input was quietly making generate_transform calls average
+    ~25-30k input tokens, dwarfing the ~300-word output ever used from it.
+    Book chapters and YouTube sections use their already-extracted
+    points/terms/examples (small) instead of the source's full text."""
     conn = get_conn()
-    video_rows = conn.execute(
-        """SELECT v.video_id, v.title, c.channel_name, v.media_type, a.word_count
+    insta_rows = conn.execute(
+        """SELECT v.video_id, v.title, c.channel_name, a.word_count
            FROM videos v JOIN channels c ON c.channel_id = v.channel_id
            LEFT JOIN video_attributes a ON a.video_id = v.video_id
+           WHERE v.media_type = 'Instagram'
            ORDER BY v.ingested_at DESC"""
     ).fetchall()
-    book_rows = conn.execute(
-        "SELECT book_id, title, author, word_count FROM books ORDER BY ingested_at DESC"
+    book_chapter_rows = conn.execute(
+        """SELECT s.section_id, s.section_title, s.section_number, b.title AS book_title, b.author
+           FROM book_sections s JOIN books b ON b.book_id = s.book_id
+           WHERE EXISTS (SELECT 1 FROM book_points p WHERE p.section_id = s.section_id)
+              OR EXISTS (SELECT 1 FROM book_terms t WHERE t.section_id = s.section_id)
+              OR EXISTS (SELECT 1 FROM book_examples e WHERE e.section_id = s.section_id)
+           ORDER BY b.author, b.title, s.section_number"""
     ).fetchall()
-    example_rows = conn.execute(
-        """SELECT e.example_id, e.example_title, e.example_text, b.title AS book_title, b.author
-           FROM book_examples e JOIN books b ON b.book_id = e.book_id
-           ORDER BY b.author, b.title, e.example_id"""
+    yt_section_rows = conn.execute(
+        """SELECT s.section_id, s.section_title, s.section_number, v.title AS video_title, c.channel_name
+           FROM video_sections s JOIN videos v ON v.video_id = s.video_id
+           JOIN channels c ON c.channel_id = v.channel_id
+           WHERE v.media_type = 'YouTube'
+             AND (EXISTS (SELECT 1 FROM video_points p WHERE p.section_id = s.section_id)
+               OR EXISTS (SELECT 1 FROM video_terms t WHERE t.section_id = s.section_id)
+               OR EXISTS (SELECT 1 FROM video_examples e WHERE e.section_id = s.section_id))
+           ORDER BY c.channel_name, v.title, s.section_number"""
     ).fetchall()
     conn.close()
-    return video_rows, book_rows, example_rows
+    return insta_rows, book_chapter_rows, yt_section_rows
 
 
-def _transform_input_options(video_rows, book_rows, example_rows):
-    """Flattens the same three row sets the <select id="source"> renders from
-    into one list the client-side search box can filter — labels mirror the
-    <option> text exactly so picking a search result and picking straight
-    from the dropdown always agree."""
-    options = []
-    for v in video_rows:
-        label = f"{v['media_type'] or 'Video'} — {v['channel_name']} — {v['title']}"
+def _transform_input_options(insta_rows, book_chapter_rows, yt_section_rows):
+    """Flattens the three source-type row sets into per-type option lists the
+    client-side type-tab + checklist picker renders from and filters."""
+    insta_options, book_chapter_options, yt_section_options = [], [], []
+    for v in insta_rows:
+        label = f"{v['channel_name']} — {v['title']}"
         if v["word_count"]:
             label += f" ({v['word_count']}w)"
-        options.append({"value": f"video:{v['video_id']}", "label": label, "kind": "Video"})
-    for b in book_rows:
-        label = f"Book — {b['author'] or 'Unknown'} — {b['title']}"
-        if b["word_count"]:
-            label += f" ({b['word_count']}w)"
-        options.append({"value": f"book:{b['book_id']}", "label": label, "kind": "Book"})
-    for e in example_rows:
-        title = e["example_title"] or f"Example #{e['example_id']}"
-        label = f"Example — {e['author'] or 'Unknown'} — {e['book_title']}: {title}"
-        options.append({"value": f"example:{e['example_id']}", "label": label, "kind": "Example"})
-    for o in options:
-        o["search"] = o["label"].lower()
-    return options
+        insta_options.append({"value": f"insta_video:{v['video_id']}", "label": label})
+    for s in book_chapter_rows:
+        label = f"{s['author'] or 'Unknown'} — {s['book_title']}: {s['section_title']}"
+        book_chapter_options.append({"value": f"book_chapter:{s['section_id']}", "label": label})
+    for s in yt_section_rows:
+        label = f"{s['channel_name']} — {s['video_title']}: {s['section_title']}"
+        yt_section_options.append({"value": f"yt_section:{s['section_id']}", "label": label})
+    for options in (insta_options, book_chapter_options, yt_section_options):
+        for o in options:
+            o["search"] = o["label"].lower()
+    return insta_options, book_chapter_options, yt_section_options
+
+
+TRANSFORM_SOURCE_TYPES = {"insta_video", "book_chapter", "yt_section"}
+MAX_TRANSFORM_SOURCES = 3
+
+
+def _book_chapter_content(conn, section_id):
+    """Builds a book chapter's Transform content from its already-extracted
+    points/terms/examples — not the book's full text (that was the cost
+    problem this replaced)."""
+    section = conn.execute(
+        """SELECT s.section_title, s.summary, b.title AS book_title, b.author
+           FROM book_sections s JOIN books b ON b.book_id = s.book_id WHERE s.section_id = ?""",
+        (section_id,),
+    ).fetchone()
+    if not section:
+        raise ValueError(f"No such book chapter: section_id={section_id}")
+    parts = [f"Chapter: {section['section_title']}"]
+    if section["summary"]:
+        parts.append(section["summary"])
+    points = [r["point_text"] for r in conn.execute(
+        "SELECT point_text FROM book_points WHERE section_id = ?", (section_id,))]
+    if points:
+        parts.append("Key points:\n" + "\n".join(f"- {p}" for p in points))
+    terms = conn.execute(
+        "SELECT term, definition FROM book_terms WHERE section_id = ?", (section_id,)
+    ).fetchall()
+    if terms:
+        parts.append("Terms:\n" + "\n".join(f"- {t['term']}: {t['definition'] or ''}" for t in terms))
+    examples = conn.execute(
+        "SELECT example_title, example_text FROM book_examples WHERE section_id = ?", (section_id,)
+    ).fetchall()
+    if examples:
+        parts.append("Examples:\n" + "\n\n".join(
+            f"{e['example_title']}\n{e['example_text']}" if e["example_title"] else e["example_text"]
+            for e in examples
+        ))
+    label = f"{section['author'] or 'Unknown'} — {section['book_title']}: {section['section_title']}"
+    return "\n\n".join(parts), label
+
+
+def _yt_section_content(conn, section_id):
+    """Video-section counterpart to _book_chapter_content() — same
+    already-extracted-content approach instead of a slice of the full
+    transcript (which the app has no stored start/end offsets for anyway)."""
+    section = conn.execute(
+        """SELECT s.section_title, s.summary, v.title AS video_title, c.channel_name
+           FROM video_sections s JOIN videos v ON v.video_id = s.video_id
+           JOIN channels c ON c.channel_id = v.channel_id WHERE s.section_id = ?""",
+        (section_id,),
+    ).fetchone()
+    if not section:
+        raise ValueError(f"No such video section: section_id={section_id}")
+    parts = [f"Section: {section['section_title']}"]
+    if section["summary"]:
+        parts.append(section["summary"])
+    points = [r["point_text"] for r in conn.execute(
+        "SELECT point_text FROM video_points WHERE section_id = ?", (section_id,))]
+    if points:
+        parts.append("Key points:\n" + "\n".join(f"- {p}" for p in points))
+    terms = conn.execute(
+        "SELECT term, definition FROM video_terms WHERE section_id = ?", (section_id,)
+    ).fetchall()
+    if terms:
+        parts.append("Terms:\n" + "\n".join(f"- {t['term']}: {t['definition'] or ''}" for t in terms))
+    examples = conn.execute(
+        "SELECT example_title, example_text FROM video_examples WHERE section_id = ?", (section_id,)
+    ).fetchall()
+    if examples:
+        parts.append("Examples:\n" + "\n\n".join(
+            f"{e['example_title']}\n{e['example_text']}" if e["example_title"] else e["example_text"]
+            for e in examples
+        ))
+    label = f"{section['channel_name']} — {section['video_title']}: {section['section_title']}"
+    return "\n\n".join(parts), label
+
+
+def _resolve_transform_sources(source_values):
+    """Turns 1-3 'type:id' source values (all the same type) into one
+    combined (raw_text, title, source_label, input_type) tuple. Multiple
+    sources are concatenated with a labeled divider so Claude sees them as
+    distinct passages, not one continuous piece."""
+    if not source_values:
+        raise ValueError("Choose an input or paste some text.")
+    if len(source_values) > MAX_TRANSFORM_SOURCES:
+        raise ValueError(f"Choose at most {MAX_TRANSFORM_SOURCES} inputs.")
+    parsed = [sv.partition(":") for sv in source_values]
+    types = {t for t, _, _ in parsed}
+    if len(types) > 1:
+        raise ValueError("All selected inputs must be the same type (e.g. all book chapters).")
+    src_type = types.pop()
+    if src_type not in TRANSFORM_SOURCE_TYPES:
+        raise ValueError("Choose an input or paste some text.")
+
+    conn = get_conn()
+    try:
+        pieces = []  # (content, label)
+        for _, _, sid_str in parsed:
+            sid = int(sid_str)
+            if src_type == "insta_video":
+                row = conn.execute(
+                    """SELECT v.title, v.script, c.channel_name FROM videos v
+                       JOIN channels c ON c.channel_id = v.channel_id WHERE v.video_id = ?""",
+                    (sid,),
+                ).fetchone()
+                if not row:
+                    raise ValueError("No such video")
+                pieces.append((row["script"], f"{row['channel_name']} — {row['title']}"))
+            elif src_type == "book_chapter":
+                pieces.append(_book_chapter_content(conn, sid))
+            else:  # yt_section
+                pieces.append(_yt_section_content(conn, sid))
+    finally:
+        conn.close()
+
+    kind_label = {"insta_video": "Insta video", "book_chapter": "Book chapter", "yt_section": "YouTube section"}[src_type]
+    if len(pieces) == 1:
+        raw_text, label = pieces[0]
+        title = label
+        source_label = f"{kind_label}: {label}"
+    else:
+        raw_text = "\n\n".join(f"--- Source {i + 1}: {label} ---\n{content}" for i, (content, label) in enumerate(pieces))
+        title = " + ".join(label for _, label in pieces)
+        source_label = f"{kind_label} ({len(pieces)} combined): " + "; ".join(label for _, label in pieces)
+    return raw_text, title, source_label, src_type
 
 
 def _transform_profile_options(profiles):
@@ -4585,15 +4723,17 @@ def _transform_output_form_options():
 
 @app.route("/transform", methods=["GET"])
 def transform_form():
-    source = request.args.get("source", "").strip()
+    sources = [s for s in request.args.getlist("source") if s]
     pasted_title = request.args.get("pasted_title", "").strip()
     pasted_text = request.args.get("pasted_text", "").strip()
     profile = request.args.get("profile", default="", type=str)
     mode = request.args.get("mode", "transform")
     output_form = request.args.get("form", "").strip()
 
-    video_rows, book_rows, example_rows = _transform_inputs()
-    input_options = _transform_input_options(video_rows, book_rows, example_rows)
+    insta_rows, book_chapter_rows, yt_section_rows = _transform_inputs()
+    insta_options, book_chapter_options, yt_section_options = _transform_input_options(
+        insta_rows, book_chapter_rows, yt_section_rows
+    )
     profile_options = _transform_profile_options(_profiles())
     output_form_options = _transform_output_form_options()
 
@@ -4601,9 +4741,9 @@ def transform_form():
     selected_test_id = None
     original_text = None
     gen_title = gen_text = None
-    if mode == "data_output" and not output_form and profile and (source or pasted_text):
+    if mode == "data_output" and not output_form and profile and (sources or pasted_text):
         flash("Choose an output form to generate a data output.")
-    elif profile and (source or pasted_text):
+    elif profile and (sources or pasted_text):
         try:
             if pasted_text:
                 raw_text = pasted_text
@@ -4611,36 +4751,7 @@ def transform_form():
                 source_label = "Pasted text"
                 input_type = "pasted_text"
             else:
-                kind, _, sid_str = source.partition(":")
-                sid = int(sid_str)
-                conn = get_conn()
-                if kind == "video":
-                    row = conn.execute("SELECT title, script FROM videos WHERE video_id=?", (sid,)).fetchone()
-                    conn.close()
-                    if not row:
-                        raise ValueError("No such video")
-                    raw_text, title = row["script"], row["title"]
-                    source_label, input_type = f"Video #{sid}: {title}", "video_script"
-                elif kind == "book":
-                    row = conn.execute("SELECT title, full_text FROM books WHERE book_id=?", (sid,)).fetchone()
-                    conn.close()
-                    if not row or not row["full_text"]:
-                        raise ValueError("No such book, or book has no stored full text")
-                    raw_text, title = row["full_text"], row["title"]
-                    source_label, input_type = f"Book #{sid}: {title}", "book_text"
-                elif kind == "example":
-                    row = conn.execute(
-                        "SELECT example_title, example_text FROM book_examples WHERE example_id=?", (sid,)
-                    ).fetchone()
-                    conn.close()
-                    if not row:
-                        raise ValueError("No such example")
-                    title = row["example_title"] or f"Example #{sid}"
-                    raw_text = row["example_text"]
-                    source_label, input_type = f"Example #{sid}: {title}", "book_example"
-                else:
-                    conn.close()
-                    raise ValueError("Choose an input or paste some text.")
+                raw_text, title, source_label, input_type = _resolve_transform_sources(sources)
 
             original_text = raw_text
             result = rate_input(raw_text, title=title, source_label=source_label, input_type=input_type)
@@ -4662,10 +4773,11 @@ def transform_form():
 
     return render_template(
         "transform_form.html", active="transform",
-        video_rows=video_rows, book_rows=book_rows, example_rows=example_rows,
-        input_options=input_options, profile_options=profile_options, output_form_options=output_form_options,
+        insta_options=insta_options, book_chapter_options=book_chapter_options, yt_section_options=yt_section_options,
+        profile_options=profile_options, output_form_options=output_form_options,
+        max_transform_sources=MAX_TRANSFORM_SOURCES,
         profiles=_profiles(),
-        selected_source=source, selected_profile=profile, prompt_text=prompt_text,
+        selected_sources=sources, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=selected_test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,
         selected_mode=mode, selected_form=output_form, form_specs=FORM_SPECS,
@@ -4676,14 +4788,16 @@ def transform_form():
 def transform_generate():
     test_id = request.form.get("test_id", type=int)
     profile = request.form.get("profile", "")
-    source = request.form.get("source", "")
+    sources = [s for s in request.form.getlist("source") if s]
     pasted_title = request.form.get("pasted_title", "")
     pasted_text = request.form.get("pasted_text", "")
     mode = request.form.get("mode", "transform")
     output_form = request.form.get("form", "").strip()
 
-    video_rows, book_rows, example_rows = _transform_inputs()
-    input_options = _transform_input_options(video_rows, book_rows, example_rows)
+    insta_rows, book_chapter_rows, yt_section_rows = _transform_inputs()
+    insta_options, book_chapter_options, yt_section_options = _transform_input_options(
+        insta_rows, book_chapter_rows, yt_section_rows
+    )
     profile_options = _transform_profile_options(_profiles())
     output_form_options = _transform_output_form_options()
 
@@ -4715,10 +4829,11 @@ def transform_generate():
 
     return render_template(
         "transform_form.html", active="transform",
-        video_rows=video_rows, book_rows=book_rows, example_rows=example_rows,
-        input_options=input_options, profile_options=profile_options, output_form_options=output_form_options,
+        insta_options=insta_options, book_chapter_options=book_chapter_options, yt_section_options=yt_section_options,
+        profile_options=profile_options, output_form_options=output_form_options,
+        max_transform_sources=MAX_TRANSFORM_SOURCES,
         profiles=_profiles(),
-        selected_source=source, selected_profile=profile, prompt_text=prompt_text,
+        selected_sources=sources, selected_profile=profile, prompt_text=prompt_text,
         selected_test_id=test_id, pasted_title=pasted_title, pasted_text=pasted_text,
         original_text=original_text, gen_title=gen_title, gen_text=gen_text,
         selected_mode=mode, selected_form=output_form, form_specs=FORM_SPECS,

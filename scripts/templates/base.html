@@ -263,6 +263,30 @@
     background: rgba(var(--accent-rgb),.18); color: var(--accent);
   }
   .input-search-empty { padding:10px; font-size:13px; color: var(--muted); }
+  .field-panel {
+    border:1px solid var(--border); border-radius:10px; padding:14px 16px;
+  }
+  .field-panel > label:first-child { margin-top:0; }
+  .input-type-tabs { display:flex; gap:4px; flex-wrap:nowrap; overflow-x:auto; margin:6px 0 8px; }
+  .input-type-tab {
+    background: var(--panel2); color: var(--muted); border:1px solid var(--border); border-radius:999px;
+    padding:5px 8px; font-size:11px; font-weight:600; cursor:pointer; white-space:nowrap; flex-shrink:0;
+  }
+  .input-type-tab:hover:not(:disabled) { color: var(--text); border-color: var(--muted); }
+  .input-type-tab.active { background: rgba(var(--accent-rgb),.18); color: var(--accent); border-color: rgba(var(--accent-rgb),.4); }
+  .input-type-tab:disabled { opacity:.5; cursor:default; }
+  .input-checklist {
+    max-height:260px; overflow-y:auto; background: var(--panel2); border:1px solid var(--border);
+    border-radius:8px; margin-top:6px;
+  }
+  .input-checklist-row {
+    display:flex; align-items:flex-start; gap:8px; padding:8px 10px; font-size:13px; cursor:pointer;
+    border-bottom:1px solid var(--border);
+  }
+  .input-checklist-row:last-child { border-bottom:none; }
+  .input-checklist-row:hover { background: rgba(var(--accent-rgb),.1); }
+  .input-checklist-row input[type=checkbox] { margin-top:2px; flex-shrink:0; }
+  .input-checklist-row input[type=checkbox]:disabled ~ * { opacity:.5; }
   .valuation-pie { width:160px; height:160px; min-width:160px; border-radius:50%; flex-shrink:0; }
   .valuation-swatch {
     display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:8px; vertical-align:middle;

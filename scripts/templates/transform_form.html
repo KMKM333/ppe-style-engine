@@ -7,42 +7,18 @@
 <div class="card">
   <form method="get" action="{{ url_for('transform_form') }}">
     <div class="flex">
-      <div style="position:relative">
-        <label for="input-search">Input</label>
-        <input type="text" id="input-search" autocomplete="off" placeholder="Search videos, books, examples by title, channel, or author…">
-        <div id="input-search-results" class="input-search-results" style="display:none"></div>
-        <select id="source" name="source" style="margin-top:6px">
-          <option value="">— choose an ingested input —</option>
-          {% if video_rows %}
-          <optgroup label="Videos">
-            {% for v in video_rows %}
-            <option value="video:{{ v.video_id }}" {{ 'selected' if selected_source == 'video:' ~ v.video_id else '' }}>
-              {{ v.media_type or 'Video' }} — {{ v.channel_name }} — {{ v.title }}{% if v.word_count %} ({{ v.word_count }}w){% endif %}
-            </option>
-            {% endfor %}
-          </optgroup>
-          {% endif %}
-          {% if book_rows %}
-          <optgroup label="Books">
-            {% for b in book_rows %}
-            <option value="book:{{ b.book_id }}" {{ 'selected' if selected_source == 'book:' ~ b.book_id else '' }}>
-              Book — {{ b.author or 'Unknown' }} — {{ b.title }}{% if b.word_count %} ({{ b.word_count }}w){% endif %}
-            </option>
-            {% endfor %}
-          </optgroup>
-          {% endif %}
-          {% if example_rows %}
-          <optgroup label="Examples">
-            {% for e in example_rows %}
-            <option value="example:{{ e.example_id }}" {{ 'selected' if selected_source == 'example:' ~ e.example_id else '' }}>
-              Example — {{ e.author or 'Unknown' }} — {{ e.book_title }}: {{ e.example_title or ('Example #' ~ e.example_id) }}
-            </option>
-            {% endfor %}
-          </optgroup>
-          {% endif %}
-        </select>
+      <div class="field-panel" style="position:relative;min-width:360px">
+        <label>Input <span class="muted">(pick 1-{{ max_transform_sources }} of the same type)</span></label>
+        <div class="input-type-tabs" id="input-type-tabs">
+          <button type="button" class="input-type-tab" data-type="insta_video">Insta video</button>
+          <button type="button" class="input-type-tab" data-type="book_chapter">Book chapter</button>
+          <button type="button" class="input-type-tab" data-type="yt_section">YouTube section</button>
+          <button type="button" class="input-type-tab" data-type="news_article" disabled title="Coming soon — no news article inputs yet">News article</button>
+        </div>
+        <input type="text" id="input-search" autocomplete="off" placeholder="Filter this type by title, channel, or author…">
+        <div id="input-checklist" class="input-checklist"></div>
       </div>
-      <div style="position:relative">
+      <div class="field-panel" style="position:relative">
         <label for="profile-search">Target profile</label>
         <input type="text" id="profile-search" autocomplete="off" placeholder="Search profiles by code or channel…">
         <div id="profile-search-results" class="input-search-results" style="display:none"></div>
@@ -53,7 +29,7 @@
           {% endfor %}
         </select>
       </div>
-      <div style="position:relative">
+      <div class="field-panel" style="position:relative">
         <label for="form-search">Output form <span class="muted">(for Data Output)</span></label>
         <input type="text" id="form-search" autocomplete="off" placeholder="Search output forms…">
         <div id="form-search-results" class="input-search-results" style="display:none"></div>
@@ -94,7 +70,9 @@
       The new profile shows up as a normal target option above.
     </div>
     <form method="post" action="{{ url_for('hybrid_profile_create') }}">
-      <input type="hidden" name="source" value="{{ selected_source or '' }}">
+      {% for sv in selected_sources %}
+      <input type="hidden" name="source" value="{{ sv }}">
+      {% endfor %}
       <input type="hidden" name="pasted_title" value="{{ pasted_title or '' }}">
       <input type="hidden" name="pasted_text" value="{{ pasted_text or '' }}">
       <table>
@@ -151,7 +129,9 @@
     <form method="post" action="{{ url_for('transform_generate') }}" style="margin-top:10px">
       <input type="hidden" name="test_id" value="{{ selected_test_id }}">
       <input type="hidden" name="profile" value="{{ selected_profile }}">
-      <input type="hidden" name="source" value="{{ selected_source or '' }}">
+      {% for sv in selected_sources %}
+      <input type="hidden" name="source" value="{{ sv }}">
+      {% endfor %}
       <input type="hidden" name="pasted_title" value="{{ pasted_title or '' }}">
       <input type="hidden" name="pasted_text" value="{{ pasted_text or '' }}">
       <input type="hidden" name="mode" value="{{ selected_mode or 'transform' }}">
@@ -215,8 +195,84 @@ function initSearchableSelect(searchId, resultsId, selectId, options) {
   });
 }
 
-initSearchableSelect('input-search', 'input-search-results', 'source', {{ input_options|tojson }});
 initSearchableSelect('profile-search', 'profile-search-results', 'profile', {{ profile_options|tojson }});
 initSearchableSelect('form-search', 'form-search-results', 'form', {{ output_form_options|tojson }});
+
+(function () {
+  var TYPE_OPTIONS = {
+    insta_video: {{ insta_options|tojson }},
+    book_chapter: {{ book_chapter_options|tojson }},
+    yt_section: {{ yt_section_options|tojson }}
+  };
+  var MAX_SOURCES = {{ max_transform_sources }};
+  var selected = {{ selected_sources|tojson }};
+  var activeType = selected.length ? selected[0].split(':')[0] : 'insta_video';
+
+  var tabs = document.querySelectorAll('.input-type-tab');
+  var checklist = document.getElementById('input-checklist');
+  var searchBox = document.getElementById('input-search');
+
+  function updateDisabled() {
+    var checkedCount = checklist.querySelectorAll('input[type=checkbox]:checked').length;
+    checklist.querySelectorAll('input[type=checkbox]').forEach(function (cb) {
+      cb.disabled = !cb.checked && checkedCount >= MAX_SOURCES;
+    });
+  }
+
+  function onCheckChange(e) {
+    var cb = e.target;
+    if (cb.checked) {
+      if (selected.indexOf(cb.value) === -1) selected.push(cb.value);
+    } else {
+      selected = selected.filter(function (v) { return v !== cb.value; });
+    }
+    updateDisabled();
+  }
+
+  function renderChecklist(type, query) {
+    checklist.innerHTML = '';
+    var opts = TYPE_OPTIONS[type] || [];
+    var q = (query || '').trim().toLowerCase();
+    var matches = q ? opts.filter(function (o) { return o.search.indexOf(q) !== -1; }) : opts;
+    if (!matches.length) {
+      var empty = document.createElement('div');
+      empty.className = 'input-search-empty';
+      empty.textContent = 'No matches';
+      checklist.appendChild(empty);
+    } else {
+      matches.slice(0, 200).forEach(function (o) {
+        var row = document.createElement('label');
+        row.className = 'input-checklist-row';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.name = 'source';
+        cb.value = o.value;
+        cb.checked = selected.indexOf(o.value) !== -1;
+        cb.addEventListener('change', onCheckChange);
+        row.appendChild(cb);
+        row.appendChild(document.createTextNode(' ' + o.label));
+        checklist.appendChild(row);
+      });
+    }
+    updateDisabled();
+  }
+
+  function setActiveType(type) {
+    activeType = type;
+    selected = [];
+    tabs.forEach(function (t) { t.classList.toggle('active', t.dataset.type === type); });
+    searchBox.value = '';
+    renderChecklist(type, '');
+  }
+
+  tabs.forEach(function (t) {
+    if (t.disabled) return;
+    t.addEventListener('click', function () { setActiveType(t.dataset.type); });
+  });
+  searchBox.addEventListener('input', function () { renderChecklist(activeType, searchBox.value); });
+
+  tabs.forEach(function (t) { t.classList.toggle('active', t.dataset.type === activeType); });
+  renderChecklist(activeType, '');
+})();
 </script>
 {% endblock %}

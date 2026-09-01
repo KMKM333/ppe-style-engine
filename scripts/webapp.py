@@ -2516,6 +2516,55 @@ def api_ingest_video():
     return jsonify({"ok": True, "video_id": video_id, "status": "ingested, classifying in the background"})
 
 
+@app.route("/api/videos/<int:video_id>/classify", methods=["POST"])
+def api_classify_video(video_id):
+    """Runs classification on a video that is ALREADY ingested — the
+    counterpart to api_classify_production_spec, which the production-spec
+    pipeline has always had and this one didn't. Until now classification
+    could only ever happen as a side effect of /api/ingest/video, so a
+    channel ingested before classification existed (or held for review, or
+    interrupted) had no way to be classified short of re-ingesting it.
+
+    Goes through the same gatekeeper checks and the same detached
+    subprocess as the ingest path, so cost controls and the
+    long-form/short-form script split apply identically. Skips videos that
+    are already classified unless force=true is passed, so it is safe to
+    fire at a whole channel repeatedly."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT v.video_id, v.title, v.script, v.duration_sec, v.media_type, a.classified_by
+           FROM videos v LEFT JOIN video_attributes a ON a.video_id = v.video_id
+           WHERE v.video_id = ?""",
+        (video_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"ok": False, "error": "no such video"}), 404
+
+    payload = request.get_json(silent=True) or {}
+    already = row["classified_by"] not in (None, "auto", "pending", "needs_review")
+    if already and not payload.get("force"):
+        return jsonify({"ok": True, "video_id": video_id, "status": "already classified", "skipped": True})
+
+    hold_reason = (
+        gatekeeper.check_length(row["duration_sec"], row["media_type"])
+        or gatekeeper.check_topic(row["title"], row["script"])
+        or gatekeeper.check_daily_budget()
+    )
+    if hold_reason:
+        gatekeeper.mark_needs_review(video_id, hold_reason)
+        return jsonify({"ok": True, "video_id": video_id, "status": "held for review", "reason": hold_reason})
+
+    script_name = "auto_process_video.py" if row["media_type"] == "YouTube" else "auto_process_shortform_video.py"
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
+    subprocess.Popen([sys.executable, script_path, "--video_id", str(video_id)], start_new_session=True)
+
+    return jsonify({"ok": True, "video_id": video_id, "status": "classifying"})
+
+
 @app.route("/api/videos/<int:video_id>/status")
 def api_video_status(video_id):
     """Lets the transcriber poll for classification completion after

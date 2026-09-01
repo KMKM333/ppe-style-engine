@@ -60,7 +60,7 @@ def _mark_needs_review(input_id, reason):
     print(f"[classify_production_spec_shots] input_id={input_id} needs review: {reason}")
 
 
-def classify_and_build_profile(input_id):
+def classify_and_build_profile(input_id, batch_size=BATCH_SIZE):
     conn = get_conn()
     input_row = conn.execute(
         """SELECT i.input_id, i.title, i.channel_id, c.channel_name
@@ -91,8 +91,8 @@ def classify_and_build_profile(input_id):
     # --- classify each shot's content category, in bounded-size batches ---
     shot_dir = PRODUCTION_SPEC_SHOTS_DIR / str(input_id)
     category_by_shot = {}
-    for i in range(0, len(shots), BATCH_SIZE):
-        batch = shots[i:i + BATCH_SIZE]
+    for i in range(0, len(shots), batch_size):
+        batch = shots[i:i + batch_size]
         images = []
         for s in batch:
             frame_path = shot_dir / f"shot_{s['shot_id']}.png"
@@ -193,5 +193,8 @@ def classify_and_build_profile(input_id):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--input_id", type=int, required=True)
+    ap.add_argument("--batch_size", type=int, default=BATCH_SIZE,
+                     help="Shots per vision call — lower this for a stubborn input that keeps failing "
+                          "at the default batch size (e.g. an empty/malformed reply from Claude).")
     args = ap.parse_args()
-    classify_and_build_profile(args.input_id)
+    classify_and_build_profile(args.input_id, batch_size=args.batch_size)

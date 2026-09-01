@@ -2705,7 +2705,12 @@ def api_classify_production_spec(input_id):
     """Kicks off shot-content classification once every frame has been
     uploaded — a detached subprocess, same rationale as api_ingest_video:
     the vision calls can take long enough that an in-process thread risks
-    gunicorn's arbiter recycling the worker mid-call."""
+    gunicorn's arbiter recycling the worker mid-call.
+
+    Optional JSON body {"batch_size": N} overrides the default 15
+    shots-per-vision-call for this one run — useful for retrying an input
+    that keeps failing at the default size (e.g. an empty/malformed reply
+    from Claude on a particular batch)."""
     if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
         abort(403)
     conn = get_conn()
@@ -2717,10 +2722,19 @@ def api_classify_production_spec(input_id):
     conn.commit()
     conn.close()
 
-    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classify_production_spec_shots.py")
-    subprocess.Popen([sys.executable, script_path, "--input_id", str(input_id)], start_new_session=True)
+    payload = request.get_json(silent=True) or {}
+    try:
+        batch_size = int(payload["batch_size"]) if payload.get("batch_size") else None
+    except (TypeError, ValueError):
+        batch_size = None
 
-    return jsonify({"ok": True, "input_id": input_id, "status": "classifying"})
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classify_production_spec_shots.py")
+    cmd = [sys.executable, script_path, "--input_id", str(input_id)]
+    if batch_size:
+        cmd += ["--batch_size", str(batch_size)]
+    subprocess.Popen(cmd, start_new_session=True)
+
+    return jsonify({"ok": True, "input_id": input_id, "status": "classifying", "batch_size": batch_size})
 
 
 @app.route("/api/production-spec/inputs/<int:input_id>/status")

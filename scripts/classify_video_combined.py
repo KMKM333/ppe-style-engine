@@ -174,7 +174,12 @@ def classify_video_combined(video_id, title, script, timed_segments, skip_visual
     """Runs the single combined API call and returns the parsed dict —
     does NOT write to the DB (see merge_combined_result)."""
     prompt = build_combined_prompt(title, script, timed_segments, skip_visuals=skip_visuals)
-    result = llm_client.generate_json(prompt, max_tokens=COMBINED_MAX_TOKENS)
+    # Batch API: half price, in exchange for the answer landing whenever the
+    # batch finishes (usually minutes, Anthropic's own ceiling is 24h)
+    # instead of immediately. Safe here specifically because this whole
+    # function only ever runs inside a detached background subprocess (see
+    # auto_process_video.py) — nothing interactive is waiting on it.
+    result = llm_client.generate_json_batch(prompt, max_tokens=COMBINED_MAX_TOKENS)
     if not isinstance(result, dict):
         raise ValueError(f"Expected a single JSON object, got {type(result).__name__}")
     return result

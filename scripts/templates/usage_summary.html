@@ -5,6 +5,7 @@
 <div class="sub">
   {{ n_rows }} logged Claude API call{{ 's' if n_rows != 1 else '' }} · total estimated cost ${{ total_cost }}
   · pricing: $2/Mtok input, $10/Mtok output (5x)
+  {% if n_batch_calls %} · {{ n_batch_calls }} via Batch API (50% off, already reflected in these costs){% endif %}
 </div>
 
 <div class="card" style="margin-top:16px">

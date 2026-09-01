@@ -135,12 +135,19 @@ def check_topic(title, script):
     )
 
 
-def record_usage(model, input_tokens, output_tokens, call_site):
+BATCH_DISCOUNT = 0.5  # Anthropic's Message Batches API: half price, in exchange for async turnaround
+
+
+def record_usage(model, input_tokens, output_tokens, call_site, is_batch=False):
     """Appends one line to db/api_usage_log.jsonl, next to the sqlite DB.
     Best-effort: a logging failure here must never break the actual Claude
     call it's recording, so callers wrap this in try/except (see
-    llm_client.py)."""
+    llm_client.py). is_batch applies BATCH_DISCOUNT so a Batch API call's
+    logged cost — and therefore check_daily_budget()'s running total —
+    doesn't overstate what was actually spent by 2x."""
     cost = (input_tokens / 1_000_000) * PRICE_PER_MTOK_INPUT + (output_tokens / 1_000_000) * PRICE_PER_MTOK_OUTPUT
+    if is_batch:
+        cost *= BATCH_DISCOUNT
     line = {
         "ts": time.time(),
         "model": model,
@@ -148,6 +155,7 @@ def record_usage(model, input_tokens, output_tokens, call_site):
         "output_tokens": output_tokens,
         "estimated_cost_usd": round(cost, 6),
         "call_site": call_site,
+        "is_batch": is_batch,
     }
     USAGE_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(USAGE_LOG_PATH, "a") as f:

@@ -203,37 +203,48 @@ def usage_summary():
                 except json.JSONDecodeError:
                     continue
 
+    def row_input_output_cost(r):
+        """Per-row input/output cost split, respecting the batch discount
+        (is_batch, added alongside generate_json_batch) — so a discounted
+        row's split still sums to its own stored estimated_cost_usd instead
+        of silently overstating it by 2x."""
+        discount = gatekeeper.BATCH_DISCOUNT if r.get("is_batch") else 1.0
+        input_cost = (r.get("input_tokens", 0) / 1_000_000) * gatekeeper.PRICE_PER_MTOK_INPUT * discount
+        output_cost = (r.get("output_tokens", 0) / 1_000_000) * gatekeeper.PRICE_PER_MTOK_OUTPUT * discount
+        return input_cost, output_cost
+
     buckets = {}
     for r in rows:
         site = r.get("call_site", "?")
         bucket_name = f"{site} — large output (likely long-form video classification)" \
             if r.get("output_tokens", 0) > LARGE_OUTPUT_THRESHOLD else site
-        b = buckets.setdefault(bucket_name, {"n": 0, "input_tokens": 0, "output_tokens": 0, "cost": 0.0})
+        b = buckets.setdefault(bucket_name, {"n": 0, "input_tokens": 0, "output_tokens": 0, "cost": 0.0, "output_cost": 0.0})
         b["n"] += 1
         b["input_tokens"] += r.get("input_tokens", 0)
         b["output_tokens"] += r.get("output_tokens", 0)
         b["cost"] += r.get("estimated_cost_usd", 0.0)
+        b["output_cost"] += row_input_output_cost(r)[1]
 
     summary = []
     for name, b in sorted(buckets.items(), key=lambda kv: -kv[1]["cost"]):
-        input_cost = (b["input_tokens"] / 1_000_000) * gatekeeper.PRICE_PER_MTOK_INPUT
-        output_cost = (b["output_tokens"] / 1_000_000) * gatekeeper.PRICE_PER_MTOK_OUTPUT
         summary.append({
             "call_site": name, "n": b["n"],
             "avg_input": round(b["input_tokens"] / b["n"]) if b["n"] else 0,
             "avg_output": round(b["output_tokens"] / b["n"]) if b["n"] else 0,
             "total_cost": round(b["cost"], 4),
-            "output_pct_of_cost": round(output_cost / b["cost"] * 100, 1) if b["cost"] else 0,
+            "output_pct_of_cost": round(b["output_cost"] / b["cost"] * 100, 1) if b["cost"] else 0,
         })
 
     total_cost = sum(r.get("estimated_cost_usd", 0.0) for r in rows)
     total_input_tokens = sum(r.get("input_tokens", 0) for r in rows)
     total_output_tokens = sum(r.get("output_tokens", 0) for r in rows)
-    total_input_cost = (total_input_tokens / 1_000_000) * gatekeeper.PRICE_PER_MTOK_INPUT
-    total_output_cost = (total_output_tokens / 1_000_000) * gatekeeper.PRICE_PER_MTOK_OUTPUT
+    total_input_cost = sum(row_input_output_cost(r)[0] for r in rows)
+    total_output_cost = sum(row_input_output_cost(r)[1] for r in rows)
+    n_batch_calls = sum(1 for r in rows if r.get("is_batch"))
 
     return render_template(
         "usage_summary.html", active="usage", summary=summary, n_rows=len(rows),
+        n_batch_calls=n_batch_calls,
         total_cost=round(total_cost, 2), total_input_tokens=total_input_tokens,
         total_output_tokens=total_output_tokens,
         total_input_cost=round(total_input_cost, 2), total_output_cost=round(total_output_cost, 2),

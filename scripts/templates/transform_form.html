@@ -5,7 +5,9 @@
 <div class="sub">Post-creation workflow: pick an ingested input (or paste your own text) and a target profile, get a fingerprint-seeded prompt, generate the rewrite (with Claude), then score how well it landed.</div>
 
 <div class="card">
-  <form method="get" action="{{ url_for('transform_form') }}">
+  <!-- POST, not GET: generating costs a real Claude call, so it must not be
+       something a page load / refresh / shared link can trigger. -->
+  <form method="post" action="{{ url_for('transform_form') }}">
     <div class="flex">
       <div class="field-panel" style="position:relative;min-width:360px">
         <label>Input <span class="muted">(pick 1-{{ max_transform_sources }} of the same type)</span></label>

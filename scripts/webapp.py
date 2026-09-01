@@ -1688,8 +1688,22 @@ def input_delete(video_id):
 
     title, channel_id, channel_name = video["title"], video["channel_id"], video["channel_name"]
 
-    # avoid FK violations on tables that reference this video, then delete it
+    # Avoid FK violations on tables that reference this video, then delete it.
+    # The schema has no ON DELETE CASCADE anywhere and get_conn() sets
+    # PRAGMA foreign_keys = ON, so EVERY referencing row must be cleared by
+    # hand first. Previously only test_scores and video_attributes were, which
+    # meant any video that had been through classification (and so had
+    # breakdown children) raised IntegrityError -> unhandled 500, leaving the
+    # connection open mid-transaction. Order matters: video_visuals/points/
+    # terms/examples reference video_sections as well as videos, so they go
+    # before video_sections.
     conn.execute("UPDATE test_scores SET match_video_id = NULL WHERE match_video_id = ?", (video_id,))
+    conn.execute("UPDATE swipe_candidates SET source_video_id = NULL WHERE source_video_id = ?", (video_id,))
+    conn.execute(
+        "UPDATE production_spec_creations SET source_video_id = NULL WHERE source_video_id = ?", (video_id,)
+    )
+    for table in ("video_visuals", "video_points", "video_terms", "video_examples", "video_sections"):
+        conn.execute(f"DELETE FROM {table} WHERE video_id = ?", (video_id,))
     conn.execute("DELETE FROM video_attributes WHERE video_id = ?", (video_id,))
     conn.execute("DELETE FROM videos WHERE video_id = ?", (video_id,))
     conn.commit()
@@ -1748,6 +1762,35 @@ def fix_unresolved_channel():
     bad_profile = conn.execute("SELECT profile_id FROM style_profiles WHERE channel_id = ?", (bad_id,)).fetchone()
     if bad_profile:
         bad_profile_id = bad_profile["profile_id"]
+        # score_transformation() writes one transform_scores row per confirmed
+        # profile for EVERY transformation, so deleting only the rows pointing
+        # at this profile leaves ~20 sibling rows still referencing the
+        # transformations we're about to delete. That made the transformations
+        # DELETE raise IntegrityError, and because the commit below was never
+        # reached, SQLite rolled back the UPDATE videos SET channel_id above
+        # too — the user got a 500 and the reassignment silently didn't happen.
+        # So: clear transform_scores for the doomed transformations FIRST
+        # (whichever profile they point at), then the transformations.
+        conn.execute(
+            "DELETE FROM transform_scores WHERE transformation_id IN "
+            "(SELECT transformation_id FROM transformations WHERE target_profile_id = ?)",
+            (bad_profile_id,),
+        )
+        # video_creations and production_spec_creations reference style_profiles
+        # independently and would each block the DELETE FROM style_profiles on
+        # their own; these are tracking rows, so null the link rather than
+        # destroying the user's record of a planned output.
+        conn.execute(
+            "UPDATE video_creations SET target_profile_id = NULL WHERE target_profile_id = ?", (bad_profile_id,)
+        )
+        conn.execute(
+            "UPDATE production_spec_creations SET style_profile_id = NULL WHERE style_profile_id = ?",
+            (bad_profile_id,),
+        )
+        conn.execute(
+            "UPDATE production_spec_creations SET production_profile_id = NULL WHERE production_profile_id = ?",
+            (bad_profile_id,),
+        )
         for table, column in [
             ("profile_fingerprint_numeric", "profile_id"),
             ("profile_fingerprint_categorical", "profile_id"),
@@ -4726,14 +4769,24 @@ def _resolve_transform_sources(source_values):
     return raw_text, title, source_label, src_type
 
 
-@app.route("/transform", methods=["GET"])
+@app.route("/transform", methods=["GET", "POST"])
 def transform_form():
-    sources = [s for s in request.args.getlist("source") if s]
-    pasted_title = request.args.get("pasted_title", "").strip()
-    pasted_text = request.args.get("pasted_text", "").strip()
-    profile = request.args.get("profile", default="", type=str)
-    mode = request.args.get("mode", "transform")
-    output_form = request.args.get("form", "").strip()
+    # Generation only ever happens on POST. This used to run on GET whenever
+    # the query string carried a profile + a source, which made a BILLED
+    # Claude call (plus a test_inputs row and N test_scores rows) a side
+    # effect of merely loading a URL: refreshing re-charged, the back button
+    # re-charged, and sharing the link re-charged. Worst of all,
+    # hybrid_profile_create() redirects here with exactly those params, so
+    # creating a hybrid profile fired a full generation nobody asked for.
+    # GET now only ever renders the form (carrying any pre-selected values
+    # through, so that redirect still works — it just doesn't spend money).
+    src = request.form if request.method == "POST" else request.args
+    sources = [s for s in src.getlist("source") if s]
+    pasted_title = (src.get("pasted_title") or "").strip()
+    pasted_text = (src.get("pasted_text") or "").strip()
+    profile = (src.get("profile") or "").strip()
+    mode = src.get("mode", "transform")
+    output_form = (src.get("form") or "").strip()
 
     insta_rows, book_chapter_rows, yt_section_rows = _transform_inputs()
     insta_options, book_chapter_options, yt_section_options = _transform_input_options(
@@ -4744,7 +4797,9 @@ def transform_form():
     selected_test_id = None
     original_text = None
     gen_title = gen_text = None
-    if mode == "data_output" and not output_form and profile and (sources or pasted_text):
+    if request.method != "POST":
+        pass  # GET renders the form only — never generates, never bills
+    elif mode == "data_output" and not output_form and profile and (sources or pasted_text):
         flash("Choose an output form to generate a data output.")
     elif profile and (sources or pasted_text):
         try:

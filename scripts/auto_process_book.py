@@ -72,14 +72,32 @@ def classify_and_build_profile(book_id):
         _mark_needs_review(book_id, "Classification failed validation: " + "; ".join(errors[:10]))
         return
 
+    # Only the merge itself decides whether this book is classified. The two
+    # steps after it are follow-ups: readability is a derived convenience
+    # column, and build_all() rebuilds EVERY author's profile — so one
+    # unrelated author's bad data used to fail this book. Because
+    # _mark_needs_review upserts, that overwrote classified_by='claude' with
+    # 'needs_review' even though the merge had already written the full
+    # rubric, sections, points, terms and examples. The book then rendered as
+    # unclassified everywhere despite its data being complete and correct.
     try:
         cbt.merge_book_classification_results(results)
-        compute_book_readability.run(book_id)
-        book_profile_builder.build_all(min_n=1)
     except Exception as e:
-        _mark_needs_review(book_id, f"Merge/profile-build step failed: {e}")
+        _mark_needs_review(book_id, f"Merge step failed: {e}")
         traceback.print_exc()
         return
+
+    for label, step in (
+        ("readability", lambda: compute_book_readability.run(book_id)),
+        ("profile rebuild", lambda: book_profile_builder.build_all(min_n=1)),
+    ):
+        try:
+            step()
+        except Exception as e:
+            # Non-fatal: the classification stands. Log loudly and carry on
+            # rather than mislabeling a correctly-classified book as failed.
+            print(f"[auto_process_book] book_id={book_id} {label} failed (non-fatal, book stays classified): {e}")
+            traceback.print_exc()
 
     print(f"[auto_process_book] book_id={book_id} classified and profile rebuilt.")
 

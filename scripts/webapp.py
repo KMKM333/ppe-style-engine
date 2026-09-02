@@ -167,6 +167,24 @@ def _read_uploaded_file(file_storage):
     return raw, filename
 
 
+def _infer_platform(url, default="YouTube"):
+    """Best-effort platform from a source URL. media_type decides which
+    classification pipeline a video goes through (short-form vs the much
+    larger long-form combined call), so getting it from the URL beats
+    blindly defaulting — an unlabelled Instagram reel defaulting to
+    "YouTube" is both wrong and more expensive to classify."""
+    u = (url or "").lower()
+    if "instagram.com" in u:
+        return "Instagram"
+    if "youtube.com" in u or "youtu.be" in u:
+        return "YouTube"
+    if "facebook.com" in u or "fb.watch" in u:
+        return "Facebook"
+    if "tiktok.com" in u:
+        return "TikTok"
+    return default
+
+
 CHANNEL_MATCH_THRESHOLD = 0.82  # difflib ratio above which two channel names are "probably the same creator"
 
 
@@ -2518,7 +2536,14 @@ def api_ingest_video():
     if not title or not script or not channel:
         return jsonify({"ok": False, "error": "'title', 'script', and 'channel' are required."}), 400
 
-    platform = data.get("platform") or "YouTube"
+    # Infer the platform from the URL when the caller doesn't state one.
+    # This used to default to "YouTube" outright, so any import that omitted
+    # platform became a YouTube video — which then routed a 60-second
+    # Instagram reel into the LONG-FORM classification pipeline
+    # (auto_process_video.py's single 32k-token combined call) instead of the
+    # cheaper short-form one, and grouped it under the wrong length band.
+    # Nine reels are currently mislabelled this way.
+    platform = (data.get("platform") or "").strip() or _infer_platform(data.get("url"))
     duration_sec = data.get("duration_sec") or None
 
     # Resolve the channel BEFORE ingesting. get_or_create_channel matches on
@@ -2772,6 +2797,40 @@ def api_reassign_video_channel(video_id):
         "note": ("subject is stored on the style profile, not the video"
                  if subject and not subject_set_on else None),
     })
+
+
+@app.route("/api/videos/fix-media-type", methods=["POST"])
+def api_fix_media_type():
+    """Repairs videos whose media_type disagrees with their source URL —
+    the fallout of /api/ingest/video having defaulted an unstated platform
+    to "YouTube". media_type picks the classification pipeline, so a reel
+    labelled YouTube is sent through the long-form combined call: wrong
+    shape for a 60-second video, and several times the cost.
+
+    Body: {"dry_run": true} (default) to report only,
+          {"dry_run": false} to apply.
+    Only ever corrects rows where the URL is unambiguous."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    payload = request.get_json(silent=True) or {}
+    dry_run = payload.get("dry_run", True)
+
+    conn = get_conn()
+    rows = conn.execute("SELECT video_id, url, media_type, title FROM videos WHERE url IS NOT NULL").fetchall()
+    mismatched = []
+    for r in rows:
+        inferred = _infer_platform(r["url"], default=None)
+        if inferred and r["media_type"] and inferred != r["media_type"]:
+            mismatched.append({"video_id": r["video_id"], "title": (r["title"] or "")[:60],
+                               "from": r["media_type"], "to": inferred})
+    if not dry_run:
+        for m in mismatched:
+            conn.execute("UPDATE videos SET media_type = ? WHERE video_id = ?", (m["to"], m["video_id"]))
+        conn.commit()
+    conn.close()
+
+    return jsonify({"ok": True, "dry_run": dry_run, "n_mismatched": len(mismatched),
+                    "changes": mismatched[:50]})
 
 
 @app.route("/api/videos/<int:video_id>/classify", methods=["POST"])

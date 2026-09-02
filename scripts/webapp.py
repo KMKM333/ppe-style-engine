@@ -2516,6 +2516,107 @@ def api_ingest_video():
     return jsonify({"ok": True, "video_id": video_id, "status": "ingested, classifying in the background"})
 
 
+@app.route("/api/videos/<int:video_id>/channel", methods=["POST"])
+def api_reassign_video_channel(video_id):
+    """Moves ONE already-ingested video to a different channel, creating the
+    channel if it doesn't exist yet. The only existing reassignment path
+    (fix_unresolved_channel) moves an entire placeholder channel's batch at
+    once and is hardcoded to the "Instagram Import" case, so a single
+    misfiled video on a real channel had no route at all short of editing
+    the database by hand.
+
+    Body: {"channel_name": "...", "subject": "..."(optional),
+           "platform": "..."(optional, only used when creating the channel)}
+
+    NOTE ON SUBJECT: subject is a property of the style PROFILE, not of a
+    video — there is no videos.subject column. Passing "subject" sets it on
+    the destination channel's profile (if that channel has one), which is
+    the closest real equivalent and what a caller asking to "set the
+    video's subject" actually means.
+
+    Both the old and new channel's profiles are rebuilt afterwards, since
+    the video's numbers have to stop pulling on one average and start
+    pulling on the other. Rebuilt at min_n=1 to match what the ingest
+    pipelines use, NOT the min_n=10 the other webapp rebuild sites use —
+    those two disagree, and using 10 here would silently demote a small
+    channel's profile to 'draft' and drop it out of scoring as a side
+    effect of moving one video."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+
+    payload = request.get_json(silent=True) or {}
+    new_name = (payload.get("channel_name") or "").strip()
+    subject = (payload.get("subject") or "").strip()
+    platform = (payload.get("platform") or "").strip()
+    if not new_name:
+        return jsonify({"ok": False, "error": "'channel_name' is required"}), 400
+
+    conn = get_conn()
+    video = conn.execute(
+        """SELECT v.video_id, v.title, v.channel_id, v.media_type, c.channel_name
+           FROM videos v JOIN channels c ON c.channel_id = v.channel_id
+           WHERE v.video_id = ?""",
+        (video_id,),
+    ).fetchone()
+    if not video:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such video"}), 404
+
+    old_channel_id, old_channel_name = video["channel_id"], video["channel_name"]
+
+    target = conn.execute("SELECT channel_id FROM channels WHERE channel_name = ?", (new_name,)).fetchone()
+    if target:
+        target_id, created = target["channel_id"], False
+    else:
+        cur = conn.execute(
+            "INSERT INTO channels (channel_name, platform) VALUES (?, ?)",
+            (new_name, platform or video["media_type"] or "Instagram"),
+        )
+        target_id, created = cur.lastrowid, True
+
+    if target_id == old_channel_id:
+        conn.close()
+        return jsonify({"ok": True, "video_id": video_id, "status": "already on that channel",
+                        "channel_name": new_name, "moved": False})
+
+    conn.execute("UPDATE videos SET channel_id = ? WHERE video_id = ?", (target_id, video_id))
+
+    subject_set_on = None
+    if subject:
+        prof = conn.execute(
+            "SELECT profile_id, profile_code FROM style_profiles WHERE channel_id = ?", (target_id,)
+        ).fetchone()
+        if prof:
+            conn.execute("UPDATE style_profiles SET subject = ? WHERE profile_id = ?", (subject, prof["profile_id"]))
+            subject_set_on = prof["profile_code"]
+    conn.commit()
+
+    # Rebuild both sides: the origin loses this video from its averages, the
+    # destination gains it. Either may legitimately have no profile yet.
+    rebuilt = []
+    for chan_id, chan_name in ((old_channel_id, old_channel_name), (target_id, new_name)):
+        prof = conn.execute(
+            "SELECT profile_code, length_band FROM style_profiles WHERE channel_id = ?", (chan_id,)
+        ).fetchone()
+        if not prof:
+            continue
+        try:
+            build_profile(chan_name, prof["profile_code"], prof["length_band"], min_n=1)
+            rebuilt.append(prof["profile_code"])
+        except Exception as e:  # noqa: BLE001 - a rebuild failure must not undo the move
+            print(f"[api_reassign_video_channel] rebuild of {prof['profile_code']} failed (non-fatal): {e}")
+    conn.close()
+
+    return jsonify({
+        "ok": True, "video_id": video_id, "moved": True,
+        "from_channel": old_channel_name, "to_channel": new_name,
+        "channel_created": created, "profiles_rebuilt": rebuilt,
+        "subject_set_on_profile": subject_set_on,
+        "note": ("subject is stored on the style profile, not the video"
+                 if subject and not subject_set_on else None),
+    })
+
+
 @app.route("/api/videos/<int:video_id>/classify", methods=["POST"])
 def api_classify_video(video_id):
     """Runs classification on a video that is ALREADY ingested — the

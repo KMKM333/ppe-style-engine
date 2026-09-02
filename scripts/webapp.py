@@ -2823,6 +2823,17 @@ def api_classify_video(video_id):
         gatekeeper.mark_needs_review(video_id, hold_reason)
         return jsonify({"ok": True, "video_id": video_id, "status": "held for review", "reason": hold_reason})
 
+    # Clear the previous failure reason before re-running. classification_error
+    # is only ever written on failure and never cleared, so a stale message
+    # from an earlier attempt survives a successful retry and — worse — is
+    # indistinguishable from a fresh one. That actively misleads: a video
+    # re-run past the topic gate still displayed the old "no PPE subject
+    # keyword" text, making a retry look like it had been rejected again.
+    conn = get_conn()
+    conn.execute("UPDATE video_attributes SET classification_error = NULL WHERE video_id = ?", (video_id,))
+    conn.commit()
+    conn.close()
+
     script_name = "auto_process_video.py" if row["media_type"] == "YouTube" else "auto_process_shortform_video.py"
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
     subprocess.Popen([sys.executable, script_path, "--video_id", str(video_id)], start_new_session=True)

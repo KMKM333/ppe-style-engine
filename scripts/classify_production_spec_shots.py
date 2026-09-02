@@ -14,6 +14,7 @@ Usage:
 import argparse
 import json
 import statistics
+import time
 import traceback
 
 import llm_client
@@ -22,6 +23,12 @@ import production_spec_profile_builder
 from db_init import get_conn, PRODUCTION_SPEC_SHOTS_DIR
 
 BATCH_SIZE = 15  # shots per vision call — keeps request size/latency bounded
+
+# The vision call intermittently returns an empty reply (see the retry loop
+# in classify_and_build_profile). Transient: one input recovered on the very
+# next attempt with no other change.
+MAX_VISION_ATTEMPTS = 3
+VISION_RETRY_BACKOFF_SEC = 5  # multiplied by attempt number, so 5s then 10s
 
 CONTENT_CATEGORIES = [
     "illustration_panel", "step_card", "narrator_reaction", "map_data_graphic", "cta", "other",
@@ -105,14 +112,40 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_number
             images.append(("image/png", frame_path.read_bytes()))
         shot_numbers = [s["shot_number"] for s in batch]
         prompt = CLASSIFY_PROMPT.format(n=len(batch), shot_numbers=shot_numbers)
-        try:
-            result = llm_client.generate_json_with_images(prompt, images, max_tokens=2048)
-        except Exception as e:
-            _mark_needs_review(input_id, f"Anthropic API call failed (shot classification, batch starting shot {shot_numbers[0]}): {e}")
-            traceback.print_exc()
-            return
+
+        # The vision call intermittently comes back with a COMPLETELY EMPTY
+        # reply — "Model didn't return valid JSON: Expecting value: line 1
+        # column 1 (char 0)" with nothing after "Reply was:". Observed on
+        # three separate inputs; one recovered on the very next attempt with
+        # no other change, which is what marks it as transient rather than
+        # anything wrong with the images or the prompt. Without a retry a
+        # single blip permanently failed the WHOLE input — every shot left
+        # unclassified and the input parked at needs_review, needing a manual
+        # re-trigger. Retry with a short backoff before giving up.
+        result, last_error = None, None
+        for attempt in range(1, MAX_VISION_ATTEMPTS + 1):
+            try:
+                result = llm_client.generate_json_with_images(prompt, images, max_tokens=2048)
+            except Exception as e:
+                last_error = e
+                result = None
+            if isinstance(result, list):
+                break
+            if result is not None:  # returned something, just not the array we asked for
+                last_error = f"expected a JSON array, got {type(result).__name__}"
+                result = None
+            if attempt < MAX_VISION_ATTEMPTS:
+                print(f"[classify_production_spec_shots] input_id={input_id} batch starting shot "
+                      f"{shot_numbers[0]}: attempt {attempt}/{MAX_VISION_ATTEMPTS} failed ({last_error}); retrying")
+                time.sleep(VISION_RETRY_BACKOFF_SEC * attempt)
+
         if not isinstance(result, list):
-            _mark_needs_review(input_id, f"Shot classification didn't return a JSON array (batch starting shot {shot_numbers[0]}).")
+            _mark_needs_review(
+                input_id,
+                f"Anthropic API call failed (shot classification, batch starting shot {shot_numbers[0]}) "
+                f"after {MAX_VISION_ATTEMPTS} attempts: {last_error}",
+            )
+            traceback.print_exc()
             return
         for item in result:
             cat = item.get("content_category")

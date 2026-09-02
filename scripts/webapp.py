@@ -2597,6 +2597,74 @@ def api_ingest_video():
     return jsonify({"ok": True, "video_id": video_id, "status": "ingested, classifying in the background"})
 
 
+@app.route("/api/channels/suggest")
+def api_suggest_channels():
+    """Given a proposed channel name, return the existing channels it might
+    actually be — so a chat front end (Hermes/Telegram) can offer them as
+    tappable options BEFORE ingesting, instead of the name being taken
+    literally and silently creating a near-duplicate channel.
+
+    GET /api/channels/suggest?name=kylscan  ->
+      {"exact": false,
+       "candidates": [{"channel_name": "kylascan", "profile_code": "A.10",
+                       "subject": null, "n_videos": 10, "confidence": 0.94}, ...],
+       "recommended_action": "confirm_existing" | "proceed" | "confirm_new"}
+
+    Ranked best-first and capped, so the caller can render a short list of
+    buttons plus a "no, it's a new creator" fallback. Each candidate carries
+    its profile code AND subject because those are two different things the
+    user needs to see to decide (style vs topic)."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    import difflib
+
+    name = (request.args.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "'name' is required"}), 400
+    limit = min(int(request.args.get("limit", 5)), 20)
+
+    def norm(s):
+        return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+    target = norm(name)
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT c.channel_id, c.channel_name, c.platform,
+                  p.profile_code, p.subject, p.n_videos_analysed,
+                  (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id) AS n_videos
+           FROM channels c LEFT JOIN style_profiles p ON p.channel_id = c.channel_id"""
+    ).fetchall()
+    conn.close()
+
+    exact = any(r["channel_name"] == name for r in rows)
+    scored = []
+    for r in rows:
+        ratio = 1.0 if norm(r["channel_name"]) == target else difflib.SequenceMatcher(
+            None, target, norm(r["channel_name"])).ratio()
+        scored.append((ratio, r))
+    scored.sort(key=lambda t: -t[0])
+
+    candidates = [
+        {
+            "channel_name": r["channel_name"], "platform": r["platform"],
+            "profile_code": r["profile_code"], "subject": r["subject"],
+            "n_videos": r["n_videos"], "n_analysed": r["n_videos_analysed"],
+            "confidence": round(ratio, 3),
+        }
+        for ratio, r in scored[:limit] if ratio >= 0.5
+    ]
+
+    if exact:
+        action = "proceed"
+    elif candidates and candidates[0]["confidence"] >= CHANNEL_MATCH_THRESHOLD:
+        action = "confirm_existing"
+    else:
+        action = "confirm_new"
+
+    return jsonify({"ok": True, "name": name, "exact": exact,
+                    "candidates": candidates, "recommended_action": action})
+
+
 @app.route("/api/videos/<int:video_id>/channel", methods=["POST"])
 def api_reassign_video_channel(video_id):
     """Moves ONE already-ingested video to a different channel, creating the

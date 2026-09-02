@@ -1275,6 +1275,7 @@ def tags_page():
            JOIN videos v ON v.video_id = vt.video_id
            JOIN channels c ON c.channel_id = v.channel_id
            LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
            WHERE vt.term IS NOT NULL AND vt.term != ''
            UNION ALL
            SELECT bt.term AS value, bt.definition AS description,
@@ -1284,6 +1285,7 @@ def tags_page():
            JOIN books b ON b.book_id = bt.book_id
            LEFT JOIN channels c ON c.channel_name = b.author AND c.platform = 'Book'
            LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
            WHERE bt.term IS NOT NULL AND bt.term != ''
            ORDER BY value COLLATE NOCASE, source_name COLLATE NOCASE"""
     ).fetchall()
@@ -1295,6 +1297,7 @@ def tags_page():
            JOIN videos v ON v.video_id = ve.video_id
            JOIN channels c ON c.channel_id = v.channel_id
            LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
            WHERE ve.example_title IS NOT NULL AND ve.example_title != ''
            UNION ALL
            SELECT be.example_title AS value, be.example_text AS description,
@@ -1304,6 +1307,7 @@ def tags_page():
            JOIN books b ON b.book_id = be.book_id
            LEFT JOIN channels c ON c.channel_name = b.author AND c.platform = 'Book'
            LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
            WHERE be.example_title IS NOT NULL AND be.example_title != ''
            ORDER BY value COLLATE NOCASE, source_name COLLATE NOCASE"""
     ).fetchall()
@@ -1403,6 +1407,7 @@ def inputs_list():
                 FROM videos v
                 JOIN channels c ON c.channel_id = v.channel_id
                 LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                     AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
                 LEFT JOIN video_attributes a ON a.video_id = v.video_id
                 {where_sql}""",
             params,
@@ -1461,6 +1466,7 @@ def inputs_list():
                 LEFT JOIN book_attributes a ON a.book_id = b.book_id
                 LEFT JOIN channels c ON c.channel_name = b.author AND c.platform = 'Book'
                 LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                     AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
                 {where_sql}""",
             params,
         ).fetchall()
@@ -1605,6 +1611,7 @@ def input_detail(video_id):
         """SELECT v.*, c.channel_name, p.profile_code FROM videos v
            JOIN channels c ON c.channel_id = v.channel_id
            LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
            WHERE v.video_id = ?""",
         (video_id,),
     ).fetchone()
@@ -2426,11 +2433,28 @@ def channels_list():
     platform = request.args.get("platform", "Instagram")
     conn = get_conn()
     rows = conn.execute(
+        # Two separate pipelines share the channels table: the LIBRARY
+        # (writing style — videos/books, profile codes A.*/BK.*) and
+        # PRODUCTION SPEC (shot pacing and framing, PS.*). A creator can
+        # appear in both, so joining style_profiles on channel_id alone
+        # pulled a channel's PS.* profile into this library page — showing
+        # e.g. "sovra.money · PS.2 · 0 videos · Not analysed", which reads
+        # as a broken library channel when it is really a perfectly healthy
+        # production-spec one that simply has no library videos. PS profiles
+        # belong on /production/profiles; excluded by name rather than
+        # whitelisting library types, so a future library media_type isn't
+        # silently dropped from this page.
+        #
+        # The EXISTS also drops channels with no library videos at all —
+        # this page's own description is "every creator with ingested
+        # videos", and a production-only creator has none.
         """SELECT c.channel_id, c.channel_name, p.profile_code, p.subject, p.status, p.n_videos_analysed,
                   (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id) AS n_videos
            FROM channels c
            LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
            WHERE c.platform = ?
+             AND EXISTS (SELECT 1 FROM videos v WHERE v.channel_id = c.channel_id)
            ORDER BY c.channel_name""",
         (platform,),
     ).fetchall()
@@ -2913,6 +2937,7 @@ def api_video_status(video_id):
            FROM videos v LEFT JOIN video_attributes a ON a.video_id = v.video_id
            LEFT JOIN channels c ON c.channel_id = v.channel_id
            LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
            WHERE v.video_id = ?""",
         (video_id,),
     ).fetchone()

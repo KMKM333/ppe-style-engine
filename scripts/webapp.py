@@ -167,6 +167,53 @@ def _read_uploaded_file(file_storage):
     return raw, filename
 
 
+CHANNEL_MATCH_THRESHOLD = 0.82  # difflib ratio above which two channel names are "probably the same creator"
+
+
+def _resolve_import_channel(name):
+    """Classifies an incoming import's channel name against what already
+    exists, so a new import can be held for confirmation instead of silently
+    creating a near-duplicate channel.
+
+    Returns (status, suggestion):
+      ("exact", None)        -> this channel already exists; proceed normally
+      ("similar", "<name>")  -> no exact match, but an existing channel looks
+                                like the same creator (a typo/case/spacing
+                                variant); suggest it
+      ("new", None)          -> matches nothing; genuinely new creator
+
+    Comparison is case- and separator-insensitive first (so "Kylascan",
+    "kylascan" and "kyla scan" collapse together), then falls back to a
+    fuzzy ratio for looser typos. Deliberately cheap and local — no LLM
+    call, same spirit as gatekeeper's other pre-checks."""
+    import difflib
+
+    def norm(s):
+        return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+    target = norm(name)
+    conn = get_conn()
+    existing = [r["channel_name"] for r in conn.execute("SELECT channel_name FROM channels")]
+    conn.close()
+
+    for other in existing:
+        if other == name:
+            return "exact", None
+    # normalised equality catches case/spacing/punctuation variants
+    for other in existing:
+        if norm(other) == target:
+            return "similar", other
+
+    best, best_ratio = None, 0.0
+    for other in existing:
+        ratio = difflib.SequenceMatcher(None, target, norm(other)).ratio()
+        if ratio > best_ratio:
+            best, best_ratio = other, ratio
+    if best and best_ratio >= CHANNEL_MATCH_THRESHOLD:
+        return "similar", best
+    return "new", None
+
+
 def _profiles():
     conn = get_conn()
     rows = conn.execute(
@@ -2473,6 +2520,16 @@ def api_ingest_video():
 
     platform = data.get("platform") or "YouTube"
     duration_sec = data.get("duration_sec") or None
+
+    # Resolve the channel BEFORE ingesting. get_or_create_channel matches on
+    # an exact string and silently INSERTs anything else, so "kylascan" /
+    # "Kylascan" / "kyla scan" each become a separate channel with its own
+    # profile and its own fingerprint, and nobody is told. That is how a
+    # philedwardsinc video ended up filed under kylascan — and because the
+    # channel decides the profile, and the profile carries both the style
+    # code AND the subject, one wrong channel makes both wrong at once.
+    channel_status, channel_suggestion = _resolve_import_channel(channel)
+
     video_id = ingest_video_row(
         title=title,
         script=script,
@@ -2499,6 +2556,30 @@ def api_ingest_video():
         # partial failure) from also re-running the expensive classification
         # subprocess on a video that's already done.
         return jsonify({"ok": True, "video_id": video_id, "status": "already classified, skipped re-processing"})
+
+    # Unconfirmed channel -> hold BEFORE classifying. Classifying into the
+    # wrong profile costs a real Claude call AND pollutes that profile's
+    # averages, so the fix afterwards is "reassign + reclassify + rebuild two
+    # profiles" instead of "answer one question up front". A caller that
+    # knows the name is right passes confirm_channel: true and skips this.
+    if channel_status != "exact" and not data.get("confirm_channel"):
+        if channel_suggestion:
+            reason = (
+                f'Channel "{channel}" is new and closely matches the existing channel '
+                f'"{channel_suggestion}" — did you mean that? Confirm the channel before classifying '
+                f"(POST /api/videos/{video_id}/channel to move it, or re-ingest with confirm_channel: true)."
+            )
+        else:
+            reason = (
+                f'Channel "{channel}" is new and matches no existing channel. Confirm it is a genuinely '
+                f"new creator (and set its profile subject) before classifying, or re-ingest with "
+                f"confirm_channel: true."
+            )
+        gatekeeper.mark_needs_review(video_id, reason)
+        return jsonify({
+            "ok": True, "video_id": video_id, "status": "held for channel confirmation",
+            "channel": channel, "suggestion": channel_suggestion or None, "reason": reason,
+        })
 
     hold_reason = (
         gatekeeper.check_length(duration_sec, platform)

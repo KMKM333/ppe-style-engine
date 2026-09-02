@@ -22,7 +22,15 @@ import profile_builder
 import production_spec_profile_builder
 from db_init import get_conn, PRODUCTION_SPEC_SHOTS_DIR
 
-BATCH_SIZE = 15  # shots per vision call — keeps request size/latency bounded
+BATCH_SIZE = 15  # max shots per vision call — keeps request size/latency bounded
+
+# Hard ceiling on raw image bytes per vision call, applied ALONGSIDE
+# BATCH_SIZE. base64 inflates payloads ~33%, so 4MB of PNG is ~5.4MB on the
+# wire — comfortably under limits while still batching several shots per
+# call. Frame sizes vary enormously with visual complexity, so a shot-count
+# cap alone lets a batch of detailed frames silently exceed what the API
+# will accept; it answers with an empty body rather than an error.
+MAX_BATCH_IMAGE_BYTES = 4 * 1024 * 1024
 
 # The vision call intermittently returns an empty reply (see the retry loop
 # in classify_and_build_profile). Transient: one input recovered on the very
@@ -97,19 +105,41 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_number
         return
 
     # --- classify each shot's content category, in bounded-size batches ---
+    # Batches are bounded by TOTAL IMAGE BYTES as well as shot count. A fixed
+    # count alone is not safe: frame sizes vary hugely with visual complexity
+    # (488KB-828KB each on a detailed illustrated video vs. far less on a
+    # simple one), so a 12-shot batch of rich frames is ~8MB of PNG — roughly
+    # 11MB once base64-encoded — and the API call comes back with a
+    # COMPLETELY EMPTY reply rather than a size error. That is the real cause
+    # of the "Model didn't return valid JSON ... Reply was:" failures:
+    # input 29 failed all 3 retries at 12 shots/call, then classified every
+    # one of those same 12 shots successfully at 1 shot/call. Same images,
+    # same prompt — only the payload size differed.
     shot_dir = PRODUCTION_SPEC_SHOTS_DIR / str(input_id)
     category_by_shot = {}
-    for i in range(0, len(shots), batch_size):
-        batch = [s for s in shots[i:i + batch_size] if s["shot_number"] not in skip_shot_numbers]
-        if not batch:
-            continue
-        images = []
-        for s in batch:
-            frame_path = shot_dir / f"shot_{s['shot_id']}.png"
-            if not frame_path.is_file():
-                _mark_needs_review(input_id, f"Missing frame file for shot_id={s['shot_id']}.")
-                return
-            images.append(("image/png", frame_path.read_bytes()))
+
+    pending = [s for s in shots if s["shot_number"] not in skip_shot_numbers]
+    batches, current, current_bytes = [], [], 0
+    for s in pending:
+        frame_path = shot_dir / f"shot_{s['shot_id']}.png"
+        if not frame_path.is_file():
+            _mark_needs_review(input_id, f"Missing frame file for shot_id={s['shot_id']}.")
+            return
+        size = frame_path.stat().st_size
+        # Always allow at least one shot per batch, even if that single frame
+        # is over budget on its own — otherwise an unusually large frame would
+        # produce an empty batch and be silently dropped.
+        if current and (len(current) >= batch_size or current_bytes + size > MAX_BATCH_IMAGE_BYTES):
+            batches.append(current)
+            current, current_bytes = [], 0
+        current.append((s, frame_path))
+        current_bytes += size
+    if current:
+        batches.append(current)
+
+    for entry in batches:
+        batch = [s for s, _ in entry]
+        images = [("image/png", path.read_bytes()) for _, path in entry]
         shot_numbers = [s["shot_number"] for s in batch]
         prompt = CLASSIFY_PROMPT.format(n=len(batch), shot_numbers=shot_numbers)
 

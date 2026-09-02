@@ -67,15 +67,65 @@ SKIP_TOPIC_CHECK = os.environ.get("PPE_SKIP_TOPIC_CHECK", "0") == "1"
 # a false negative here just means a human glances at one more video
 # before it's processed, which costs nothing.
 SUBJECT_KEYWORDS = {
-    "Economics": ["econom", "gdp", "inflation", "market", "trade", "capitalis", "wealth", "tax", "recession", "currency", "financ", "poverty", "labor", "labour"],
-    "Politics": ["politic", "election", "democra", "government", "policy", "geopolit", " war ", "diploma", "vote", "senate", "president", "regime", "propaganda"],
-    "Philosophy": ["philosoph", "ethic", "moral", "existential", "stoic", "meaning of life", "metaphysic", "epistemolog", "nihilis", "virtue"],
-    "Psychology": ["psycholog", "cognit", "behav", "brain", "bias", "habit", "mental", "emotion", "therapy", "trauma", "personality"],
-    "Sustainability": ["climate", "sustainab", "environment", "carbon", "renewable", "biodivers", "pollution", "ecosystem"],
-    "Science": ["scien", "physics", "biolog", "chemistr", "quantum", "evolution", "research stud", "experiment", "universe", "genetic"],
-    "Technology": ["technolog", "artificial intelligence", " ai ", "software", "internet", "crypto", "blockchain", "robot", "algorithm", "startup", "silicon valley"],
+    "Economics": [
+        "econom", "gdp", "inflation", "market", "trade", "capitalis", "wealth", "tax", "recession",
+        "currency", "financ", "poverty", "labor", "labour",
+        "money", "price", "cost", "business", "compan", "industr", "consumer", "brand", "supply",
+        "demand", "profit", "invest", "debt", "bank", "budget", "wage", "product", "sell", "buy",
+        "afford", "billion", "million dollar", "revenue", "monopol", "subsid",
+    ],
+    "Politics": [
+        "politic", "election", "democra", "government", "policy", "geopolit", " war ", "diploma",
+        "vote", "senate", "president", "regime", "propaganda",
+        "law", "legal", "state", "nation", "power", "empire", "colonial", "protest", "rights",
+        "citizen", "military", "conflict", "border", "immigrat", "corrupt", "regulat", "public",
+    ],
+    "Philosophy": [
+        "philosoph", "ethic", "moral", "existential", "stoic", "meaning of life", "metaphysic",
+        "epistemolog", "nihilis", "virtue",
+        "truth", "justice", "free will", "conscious", "belief", "meaning", "argument", "logic",
+        "reason", "identity", "value", "paradox", "dilemma", "thinker", "wisdom",
+        "argue", "idea", "concept", "mind", "modern", "thought", "critique", "theor",
+    ],
+    "Psychology": [
+        "psycholog", "cognit", "behav", "brain", "bias", "habit", "mental", "emotion", "therapy",
+        "trauma", "personality",
+        "memory", "attention", "motivat", "persuas", "influence", "decision", "perception",
+        "social norm", "status", "instinct", "desire", "fear", "trust", "why we", "why people",
+    ],
+    "Sustainability": [
+        "climate", "sustainab", "environment", "carbon", "renewable", "biodivers", "pollution",
+        "ecosystem", "energy", "waste", "recycl", "emission", "green", "resource",
+    ],
+    "Science": [
+        "scien", "physics", "biolog", "chemistr", "quantum", "evolution", "research stud",
+        "experiment", "universe", "genetic",
+        "data", "study", "researcher", "discover", "theory", "medicine", "health", "engineer",
+        "material", "chemical", "space", "invent",
+    ],
+    "Technology": [
+        "technolog", "artificial intelligence", " ai ", "software", "internet", "crypto",
+        "blockchain", "robot", "algorithm", "startup", "silicon valley",
+        "computer", "digital", "platform", "network", "machine", "automat", "device", "chip",
+        "app ", "online", "screen",
+    ],
 }
-_ALL_KEYWORDS = [kw for kws in SUBJECT_KEYWORDS.values() for kw in kws]
+
+# Cross-cutting vocabulary of the explainer genre this library collects.
+# The seven subjects above are the PROFILE subjects, but an on-topic video
+# routinely never says its subject's name: a design-history piece about a
+# paper cup is squarely in scope and contains none of "economics",
+# "politics" or "philosophy". These are the words such a video does use.
+# Kept separate from SUBJECT_KEYWORDS so the subject taxonomy stays clean —
+# this list is only ever consulted by the gate.
+GENERAL_TOPIC_KEYWORDS = [
+    "histor", "century", "decade", "origin", "invented", "design", "culture", "cultur",
+    "societ", "social", "institution", "system", "tradition", "revolution", "movement",
+    "how we", "the reason", "turns out", "story of", "changed everything", "nobody",
+    "explain", "understand", "pattern", "structure", "theory", "model",
+]
+
+_ALL_KEYWORDS = [kw for kws in SUBJECT_KEYWORDS.values() for kw in kws] + GENERAL_TOPIC_KEYWORDS
 
 
 def mark_needs_review(video_id, reason):

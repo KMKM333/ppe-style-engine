@@ -2581,9 +2581,17 @@ def api_ingest_video():
             "channel": channel, "suggestion": channel_suggestion or None, "reason": reason,
         })
 
+    # The topic gate is for catching an obviously-wrong bulk import. On a
+    # channel whose videos are already curated and classified, that question
+    # is already settled, so skip it there (see gatekeeper.check_topic).
+    conn = get_conn()
+    chan_row = conn.execute("SELECT channel_id FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+    conn.close()
+    trusted = gatekeeper.channel_is_trusted(chan_row["channel_id"]) if chan_row else False
+
     hold_reason = (
         gatekeeper.check_length(duration_sec, platform)
-        or gatekeeper.check_topic(title, script)
+        or gatekeeper.check_topic(title, script, channel_trusted=trusted)
         or gatekeeper.check_daily_budget()
     )
     if hold_reason:
@@ -2785,7 +2793,7 @@ def api_classify_video(video_id):
 
     conn = get_conn()
     row = conn.execute(
-        """SELECT v.video_id, v.title, v.script, v.duration_sec, v.media_type, a.classified_by
+        """SELECT v.video_id, v.title, v.script, v.duration_sec, v.media_type, v.channel_id, a.classified_by
            FROM videos v LEFT JOIN video_attributes a ON a.video_id = v.video_id
            WHERE v.video_id = ?""",
         (video_id,),
@@ -2799,9 +2807,16 @@ def api_classify_video(video_id):
     if already and not payload.get("force"):
         return jsonify({"ok": True, "video_id": video_id, "status": "already classified", "skipped": True})
 
+    # skip_topic_check lets a caller force past the keyword gate for a video
+    # they have eyeballed themselves — the manual counterpart to the
+    # channel_trusted skip, for the first video on a brand-new channel that
+    # has nothing classified to vouch for it yet.
     hold_reason = (
         gatekeeper.check_length(row["duration_sec"], row["media_type"])
-        or gatekeeper.check_topic(row["title"], row["script"])
+        or gatekeeper.check_topic(
+            row["title"], row["script"],
+            channel_trusted=bool(payload.get("skip_topic_check")) or gatekeeper.channel_is_trusted(row["channel_id"]),
+        )
         or gatekeeper.check_daily_budget()
     )
     if hold_reason:

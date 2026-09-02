@@ -116,23 +116,61 @@ def check_length(duration_sec, media_type):
     return None
 
 
-def check_topic(title, script):
-    """Returns a reason string if neither the title nor the opening ~200
-    words of the script hits any PPE subject keyword, else None. Cheap
-    (no LLM call) — meant to catch an obviously off-topic bulk import, not
-    to be a precise classifier; a real PPE video with unusual phrasing can
-    still fail this and get held — that's a one-click approve in the
-    review UI, not a silent drop."""
-    if SKIP_TOPIC_CHECK:
+TOPIC_SCAN_WORDS = 600  # words of script scanned for a subject keyword
+
+
+def check_topic(title, script, channel_trusted=False):
+    """Returns a reason string if neither the title nor the opening
+    TOPIC_SCAN_WORDS of the script hits any PPE subject keyword, else None.
+    Cheap (no LLM call) — meant to catch an obviously off-topic bulk import,
+    not to be a precise classifier.
+
+    channel_trusted skips the check entirely. The point of this gate is
+    "did a batch of wrong videos just get imported by mistake" — but if the
+    video is on a channel whose videos have ALREADY been curated and
+    classified, that question is settled: the user chose that creator
+    deliberately. Holding their videos on a keyword technicality is pure
+    friction, and in practice that is nearly all of what this gate caught:
+    six Philosophyminis videos (a philosophy channel) and a design-history
+    video, none of them off-topic imports, all of them needing a manual
+    unblock that told the user nothing new.
+
+    The scan window is also 600 words rather than 200: a video often spends
+    its opening on a hook or an anecdote and only names its actual subject
+    once it gets going, so a short window fails exactly the well-made
+    videos that bury the topic label."""
+    if SKIP_TOPIC_CHECK or channel_trusted:
         return None
-    haystack = (" " + (title or "") + " " + " ".join((script or "").split()[:200]) + " ").lower()
+    haystack = (" " + (title or "") + " " + " ".join((script or "").split()[:TOPIC_SCAN_WORDS]) + " ").lower()
     if any(kw in haystack for kw in _ALL_KEYWORDS):
         return None
     return (
         "No PPE subject keyword (economics/politics/philosophy/psychology/"
         "sustainability/science/technology) found in the title or opening "
-        "text — held for manual review in case this is an off-topic import."
+        "text, and this channel has no classified videos yet — held for "
+        "manual review in case this is an off-topic import."
     )
+
+
+def channel_is_trusted(channel_id, min_classified=1):
+    """True when this channel already has at least min_classified
+    LLM-classified videos — i.e. the user has already vouched for this
+    creator by curating and analysing their work. Used to skip check_topic
+    for established channels. Fails CLOSED (returns False) on any error, so
+    a lookup problem re-enables the gate rather than silently disabling it."""
+    try:
+        conn = get_conn()
+        n = conn.execute(
+            """SELECT COUNT(*) FROM video_attributes a JOIN videos v ON v.video_id = a.video_id
+               WHERE v.channel_id = ? AND a.classified_by IS NOT NULL
+                 AND a.classified_by NOT IN ('auto', 'pending', 'needs_review')""",
+            (channel_id,),
+        ).fetchone()[0]
+        conn.close()
+        return n >= min_classified
+    except Exception as e:  # noqa: BLE001
+        print(f"[gatekeeper] channel_is_trusted lookup failed, keeping the topic gate on: {e}")
+        return False
 
 
 BATCH_DISCOUNT = 0.5  # Anthropic's Message Batches API: half price, in exchange for async turnaround

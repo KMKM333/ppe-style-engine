@@ -20,7 +20,10 @@
   body { margin:0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     background: var(--bg); color: var(--text); overflow-x: hidden; max-width: 100vw; }
   .app-shell { display:flex; align-items:flex-start; }
-  .sidebar { width:240px; flex-shrink:0; background:var(--panel); border-right:1px solid var(--border);
+  /* 280px, not 240: nav items are white-space:nowrap, so a label longer than
+     the sidebar is clipped rather than wrapped — "Production Inputs (Visual
+     only)" was cut mid-word. Widened to fit the longest label outright. */
+  .sidebar { width:280px; flex-shrink:0; background:var(--panel); border-right:1px solid var(--border);
     padding:18px 14px; position:sticky; top:0; height:100vh; overflow-y:auto;
     display:flex; flex-direction:column; gap:2px; transition:width .18s ease; }
   @media (prefers-reduced-motion: reduce) { .sidebar { transition:none; } }
@@ -612,6 +615,10 @@
       <div class="nav-group">
         <a href="{{ url_for('production_inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active in ('production-inputs','production-profiles','production-spec-creations','production-creations') else '' }}">Production</a>
         <a href="{{ url_for('production_inputs_list') }}" class="nav-item {{ 'active' if active=='production-inputs' else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Production Inputs (Visual only)</a>
+        <!-- Placeholder, deliberately not a link: visual + spoken production
+             analysis isn't built yet. Uses the same disabled treatment as
+             News so it reads as "coming", not as something broken. -->
+        <span class="nav-item disabled"><span class="nav-icon">{{ icon('layers') }}</span>Production Inputs (V+S)</span>
         <a href="{{ url_for('production_profiles_list') }}" class="nav-item {{ 'active' if active=='production-profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Production Profiles</a>
         <a href="{{ url_for('production_spec_creations_list') }}" class="nav-item {{ 'active' if active=='production-spec-creations' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Production Specs Creations</a>
         <a href="{{ url_for('video_creations_list') }}" class="nav-item {{ 'active' if active=='production-creations' else '' }}"><span class="nav-icon">{{ icon('sparkles') }}</span>Video Creations</a>

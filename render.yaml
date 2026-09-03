@@ -15,4 +15,4 @@ services:
     disk:
       name: ppe-data
       mountPath: /data
-      sizeGB: 1
+      sizeGB: 10

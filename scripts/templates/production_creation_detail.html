@@ -74,9 +74,18 @@
           <span class="m">shots <b>{{ b.shot_count_min }}&ndash;{{ b.shot_count_max }}</b></span>
         </div>
       </div>
+      {% if b.script_lines %}
+      {# Only Script + editing specs carry written lines. They lead the beat
+         because in that mode they ARE the deliverable — the content points
+         below just say which source fact each line is carrying. #}
+      <div class="pc-beat-script">
+        <h4>Script</h4>
+        {% for line in b.script_lines %}<p>{{ line }}</p>{% endfor %}
+      </div>
+      {% endif %}
       <div class="pc-beat-body">
         <div class="pc-beat-col">
-          <h4>Content</h4>
+          <h4>{{ 'Drawn from' if b.script_lines else 'Content' }}</h4>
           <ul>{% for p in b.content_points %}<li>{{ p }}</li>{% endfor %}</ul>
         </div>
         <div class="pc-beat-col">
@@ -161,6 +170,10 @@
   .pc-beatbar-fill{ height:100%; background:var(--pc-slate-soft); }
   .pc-beatbar-dur{ font-size:11px; color:var(--pc-ink-faint); text-align:right; }
   .pc-beat{ border:1px solid var(--pc-rule); background:var(--pc-surface); margin-bottom:12px; }
+  .pc-beat-script{ padding:14px 16px; border-bottom:1px solid var(--pc-rule); }
+  .pc-beat-script h4{ margin:0 0 8px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--pc-ink-faint); }
+  .pc-beat-script p{ margin:0 0 6px; font-size:1.02rem; line-height:1.5; color:var(--pc-ink); }
+  .pc-beat-script p:last-child{ margin-bottom:0; }
   .pc-beat-head{ display:grid; grid-template-columns:44px 1fr auto; align-items:center; gap:12px; padding:12px 16px; background:var(--pc-surface-2); border-bottom:1px solid var(--pc-rule); }
   .pc-beat-step{ font-family:"Archivo Expanded",sans-serif; font-weight:900; font-size:1.35rem; color:var(--pc-accent); line-height:1; }
   .pc-beat-title{ font-family:"Archivo Expanded",sans-serif; font-weight:800; font-size:1.02rem; color:var(--pc-ink); }

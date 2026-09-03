@@ -31,39 +31,50 @@
         </div>
       </div>
 
-      <div class="field-panel" style="position:relative;min-width:280px">
-        <label>Production profile <span class="muted">(how it's cut)</span></label>
-        <div class="output-form-buttons" id="production-profile-buttons">
-          {% for p in production_profiles %}
-          <label class="output-form-btn">
-            <input type="radio" name="production_profile_id" value="{{ p.profile_id }}" required>
-            {{ p.profile_code }} · {{ p.channel_name }}
-            <span class="muted" style="font-size:11.5px">{{ p.n_inputs }} analysed</span>
-          </label>
-          {% else %}
-          <div class="muted" style="padding:8px">No production profiles yet — analyse videos on
-            <a href="{{ url_for('production_inputs_list') }}">Production Inputs (Visual only)</a> first.</div>
-          {% endfor %}
+      <div class="field-panel" style="position:relative;min-width:320px">
+        <label>Style source <span class="muted">(pick one)</span></label>
+        <div class="input-type-tabs" id="mode-tabs">
+          <button type="button" class="input-type-tab active" data-mode="editing">Editing only</button>
+          <button type="button" class="input-type-tab" data-mode="combined">Script + editing</button>
         </div>
-      </div>
+        <input type="hidden" name="mode" id="mode-value" value="editing">
 
-      <div class="field-panel" style="position:relative;min-width:280px">
-        <label>Format profile <span class="muted">(optional — how words and pictures relate)</span></label>
-        <div class="output-form-buttons" id="format-profile-buttons">
-          <label class="output-form-btn active">
-            <input type="radio" name="format_profile_id" value="" checked>
-            None
-            <span class="muted" style="font-size:11.5px">leave the format open</span>
-          </label>
-          {% for f in format_profiles %}
-          <label class="output-form-btn">
-            <input type="radio" name="format_profile_id" value="{{ f.format_profile_id }}">
-            {{ f.profile_code }} · {{ f.handle }}
-            <span class="muted" style="font-size:11.5px">
-              {% if f.status == 'confirmed' %}{{ f.n_inputs_analysed }} analysed{% else %}provisional{% endif %}
-            </span>
-          </label>
-          {% endfor %}
+        <div id="mode-editing">
+          <div class="muted" style="font-size:12px;margin:6px 0 8px">
+            Your script, kept as written. The profile decides only how it's cut and what's shown.
+          </div>
+          <div class="output-form-buttons">
+            {% for p in production_profiles %}
+            <label class="output-form-btn">
+              <input type="radio" name="production_profile_id" value="{{ p.profile_id }}">
+              {{ p.profile_code }} · {{ p.channel_name }}
+              <span class="muted" style="font-size:11.5px">{{ p.n_inputs }} analysed</span>
+            </label>
+            {% else %}
+            <div class="muted" style="padding:8px">No production profiles yet — analyse videos on
+              <a href="{{ url_for('production_inputs_list') }}">Production Inputs (Visual only)</a> first.</div>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div id="mode-combined" hidden>
+          <div class="muted" style="font-size:12px;margin:6px 0 8px">
+            Your creation becomes the <strong>information</strong>. This account supplies the script's rhythm
+            <em>and</em> the editing — one style, not two.
+          </div>
+          <div class="output-form-buttons">
+            {% for f in format_profiles %}
+            <label class="output-form-btn">
+              <input type="radio" name="format_profile_id" value="{{ f.format_profile_id }}">
+              {{ f.profile_code }} · {{ f.handle }}
+              <span class="muted" style="font-size:11.5px">
+                {% if f.status == 'confirmed' %}{{ f.n_inputs_analysed }} analysed{% else %}provisional{% endif %}{% if not f.production_profile_id %} · no timings yet{% endif %}
+              </span>
+            </label>
+            {% else %}
+            <div class="muted" style="padding:8px">No P+S profiles yet.</div>
+            {% endfor %}
+          </div>
         </div>
       </div>
     </div>
@@ -79,26 +90,21 @@
   </form>
 </div>
 
-<h2 style="margin-top:28px">What each profile contributes</h2>
+<h2 style="margin-top:28px">What the two modes do</h2>
 <div class="card" style="padding:0">
   <table>
-    <tr><th style="width:200px">Layer</th><th style="width:120px">Comes from</th><th>What it decides</th></tr>
+    <tr><th style="width:150px">Mode</th><th style="width:230px">Script</th><th>Editing &amp; visuals</th></tr>
     <tr>
-      <td><strong>Voice</strong><div class="muted mono" style="font-size:11.5px">A.* / BK.*</div></td>
-      <td class="muted">the creation</td>
-      <td>How it reads — vocabulary, rhythm, framing. Already fixed when the creation was written.</td>
+      <td><strong>Editing only</strong><div class="muted mono" style="font-size:11.5px">creation + PS.*</div></td>
+      <td>Yours, kept as written. The beats carve it up; nothing restyles it.</td>
+      <td>From the production profile — measured average shot length and shot-type mix.</td>
     </tr>
     <tr>
-      <td><strong>Pacing</strong><div class="muted mono" style="font-size:11.5px">PS.*</div></td>
-      <td class="muted">you pick</td>
-      <td>How fast it's cut — average shot length and shot-type mix, measured from real shot-by-shot analysis.</td>
-    </tr>
-    <tr>
-      <td><strong>Format</strong><div class="muted mono" style="font-size:11.5px">PVS.*</div></td>
-      <td class="muted">you pick (optional)</td>
-      <td>How the words and pictures relate — where the words live, what the visuals do, whether the audio is
-        the creator's own. Neither of the layers above can see this, which is why leaving it out leaves the
-        format to whoever executes the spec.</td>
+      <td><strong>Script + editing</strong><div class="muted mono" style="font-size:11.5px">creation + PVS.*</div></td>
+      <td>Your creation's <em>information</em>, rewritten in the target account's rhythm. Each beat comes back
+        with the actual lines.</td>
+      <td>From the same account — its format axes, plus measured timings once that account has been
+        shot-analysed. One creator, so the writing and the cutting match.</td>
     </tr>
   </table>
 </div>
@@ -114,6 +120,19 @@
       });
     });
   }
+  var modeValue = document.getElementById('mode-value');
+  document.querySelectorAll('#mode-tabs .input-type-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      var mode = tab.dataset.mode;
+      modeValue.value = mode;
+      document.querySelectorAll('#mode-tabs .input-type-tab').forEach(function (t) {
+        t.classList.toggle('active', t === tab);
+      });
+      document.getElementById('mode-editing').hidden = mode !== 'editing';
+      document.getElementById('mode-combined').hidden = mode !== 'combined';
+    });
+  });
+
   // Keep the .active outline in step with the radio actually checked, the
   // same way the Transform page's output-form buttons behave.
   document.querySelectorAll('.output-form-buttons').forEach(function (group) {

@@ -4081,6 +4081,17 @@ PRODUCTION_CREATION_SHOT_MIX_FIELDS = [
     ("pct_other", "other"),
 ]
 
+# Two modes, because the two profile kinds contribute different things.
+#
+#   A + PS  -> the script is A's and stays A's; PS decides only how it is cut.
+#   A + PVS -> A supplies the INFORMATION, B supplies the script's cadence AND
+#              the editing, because a creator's writing rhythm and their
+#              cutting are one style, not two.
+#
+# Keeping these as separate prompts rather than one prompt with switches is
+# deliberate: the instruction "don't restyle the words" and the instruction
+# "rewrite the words in someone else's rhythm" are opposites, and a single
+# prompt carrying both is how a model ends up half-doing each.
 PRODUCTION_CREATION_PROMPT = """You are building a shot-pacing production spec: a plan for recutting a long-form video into a shorter illustrated recut, broken into numbered beats.
 
 SOURCE VIDEO CONTENT — use these real facts/points as the beats' content, don't invent new ones:
@@ -4112,7 +4123,64 @@ Return ONLY a JSON object shaped exactly like this, no other text:
   ]
 }}
 
-Split the source content into 5-7 beats that cover its real structure end to end — don't pad, and don't invent facts not present in the source content above."""
+Split the source content into 5-7 beats that cover its real structure end to end — don't pad, and don't invent facts not present in the source content above.
+
+The script is already written and is not yours to restyle. The pacing target above governs how it is CUT and what is shown — shot lengths, shot mix, visual direction — and nothing else. Draw content_points from the source's own wording rather than paraphrasing it into a different voice."""
+
+
+# Mode B. The source is treated as information, and the creator named below
+# supplies both the script's rhythm and the editing, since they are one style.
+PRODUCTION_CREATION_COMBINED_PROMPT = """You are building a production spec for a short video: a plan broken into numbered beats, where each beat carries the words to be said or shown AND how it is cut.
+
+SOURCE INFORMATION — the facts and argument to convey. Use these; do not invent others. Do NOT keep the source's phrasing: it is here for what it says, not how it says it.
+{content_block}
+
+TARGET CREATOR — {handle} ({profile_code}). Everything about HOW this is written and cut comes from them.
+
+Their format, read from {n_inputs} analysed video(s){preliminary_note}:
+{axis_lines}
+
+What that means for the script you write:
+- Where the words live decides what you are writing. If they live on screen, write the on-screen text itself and write no narration. If they are spoken, write speakable lines. If the audio is borrowed, write nothing to be spoken — only what is shown and what is written over it.
+- If the visuals carry meaning alone, the lines must not restate the picture; each has to add something the picture cannot.
+- Match this creator's rhythm: sentence length, how a point opens and lands, how much is said versus left to the image.
+{pacing_block}
+Return ONLY a JSON object shaped exactly like this, no other text:
+{{
+  "title": "a punchy title, in the target creator's register",
+  "dek": "one sentence describing what this is and whose format it is built to",
+  "beats": [
+    {{
+      "step": 1,
+      "title": "short beat title",
+      "duration_sec_min": 4, "duration_sec_max": 6,
+      "shot_count_min": 2, "shot_count_max": 3,
+      "script_lines": ["the actual line, written in the target creator's rhythm — spoken or on-screen per their format"],
+      "content_points": ["which fact from the source information this beat is carrying"],
+      "illustration_captions": ["one visual direction per shot or shot-group"],
+      "punch_tags": ["2-4 short punch words for on-screen captions"]
+    }}
+  ],
+  "production_notes": [
+    {{"heading": "short heading", "text": "one craft note, 1-2 sentences"}}
+  ]
+}}
+
+Split the source information into 5-7 beats. Write script_lines for every beat — they are the point of this spec, not an extra."""
+
+
+# Appended to the Mode B prompt only when the target account also has measured
+# shot data. Absent, the format axes still say how it is cut, just not in
+# seconds — which is the honest state until those accounts are analysed.
+COMBINED_PACING_BLOCK = """
+Their measured pacing, from {n_analysed} shot-analysed video(s):
+- Average shot length: {avg_shot_length:.2f}s
+- Shot-type mix: {shot_mix_summary}
+"""
+
+COMBINED_NO_PACING_BLOCK = """
+No shot-by-shot timings have been measured for this account yet, so take the pacing from the format above rather than inventing precise numbers: keep beats short, and let the coupling reading decide how tightly cuts track the words.
+"""
 
 
 # The P+S block is appended only when a format profile is chosen. It is
@@ -4290,6 +4358,87 @@ def _format_profile_prompt_block(conn, format_profile_id):
     )
 
 
+def _format_profile_pacing_profile(conn, format_profile):
+    """The PS profile for the SAME account as this PVS profile, if one exists.
+
+    A creator's writing rhythm and their cutting are one style, so Mode B's
+    editing has to come from that creator and not a different one. This looks
+    for their shot-analysed profile by channel name, and records the link on
+    the format profile once found, so the pairing becomes visible on the page
+    instead of being rediscovered on every generation.
+
+    Returns None when the account has not been shot-analysed yet — the normal
+    case today, and one Mode B is written to survive."""
+    if format_profile["production_profile_id"]:
+        return format_profile["production_profile_id"]
+    target = _norm_handle(format_profile["handle"])
+    if not target:
+        return None
+    for r in conn.execute(
+        """SELECT p.profile_id, c.channel_name FROM style_profiles p
+           JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.media_type = 'ProductionSpec'"""
+    ):
+        if _norm_handle(r["channel_name"]) == target:
+            conn.execute(
+                "UPDATE format_profiles SET production_profile_id = ? WHERE format_profile_id = ?",
+                (r["profile_id"], format_profile["format_profile_id"]),
+            )
+            conn.commit()
+            return r["profile_id"]
+    return None
+
+
+def _build_combined_creation_prompt(conn, content_block, format_profile_id):
+    """Mode B: the source is information, the format profile's account
+    supplies both the script's cadence and the editing."""
+    prof = conn.execute(
+        "SELECT * FROM format_profiles WHERE format_profile_id = ?", (format_profile_id,)
+    ).fetchone()
+    if not prof:
+        raise ValueError("Format profile not found — it may have been deleted.")
+
+    labels = {axis: label for axis, label, _ in FORMAT_AXES}
+    by_axis = {
+        r["axis"]: r for r in conn.execute(
+            "SELECT axis, value, note, source FROM format_profile_attributes WHERE format_profile_id = ?",
+            (format_profile_id,),
+        )
+    }
+    lines = []
+    for axis, label, _ in FORMAT_AXES:
+        r = by_axis.get(axis)
+        if not r:
+            continue
+        mark = "" if r["source"] == "classified" else " [asserted, not yet measured]"
+        lines.append(f"- {label}: {r['value']}{mark}")
+    if not lines:
+        raise ValueError(
+            f"{prof['profile_code']} has no format readings yet, so there is no script style to write in."
+        )
+
+    pacing_id = _format_profile_pacing_profile(conn, prof)
+    if pacing_id:
+        fp = _production_profile_fingerprint(conn, pacing_id)
+        avg = (fp["numeric"].get("avg_shot_length_sec") or {}).get("mean_val") or 2.5
+        mix = ", ".join(
+            f"{label} {fp['numeric'][attr]['mean_val']:.0f}%"
+            for attr, label in PRODUCTION_CREATION_SHOT_MIX_FIELDS if attr in fp["numeric"]
+        ) or "no shot-mix data yet"
+        pacing_block = COMBINED_PACING_BLOCK.format(
+            n_analysed=fp["n_videos_analysed"], avg_shot_length=avg, shot_mix_summary=mix)
+    else:
+        pacing_block = COMBINED_NO_PACING_BLOCK
+
+    return PRODUCTION_CREATION_COMBINED_PROMPT.format(
+        content_block=content_block,
+        handle=prof["handle"] or prof["profile_code"], profile_code=prof["profile_code"],
+        n_inputs=prof["n_inputs_analysed"] or 0,
+        preliminary_note="" if prof["status"] == "confirmed" else ", still provisional",
+        axis_lines="\n".join(lines), pacing_block=pacing_block,
+    )
+
+
 def _build_production_creation_prompt(conn, content_block, style_profile_id, production_profile_id,
                                       format_profile_id=None):
     prod_fp = _production_profile_fingerprint(conn, production_profile_id)
@@ -4338,10 +4487,16 @@ def _generate_production_creation(creation_id):
         )
         if content_block is None:
             raise ValueError("Source content not found — it may have been deleted since this creation was started.")
-        prompt = _build_production_creation_prompt(
-            conn, content_block, row["style_profile_id"], row["production_profile_id"],
-            row["format_profile_id"],
-        )
+        # Which profile is set decides the mode. A format profile means the
+        # source is information and its account supplies both script and
+        # editing; otherwise the script stays as written and the production
+        # profile governs the cut alone.
+        if row["format_profile_id"]:
+            prompt = _build_combined_creation_prompt(conn, content_block, row["format_profile_id"])
+        else:
+            prompt = _build_production_creation_prompt(
+                conn, content_block, row["style_profile_id"], row["production_profile_id"],
+            )
         data = generate_json(prompt, max_tokens=4096)
         beats = data.get("beats") or []
         runtime = sum(
@@ -4423,8 +4578,16 @@ def production_transform_form():
 
     if request.method == "POST":
         transformation_id = request.form.get("transformation_id", type=int)
+        mode = request.form.get("mode", "editing")
         production_profile_id = request.form.get("production_profile_id", type=int)
-        format_profile_id = request.form.get("format_profile_id", type=int) or None
+        format_profile_id = request.form.get("format_profile_id", type=int)
+        # Exactly one style source. The two modes are different transforms, not
+        # a base plus an option: one preserves the script, the other rewrites
+        # it, and letting both through would send contradictory instructions.
+        if mode == "combined":
+            production_profile_id = None
+        else:
+            format_profile_id = None
 
         creation = None
         if transformation_id:
@@ -4435,7 +4598,9 @@ def production_transform_form():
             ).fetchone()
         if not creation:
             flash("Pick a Library creation to transform.")
-        elif not production_profile_id:
+        elif mode == "combined" and not format_profile_id:
+            flash("Pick a P+S profile — it supplies both the script style and the editing.")
+        elif mode != "combined" and not production_profile_id:
             flash("Pick a production profile to cut it to.")
         else:
             cur = conn.execute(
@@ -4444,7 +4609,8 @@ def production_transform_form():
                     production_profile_id, format_profile_id)
                    VALUES (?, 'creation', ?, ?, ?, ?)""",
                 (creation["generated_title"], creation["transformation_id"],
-                 creation["target_profile_id"], production_profile_id, format_profile_id),
+                 None if format_profile_id else creation["target_profile_id"],
+                 production_profile_id, format_profile_id),
             )
             conn.commit()
             creation_id = cur.lastrowid
@@ -4477,7 +4643,8 @@ def production_transform_form():
            ORDER BY p.profile_code"""
     ).fetchall()
     format_profiles = conn.execute(
-        """SELECT format_profile_id, profile_code, handle, status, n_inputs_analysed
+        """SELECT format_profile_id, profile_code, handle, status, n_inputs_analysed,
+                  production_profile_id
            FROM format_profiles ORDER BY CAST(SUBSTR(profile_code, 5) AS INTEGER)"""
     ).fetchall()
     conn.close()

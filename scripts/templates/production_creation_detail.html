@@ -32,6 +32,7 @@
         Source ({{ creation.source_kind_label }}): {{ creation.source_title or '—' }}
         {% if creation.style_channel_name %} &middot; voice: {{ creation.style_channel_name }} ({{ creation.style_profile_code }}){% endif %}
         {% if creation.production_channel_name %} &middot; pacing: {{ creation.production_channel_name }} ({{ creation.production_profile_code }}){% endif %}
+        {% if creation.format_profile_code %} &middot; format: {{ creation.format_handle }} ({{ creation.format_profile_code }}{% if creation.format_status != 'confirmed' %}, provisional{% endif %}){% endif %}
       </span>
     </div>
     {% if creation.dek %}<p class="pc-dek">{{ creation.dek }}</p>{% endif %}

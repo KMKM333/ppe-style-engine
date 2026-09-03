@@ -100,4 +100,9 @@ python3 migrate_add_format_profiles.py
 # same idempotent pattern, safe on every boot.
 python3 migrate_add_format_inputs.py
 
+# Lets a production spec creation record the PVS format profile it was built
+# against, so a spec can say how words and pictures should relate and not just
+# how it should sound and be cut — same idempotent pattern, safe on every boot.
+python3 migrate_add_production_creation_format_profile.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

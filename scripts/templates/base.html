@@ -631,7 +631,7 @@
       </div>
 
       <div class="nav-group">
-        <a href="{{ url_for('production_inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active in ('production-inputs','production-format-inputs','production-formats','production-profiles','production-spec-creations','production-creations') else '' }}">Production</a>
+        <a href="{{ url_for('production_inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active in ('production-inputs','production-format-inputs','production-formats','production-profiles','production-transform','production-spec-creations','production-creations') else '' }}">Production</a>
         {# Ordered inputs → profiles, twice: the visual-only pair first, then
            the P+S pair. Same shape as the Library, where the evidence and the
            claim built from it are separate pages. #}
@@ -639,6 +639,7 @@
         <a href="{{ url_for('production_profiles_list') }}" class="nav-item {{ 'active' if active=='production-profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Production Profiles</a>
         <a href="{{ url_for('format_inputs_list') }}" class="nav-item {{ 'active' if active=='production-format-inputs' else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Production Inputs (P+S)</a>
         <a href="{{ url_for('format_profiles_list') }}" class="nav-item {{ 'active' if active=='production-formats' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Production P+S Profiles</a>
+        <a href="{{ url_for('production_transform_form') }}" class="nav-item {{ 'active' if active=='production-transform' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Production Transform</a>
         <a href="{{ url_for('production_spec_creations_list') }}" class="nav-item {{ 'active' if active=='production-spec-creations' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Production Specs Creations</a>
         <a href="{{ url_for('video_creations_list') }}" class="nav-item {{ 'active' if active=='production-creations' else '' }}"><span class="nav-icon">{{ icon('sparkles') }}</span>Video Creations</a>
       </div>

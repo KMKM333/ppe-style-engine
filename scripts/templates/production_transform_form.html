@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Production Transform — PPE Engine{% endblock %}
+{% block content %}
+<h1>Production Transform</h1>
+<div class="sub">Take something already written in the Library and cut it to a production profile. The Library's
+  <a href="{{ url_for('transform_form') }}">Transform</a> decides what a piece says and whose voice it says it in;
+  this decides how it gets <strong>shot</strong> — beats, runtime, shot counts and visual direction.</div>
+
+<div class="card">
+  <!-- POST, not GET: generating costs a real Claude call, so it must not be
+       something a page load / refresh / shared link can trigger. -->
+  <form method="post" action="{{ url_for('production_transform_form') }}">
+    <div class="flex">
+      <div class="field-panel" style="position:relative;min-width:340px">
+        <label>Creation <span class="muted">(from the Library)</span></label>
+        <input type="text" id="creation-search" autocomplete="off" placeholder="Filter by title, profile, or channel…">
+        <div id="creation-checklist" class="input-checklist">
+          {% for c in creations %}
+          <label class="input-checklist-row" data-search="{{ ((c.generated_title or '') ~ ' ' ~ (c.profile_code or '') ~ ' ' ~ (c.channel_name or ''))|lower }}">
+            <input type="radio" name="transformation_id" value="{{ c.transformation_id }}" required>
+            {{ c.generated_title or 'Untitled creation' }}
+            {% if c.profile_code %}<span class="muted"> · {{ c.profile_code }}</span>{% endif %}
+          </label>
+          {% else %}
+          <div class="muted" style="padding:8px">No Library creations yet — make one on
+            <a href="{{ url_for('transform_form') }}">Transform</a> first.</div>
+          {% endfor %}
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:6px">
+          The voice profile comes with the creation — it was written toward one already, so it isn't asked for again.
+        </div>
+      </div>
+
+      <div class="field-panel" style="position:relative;min-width:280px">
+        <label>Production profile <span class="muted">(how it's cut)</span></label>
+        <div class="output-form-buttons" id="production-profile-buttons">
+          {% for p in production_profiles %}
+          <label class="output-form-btn">
+            <input type="radio" name="production_profile_id" value="{{ p.profile_id }}" required>
+            {{ p.profile_code }} · {{ p.channel_name }}
+            <span class="muted" style="font-size:11.5px">{{ p.n_inputs }} analysed</span>
+          </label>
+          {% else %}
+          <div class="muted" style="padding:8px">No production profiles yet — analyse videos on
+            <a href="{{ url_for('production_inputs_list') }}">Production Inputs (Visual only)</a> first.</div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="field-panel" style="position:relative;min-width:280px">
+        <label>Format profile <span class="muted">(optional — how words and pictures relate)</span></label>
+        <div class="output-form-buttons" id="format-profile-buttons">
+          <label class="output-form-btn active">
+            <input type="radio" name="format_profile_id" value="" checked>
+            None
+            <span class="muted" style="font-size:11.5px">leave the format open</span>
+          </label>
+          {% for f in format_profiles %}
+          <label class="output-form-btn">
+            <input type="radio" name="format_profile_id" value="{{ f.format_profile_id }}">
+            {{ f.profile_code }} · {{ f.handle }}
+            <span class="muted" style="font-size:11.5px">
+              {% if f.status == 'confirmed' %}{{ f.n_inputs_analysed }} analysed{% else %}provisional{% endif %}
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <button type="submit">Generate production spec</button>
+    </div>
+    <div class="muted" style="font-size:12.5px;margin-top:8px">
+      Costs one Claude call. The result is saved as a
+      <a href="{{ url_for('production_spec_creations_list') }}">Production Spec Creation</a> — beats, runtime,
+      shot counts and craft notes — and you'll land on it when it's done.
+    </div>
+  </form>
+</div>
+
+<h2 style="margin-top:28px">What each profile contributes</h2>
+<div class="card" style="padding:0">
+  <table>
+    <tr><th style="width:200px">Layer</th><th style="width:120px">Comes from</th><th>What it decides</th></tr>
+    <tr>
+      <td><strong>Voice</strong><div class="muted mono" style="font-size:11.5px">A.* / BK.*</div></td>
+      <td class="muted">the creation</td>
+      <td>How it reads — vocabulary, rhythm, framing. Already fixed when the creation was written.</td>
+    </tr>
+    <tr>
+      <td><strong>Pacing</strong><div class="muted mono" style="font-size:11.5px">PS.*</div></td>
+      <td class="muted">you pick</td>
+      <td>How fast it's cut — average shot length and shot-type mix, measured from real shot-by-shot analysis.</td>
+    </tr>
+    <tr>
+      <td><strong>Format</strong><div class="muted mono" style="font-size:11.5px">PVS.*</div></td>
+      <td class="muted">you pick (optional)</td>
+      <td>How the words and pictures relate — where the words live, what the visuals do, whether the audio is
+        the creator's own. Neither of the layers above can see this, which is why leaving it out leaves the
+        format to whoever executes the spec.</td>
+    </tr>
+  </table>
+</div>
+
+<script>
+(function () {
+  var search = document.getElementById('creation-search');
+  if (search) {
+    search.addEventListener('input', function () {
+      var q = this.value.trim().toLowerCase();
+      document.querySelectorAll('#creation-checklist .input-checklist-row').forEach(function (row) {
+        row.style.display = !q || (row.dataset.search || '').indexOf(q) !== -1 ? '' : 'none';
+      });
+    });
+  }
+  // Keep the .active outline in step with the radio actually checked, the
+  // same way the Transform page's output-form buttons behave.
+  document.querySelectorAll('.output-form-buttons').forEach(function (group) {
+    group.addEventListener('change', function () {
+      group.querySelectorAll('.output-form-btn').forEach(function (btn) {
+        btn.classList.toggle('active', btn.querySelector('input').checked);
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

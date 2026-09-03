@@ -4091,7 +4091,7 @@ PACING TARGET — measured from {production_channel_name}'s real shot-by-shot an
 - Shot-type mix: {shot_mix_summary}
 
 VOICE/STYLE TARGET: {style_channel_name}{style_overview_suffix}
-
+{format_block}
 Return ONLY a JSON object shaped exactly like this, no other text:
 {{
   "title": "a punchy title for this recut, in the source's own vocabulary",
@@ -4113,6 +4113,22 @@ Return ONLY a JSON object shaped exactly like this, no other text:
 }}
 
 Split the source content into 5-7 beats that cover its real structure end to end — don't pad, and don't invent facts not present in the source content above."""
+
+
+# The P+S block is appended only when a format profile is chosen. It is
+# written as constraints rather than description because these axes change
+# what the beats must CONTAIN: a format whose visuals carry meaning alone
+# cannot be specified with illustration captions that merely restate the
+# script, and a borrowed-audio format has no narration to write at all.
+FORMAT_PROFILE_PROMPT_BLOCK = """
+FORMAT TARGET — how words and pictures relate for {handle} ({profile_code}, read from {n_inputs} analysed video(s){preliminary_note}):
+{axis_lines}
+
+Honour these as constraints on the beats themselves, not as notes appended at the end:
+- If the words live on screen rather than in speech, write the on-screen text as the content, and don't write narration that isn't there.
+- If the visuals carry meaning alone, each illustration caption must advance the point rather than restate the words.
+- If the audio is borrowed, don't script a voiceover — script what is shown and what is written over it.
+"""
 
 
 def _video_full_breakdown_block(conn, video_id, limit=6000):
@@ -4237,7 +4253,45 @@ def _production_profile_fingerprint(conn, profile_id):
     }
 
 
-def _build_production_creation_prompt(conn, content_block, style_profile_id, production_profile_id):
+def _format_profile_prompt_block(conn, format_profile_id):
+    """The P+S axes for a chosen format profile, as prompt constraints.
+    Returns "" when no profile is chosen — the spec is still valid without
+    one, it just leaves the format to whoever executes it."""
+    if not format_profile_id:
+        return ""
+    prof = conn.execute(
+        "SELECT profile_code, handle, status, n_inputs_analysed FROM format_profiles "
+        "WHERE format_profile_id = ?", (format_profile_id,),
+    ).fetchone()
+    if not prof:
+        return ""
+    labels = {axis: label for axis, label, _ in FORMAT_AXES}
+    rows = conn.execute(
+        "SELECT axis, value, note, source FROM format_profile_attributes WHERE format_profile_id = ?",
+        (format_profile_id,),
+    ).fetchall()
+    by_axis = {r["axis"]: r for r in rows}
+    lines = []
+    for axis, label, _ in FORMAT_AXES:
+        r = by_axis.get(axis)
+        if not r:
+            continue
+        # Say which readings are measured and which are still asserted, so the
+        # model is not asked to treat a guess as a specification.
+        mark = "" if r["source"] == "classified" else " [asserted, not yet measured]"
+        lines.append(f"- {label}: {r['value']}{mark}")
+    if not lines:
+        return ""
+    note = "" if prof["status"] == "confirmed" else ", still provisional"
+    return FORMAT_PROFILE_PROMPT_BLOCK.format(
+        handle=prof["handle"] or prof["profile_code"], profile_code=prof["profile_code"],
+        n_inputs=prof["n_inputs_analysed"] or 0, preliminary_note=note,
+        axis_lines="\n".join(lines),
+    )
+
+
+def _build_production_creation_prompt(conn, content_block, style_profile_id, production_profile_id,
+                                      format_profile_id=None):
     prod_fp = _production_profile_fingerprint(conn, production_profile_id)
     style_row = conn.execute(
         """SELECT p.overview, c.channel_name FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
@@ -4263,6 +4317,7 @@ def _build_production_creation_prompt(conn, content_block, style_profile_id, pro
         shot_mix_summary=shot_mix_summary,
         style_channel_name=style_row["channel_name"] if style_row else "the style profile",
         style_overview_suffix=f" — {style_overview[:300]}" if style_overview else "",
+        format_block=_format_profile_prompt_block(conn, format_profile_id),
     )
 
 
@@ -4283,7 +4338,10 @@ def _generate_production_creation(creation_id):
         )
         if content_block is None:
             raise ValueError("Source content not found — it may have been deleted since this creation was started.")
-        prompt = _build_production_creation_prompt(conn, content_block, row["style_profile_id"], row["production_profile_id"])
+        prompt = _build_production_creation_prompt(
+            conn, content_block, row["style_profile_id"], row["production_profile_id"],
+            row["format_profile_id"],
+        )
         data = generate_json(prompt, max_tokens=4096)
         beats = data.get("beats") or []
         runtime = sum(
@@ -4342,6 +4400,91 @@ def production_spec_creations_list():
     ]
     conn.close()
     return render_template("production_spec_creations_list.html", active="production-spec-creations", rows=rows)
+
+
+@app.route("/production/transform", methods=["GET", "POST"])
+def production_transform_form():
+    """Production Transform — take something already written in the Library
+    and cut it to a production profile.
+
+    The Library's /transform answers "what should this say, in whose voice".
+    This answers the next question: "how should it be SHOT". Same shape, one
+    step further down the pipeline, which is why it reads as a sibling of
+    that page rather than a different kind of thing.
+
+    The voice profile is NOT asked for here. A Studio Creation was already
+    generated toward a target profile, so asking again would let you pick a
+    voice the text was never written in — a choice with no right answer and
+    a silent way to produce an incoherent spec.
+
+    POST, not GET: generating costs a real Claude call, so a page load,
+    refresh or shared link must not be able to trigger one."""
+    conn = get_conn()
+
+    if request.method == "POST":
+        transformation_id = request.form.get("transformation_id", type=int)
+        production_profile_id = request.form.get("production_profile_id", type=int)
+        format_profile_id = request.form.get("format_profile_id", type=int) or None
+
+        creation = None
+        if transformation_id:
+            creation = conn.execute(
+                """SELECT t.transformation_id, t.generated_title, t.target_profile_id
+                   FROM transformations t WHERE t.transformation_id = ?""",
+                (transformation_id,),
+            ).fetchone()
+        if not creation:
+            flash("Pick a Library creation to transform.")
+        elif not production_profile_id:
+            flash("Pick a production profile to cut it to.")
+        else:
+            cur = conn.execute(
+                """INSERT INTO production_spec_creations
+                   (title, source_kind, source_transformation_id, style_profile_id,
+                    production_profile_id, format_profile_id)
+                   VALUES (?, 'creation', ?, ?, ?, ?)""",
+                (creation["generated_title"], creation["transformation_id"],
+                 creation["target_profile_id"], production_profile_id, format_profile_id),
+            )
+            conn.commit()
+            creation_id = cur.lastrowid
+            conn.close()
+            _generate_production_creation(creation_id)
+            conn = get_conn()
+            status = conn.execute(
+                "SELECT status, generation_error FROM production_spec_creations WHERE creation_id = ?",
+                (creation_id,),
+            ).fetchone()
+            conn.close()
+            if status and status["status"] == "failed":
+                flash(f"Generation failed: {status['generation_error']}")
+            return redirect(url_for("production_spec_creation_detail", creation_id=creation_id))
+
+    creations = conn.execute(
+        """SELECT t.transformation_id, t.generated_title, t.generated_at,
+                  p.profile_code, c.channel_name
+           FROM transformations t
+           LEFT JOIN style_profiles p ON p.profile_id = t.target_profile_id
+           LEFT JOIN channels c ON c.channel_id = p.channel_id
+           ORDER BY t.generated_at DESC LIMIT 300"""
+    ).fetchall()
+    production_profiles = conn.execute(
+        """SELECT p.profile_id, p.profile_code, c.channel_name,
+                  (SELECT COUNT(*) FROM production_spec_inputs i
+                   WHERE i.channel_id = p.channel_id AND i.status = 'classified') AS n_inputs
+           FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.media_type = 'ProductionSpec'
+           ORDER BY p.profile_code"""
+    ).fetchall()
+    format_profiles = conn.execute(
+        """SELECT format_profile_id, profile_code, handle, status, n_inputs_analysed
+           FROM format_profiles ORDER BY CAST(SUBSTR(profile_code, 5) AS INTEGER)"""
+    ).fetchall()
+    conn.close()
+    return render_template(
+        "production_transform_form.html", active="production-transform",
+        creations=creations, production_profiles=production_profiles, format_profiles=format_profiles,
+    )
 
 
 @app.route("/production/spec-creations/new", methods=["GET", "POST"])
@@ -4426,12 +4569,15 @@ def production_spec_creation_detail(creation_id):
     row = conn.execute(
         """SELECT c.*, sp.profile_code AS style_profile_code, sc.channel_name AS style_channel_name,
                   pp.profile_code AS production_profile_code, pc.channel_name AS production_channel_name,
-                  pp.n_videos_analysed AS production_n_analysed
+                  pp.n_videos_analysed AS production_n_analysed,
+                  fp.profile_code AS format_profile_code, fp.handle AS format_handle,
+                  fp.status AS format_status
            FROM production_spec_creations c
            LEFT JOIN style_profiles sp ON sp.profile_id = c.style_profile_id
            LEFT JOIN channels sc ON sc.channel_id = sp.channel_id
            LEFT JOIN style_profiles pp ON pp.profile_id = c.production_profile_id
            LEFT JOIN channels pc ON pc.channel_id = pp.channel_id
+           LEFT JOIN format_profiles fp ON fp.format_profile_id = c.format_profile_id
            WHERE c.creation_id = ?""",
         (creation_id,),
     ).fetchone()

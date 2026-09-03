@@ -611,7 +611,7 @@
 
       <div class="nav-group">
         <a href="{{ url_for('production_inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active in ('production-inputs','production-profiles','production-spec-creations','production-creations') else '' }}">Production</a>
-        <a href="{{ url_for('production_inputs_list') }}" class="nav-item {{ 'active' if active=='production-inputs' else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Production Inputs</a>
+        <a href="{{ url_for('production_inputs_list') }}" class="nav-item {{ 'active' if active=='production-inputs' else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Production Inputs (Visual only)</a>
         <a href="{{ url_for('production_profiles_list') }}" class="nav-item {{ 'active' if active=='production-profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Production Profiles</a>
         <a href="{{ url_for('production_spec_creations_list') }}" class="nav-item {{ 'active' if active=='production-spec-creations' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Production Specs Creations</a>
         <a href="{{ url_for('video_creations_list') }}" class="nav-item {{ 'active' if active=='production-creations' else '' }}"><span class="nav-icon">{{ icon('sparkles') }}</span>Video Creations</a>

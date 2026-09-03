@@ -30,7 +30,7 @@
     <tr data-entity="format_profile" data-id="{{ p.format_profile_id }}" data-name="{{ p.handle }}">
       <td><a href="{{ url_for('format_profile_detail', code=p.profile_code) }}"><strong>{{ p.profile_code }}</strong></a></td>
       <td>{{ p.handle }}</td>
-      <td style="max-width:280px">{{ p.summary }}</td>
+      <td style="max-width:280px">{{ p.summary or '' }}</td>
       {% for axis, label, _ in axes %}
       <td>{% if p.attrs.get(axis) %}<span class="tag">{{ p.attrs[axis].value }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
       {% endfor %}
@@ -69,7 +69,7 @@
   <table>
     <tr><th style="width:180px">Account</th><th>What the current split gets wrong</th></tr>
     {% for p in profiles %}
-    <tr><td><strong>{{ p.handle }}</strong><div class="muted">{{ p.profile_code }}</div></td><td>{{ p.breaks_today }}</td></tr>
+    {% if p.breaks_today %}<tr><td><strong>{{ p.handle }}</strong><div class="muted">{{ p.profile_code }}</div></td><td>{{ p.breaks_today }}</td></tr>{% endif %}
     {% endfor %}
   </table>
 </div>

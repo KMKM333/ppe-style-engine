@@ -3,7 +3,9 @@
 {% block content %}
 <h1>{{ p.profile_code }} · {{ p.handle }}</h1>
 <div class="sub">
-  {{ p.summary }}
+  {# A profile created automatically from an imported account has no written
+     summary yet — say so, rather than rendering an empty line or "None". #}
+  {{ p.summary or 'No description written yet — this profile was created from an import. Its reading comes from the analysed videos below.' }}
   {% if p.channel_name %}<br>Channel: <strong>{{ p.channel_name }}</strong>{% endif %}
 </div>
 
@@ -42,10 +44,12 @@
   </table>
 </div>
 
+{% if p.breaks_today %}
 <h2 style="margin-top:28px">What the current split gets wrong here</h2>
 <div class="card">
   <p style="margin:0">{{ p.breaks_today }}</p>
 </div>
+{% endif %}
 
 <h2 style="margin-top:28px">Linked profiles</h2>
 <div class="card">

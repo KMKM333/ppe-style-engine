@@ -3462,7 +3462,11 @@ ENTITY_SPECS = {
     },
     "format_profile": {
         "label": "format profile", "table": "format_profiles", "pk": "format_profile_id",
-        "name_column": "display_name",
+        # handle, not display_name: the @handle is what both pages show and
+        # what identifies the account. display_name is rendered nowhere, so
+        # renaming it appeared to do nothing at all — the write succeeded
+        # every time, into a field with no way to see it.
+        "name_column": "handle",
         "children": ["format_profile_attributes"], "detach": [],
     },
     "channel": {

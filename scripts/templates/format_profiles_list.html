@@ -27,7 +27,7 @@
       <th>Linked profiles</th><th>Inputs</th><th></th>
     </tr>
     {% for p in profiles %}
-    <tr data-entity="format_profile" data-id="{{ p.format_profile_id }}" data-name="{{ p.display_name }}">
+    <tr data-entity="format_profile" data-id="{{ p.format_profile_id }}" data-name="{{ p.handle }}">
       <td><a href="{{ url_for('format_profile_detail', code=p.profile_code) }}"><strong>{{ p.profile_code }}</strong></a></td>
       <td>{{ p.handle }}</td>
       <td style="max-width:280px">{{ p.summary }}</td>

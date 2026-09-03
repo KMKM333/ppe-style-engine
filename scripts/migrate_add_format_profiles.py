@@ -88,7 +88,7 @@ FORMAT_AXES = [
 # inputs are imported; that is the point of showing them.
 SEED = [
     {
-        "code": "PVS.1", "handle": "@theinvertedattorney", "name": "The Inverted Attorney",
+        "code": "PVS.1", "handle": "@theintrovertedattorney", "name": "The Introverted Attorney",
         "summary": "Satirical monologue. The script carries essentially all of the meaning; visuals are presence, not argument.",
         "breaks_today": "Handled adequately by the library pipeline alone — the production side adds little, because the visuals aren't doing narrative work.",
         "attrs": {

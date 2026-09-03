@@ -23,7 +23,8 @@ from urllib.parse import quote
 
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, abort, jsonify
 
-from db_init import get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR, VIDEO_VISUALS_DIR, PRODUCTION_SPEC_SHOTS_DIR
+from db_init import (get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR, VIDEO_VISUALS_DIR,
+                     PRODUCTION_SPEC_SHOTS_DIR, FORMAT_FRAMES_DIR)
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
 from score_engine import rate_input, score_intrinsic, score_against_profiles, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
@@ -34,6 +35,7 @@ from ingest_book import ingest_book_text
 from ingest_video import ingest_video_row
 import gatekeeper
 from ingest_production_spec import ingest_production_spec_row
+from similarity import normalize_hash
 from production_spec_profile_builder import build_profile as production_spec_build_profile
 
 # Shared secret the Instagram Bulk Transcriber (a separate local app) sends
@@ -2658,6 +2660,142 @@ def api_ingest_video():
     subprocess.Popen([sys.executable, script_path, "--video_id", str(video_id)], start_new_session=True)
 
     return jsonify({"ok": True, "video_id": video_id, "status": "ingested, classifying in the background"})
+
+
+@app.route("/api/ingest/format", methods=["POST"])
+def api_ingest_format():
+    """Receives one video for Production Inputs (P+S) analysis: its transcript
+    (possibly empty — a silent format is the point, not a failure) plus the
+    frame timestamps the transcriber sampled. Frames themselves follow via
+    /api/format/inputs/<id>/frames/<frame_id>, mirroring the production-spec
+    pipeline.
+
+    Body: {profile_code, title, url, platform, duration_sec, transcript,
+           has_audio, frames: [{frame_number, at_sec}, ...]}"""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    code = (data.get("profile_code") or "").strip()
+    frames = data.get("frames") or []
+    if not code:
+        return jsonify({"ok": False, "error": "'profile_code' is required (e.g. PVS.1)"}), 400
+    if not frames:
+        return jsonify({"ok": False, "error": "'frames' is required"}), 400
+
+    conn = get_conn()
+    prof = conn.execute(
+        "SELECT format_profile_id FROM format_profiles WHERE profile_code = ?", (code,)
+    ).fetchone()
+    if not prof:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such format profile: {code}"}), 404
+
+    url = data.get("url")
+    chash = normalize_hash(url) if url else None
+    if chash:
+        existing = conn.execute(
+            "SELECT format_input_id FROM format_inputs WHERE content_hash = ?", (chash,)
+        ).fetchone()
+        if existing:
+            # Re-submitting the same URL reuses the row rather than making a
+            # second one, so a retried job can't double-count in the aggregate.
+            fid = existing["format_input_id"]
+            rows = conn.execute(
+                "SELECT frame_id, frame_number FROM format_input_frames WHERE format_input_id = ? "
+                "ORDER BY frame_number", (fid,)
+            ).fetchall()
+            conn.close()
+            return jsonify({"ok": True, "format_input_id": fid, "duplicate": True,
+                            "frames": [{"frame_number": r["frame_number"], "frame_id": r["frame_id"]} for r in rows]})
+
+    cur = conn.execute(
+        """INSERT INTO format_inputs
+           (format_profile_id, title, url, platform, duration_sec, content_hash, transcript,
+            has_audio, n_frames, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ingested')""",
+        (prof["format_profile_id"], data.get("title"), url, data.get("platform"),
+         data.get("duration_sec"), chash, data.get("transcript") or None,
+         1 if data.get("has_audio") else 0, len(frames)),
+    )
+    fid = cur.lastrowid
+    out = []
+    for f in frames:
+        c2 = conn.execute(
+            "INSERT INTO format_input_frames (format_input_id, frame_number, at_sec) VALUES (?, ?, ?)",
+            (fid, f.get("frame_number"), f.get("at_sec")),
+        )
+        out.append({"frame_number": f.get("frame_number"), "frame_id": c2.lastrowid})
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "format_input_id": fid, "duplicate": False, "frames": out})
+
+
+@app.route("/api/format/inputs/<int:input_id>/frames/<int:frame_id>", methods=["POST"])
+def api_set_format_frame(input_id, frame_id):
+    """Stores one downscaled frame for a P+S input."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    image_b64 = (request.get_json(silent=True) or {}).get("image_base64")
+    if not image_b64:
+        return jsonify({"ok": False, "error": "'image_base64' is required"}), 400
+
+    conn = get_conn()
+    frame = conn.execute(
+        "SELECT frame_id FROM format_input_frames WHERE frame_id = ? AND format_input_id = ?",
+        (frame_id, input_id),
+    ).fetchone()
+    if not frame:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such frame on this input"}), 404
+
+    out_dir = FORMAT_FRAMES_DIR / str(input_id)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"frame_{frame_id}.jpg").write_bytes(base64.b64decode(image_b64))
+    conn.execute("UPDATE format_input_frames SET captured = 1 WHERE frame_id = ?", (frame_id,))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "frame_id": frame_id})
+
+
+@app.route("/api/format/inputs/<int:input_id>/classify", methods=["POST"])
+def api_classify_format_input(input_id):
+    """Kicks off the joint visual+script classification as a detached
+    subprocess, same rationale as the other classify routes."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    row = conn.execute("SELECT format_input_id FROM format_inputs WHERE format_input_id = ?", (input_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such format input"}), 404
+    conn.execute(
+        "UPDATE format_inputs SET status = 'classifying', classification_error = NULL WHERE format_input_id = ?",
+        (input_id,),
+    )
+    conn.commit()
+    conn.close()
+
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classify_format_input.py")
+    subprocess.Popen([sys.executable, script_path, "--format_input_id", str(input_id)], start_new_session=True)
+    return jsonify({"ok": True, "format_input_id": input_id, "status": "classifying"})
+
+
+@app.route("/api/format/inputs/<int:input_id>/status")
+def api_format_input_status(input_id):
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT status, classification_error, on_screen_text FROM format_inputs WHERE format_input_id = ?",
+        (input_id,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({"ok": False, "error": "no such format input"}), 404
+    return jsonify({"ok": True, "format_input_id": input_id, "status": row["status"],
+                    "done": row["status"] in ("classified", "needs_review"),
+                    "classification_error": row["classification_error"],
+                    "on_screen_text": row["on_screen_text"]})
 
 
 @app.route("/api/channels/suggest")

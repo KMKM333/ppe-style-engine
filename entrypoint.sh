@@ -95,4 +95,9 @@ python3 migrate_backfill_militia_divide_creation.py
 # classification pass has since refined.
 python3 migrate_add_format_profiles.py
 
+# Per-video storage for the P+S pipeline (format_inputs / frames / readings),
+# so a format reading is recorded per VIDEO and aggregated into the profile —
+# same idempotent pattern, safe on every boot.
+python3 migrate_add_format_inputs.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

@@ -32,6 +32,11 @@ VIDEO_VISUALS_DIR = DB_PATH.parent / "video_visuals"
 # Layout: PRODUCTION_SPEC_SHOTS_DIR/<input_id>/shot_<shot_id>.png
 PRODUCTION_SPEC_SHOTS_DIR = DB_PATH.parent / "production_spec_shots"
 
+# Production Inputs (P+S) frames — downscaled stills sampled across a video
+# for the joint visual+script format classifier.
+# Layout: FORMAT_FRAMES_DIR/<format_input_id>/frame_<frame_id>.png
+FORMAT_FRAMES_DIR = DB_PATH.parent / "format_frames"
+
 
 def get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

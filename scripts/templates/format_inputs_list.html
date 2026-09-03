@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Production Inputs (P+S) — PPE Engine{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>Production Inputs (P+S)</h1>
+<div class="sub">Videos read for how their <strong>visuals and script relate</strong> — frames and words in a
+  single pass, because these questions can't be answered from either alone. Each row is one video's own
+  reading; the readings roll up into the
+  <a href="{{ url_for('format_profiles_list') }}">P+S Profiles</a> below.</div>
+
+<form method="get" action="{{ url_for('format_inputs_list') }}" class="card">
+  <div class="flex">
+    <div>
+      <label for="q">Search title or account</label>
+      <input type="text" id="q" name="q" value="{{ filters.q }}" placeholder="e.g. casuallyfinance">
+    </div>
+    <div>
+      <label for="profile">Profile</label>
+      <select id="profile" name="profile">
+        <option value="">All profiles</option>
+        {% for p in profiles %}
+        <option value="{{ p.profile_code }}" {{ 'selected' if filters.profile == p.profile_code }}>{{ p.profile_code }} — {{ p.handle }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="status">Status</label>
+      <select id="status" name="status">
+        <option value="">Any</option>
+        <option value="ingested" {{ 'selected' if filters.status == 'ingested' }}>Ingested</option>
+        <option value="classifying" {{ 'selected' if filters.status == 'classifying' }}>Classifying</option>
+        <option value="classified" {{ 'selected' if filters.status == 'classified' }}>Classified</option>
+        <option value="needs_review" {{ 'selected' if filters.status == 'needs_review' }}>Needs review</option>
+      </select>
+    </div>
+  </div>
+  <button type="submit">Apply filters</button>
+  <a href="{{ url_for('format_inputs_list') }}" class="btn secondary">Reset</a>
+</form>
+
+<div class="card">
+  {% if rows %}
+  <table>
+    <tr>
+      <th>Title</th><th>Account</th><th>Profile</th><th class="num">Length</th><th class="num">Frames</th>
+      <th>Audio</th><th>Status</th><th>Ingested</th><th></th>
+    </tr>
+    {% for r in rows %}
+    <tr data-entity="format_input" data-id="{{ r.format_input_id }}" data-name="{{ r.title or '' }}">
+      <td><a href="{{ url_for('format_input_detail', input_id=r.format_input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title or 'Untitled' }}</a></td>
+      <td class="muted">{{ r.channel_name or '—' }}</td>
+      {# The row is the input; this cell is the profile. Without its own
+         identity, right-clicking a PVS code would rename the video. #}
+      <td {% if r.profile_code %}data-entity="format_profile" data-id="{{ r.format_profile_id }}" data-name="{{ r.handle }}"{% endif %}>
+        {% if r.profile_code %}<a href="{{ url_for('format_profile_detail', code=r.profile_code) }}">{{ r.profile_code }}</a>{% else %}—{% endif %}
+      </td>
+      <td class="num">{{ '%.0fs' % r.duration_sec if r.duration_sec is not none else '—' }}</td>
+      <td class="num">{{ r.n_frames or 0 }}</td>
+      <td>{% if r.has_audio %}<span class="pill draft">spoken</span>{% else %}<span class="pill">silent</span>{% endif %}</td>
+      <td>
+        {% if r.status == 'classified' %}<span class="pill confirmed">classified</span>
+        {% elif r.status == 'needs_review' %}<span class="pill bad">needs review</span>
+        {% else %}<span class="pill draft">{{ r.status }}</span>{% endif %}
+      </td>
+      <td class="muted" style="white-space:nowrap">{{ r.ingested_at }}</td>
+      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('format_input_detail', input_id=r.format_input_id) }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('layers') }}</div>
+    <p>No P+S inputs yet. Submit videos through the Bulk Transcriber's
+      <strong>Add Production Inputs (P+S)</strong> section — paste the links and the account name, and the
+      PVS code is assigned for you.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

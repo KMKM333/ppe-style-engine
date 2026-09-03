@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}{{ i.title or 'P+S input' }} — Production Inputs (P+S){% endblock %}
+{% block content %}
+<div class="sub" style="margin-bottom:6px"><a href="{{ url_for('format_inputs_list') }}">← Production Inputs (P+S)</a></div>
+<h1>{{ i.title or 'Untitled' }}</h1>
+<div class="sub">
+  {{ i.channel_name or 'Unknown account' }}
+  {% if i.profile_code %} · <a href="{{ url_for('format_profile_detail', code=i.profile_code) }}">{{ i.profile_code }}</a>{% endif %}
+  {% if i.platform %} · {{ i.platform }}{% endif %}
+  {% if i.duration_sec %} · {{ '%.0f' % i.duration_sec }}s{% endif %}
+  {% if i.url %} · <a href="{{ i.url }}" target="_blank" rel="noopener">Original ↗</a>{% endif %}
+</div>
+
+{% if i.status != 'classified' %}
+<div class="card" style="border-color:rgba(var(--accent-rgb),.35); background:rgba(var(--accent-rgb),.06)">
+  <strong>Status: {{ i.status }}</strong>
+  {% if i.classification_error %}
+  <div class="muted" style="margin-top:6px;font-size:13.5px">{{ i.classification_error }}</div>
+  {% else %}
+  <div class="muted" style="margin-top:6px;font-size:13.5px">
+    This video's reading isn't complete, so nothing here counts toward its profile yet.
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<h2>This video's reading</h2>
+<div class="sub">The same five axes the profile is built from — read from this one video.</div>
+<div class="card" style="padding:0">
+  <table>
+    <tr><th style="width:190px">Axis</th><th style="width:170px">Reading</th><th>Why</th></tr>
+    {% for axis, label, values in axes %}
+    {% set r = readings.get(axis) %}
+    <tr>
+      <td><strong>{{ label }}</strong><div class="muted mono" style="font-size:11.5px">{{ axis }}</div></td>
+      <td>{% if r %}<span class="tag">{{ r.value }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>{{ r.note if r else '' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<h2 style="margin-top:28px">Where the words came from</h2>
+<div class="card">
+  <div class="flex">
+    <div>
+      <div class="muted" style="font-size:12px;text-transform:uppercase">Audio</div>
+      <div style="font-size:18px;font-weight:700">{{ 'Spoken' if i.has_audio else 'Silent' }}</div>
+    </div>
+    <div>
+      <div class="muted" style="font-size:12px;text-transform:uppercase">On-screen text vs audio</div>
+      <div style="font-size:18px;font-weight:700">{{ i.text_audio_relation or '—' }}</div>
+    </div>
+    <div>
+      <div class="muted" style="font-size:12px;text-transform:uppercase">Frames sampled</div>
+      <div style="font-size:18px;font-weight:700">{{ i.n_frames or 0 }}</div>
+    </div>
+  </div>
+  {% if i.text_audio_relation == 'differs' %}
+  <p class="muted" style="font-size:13px;margin-bottom:0">
+    The captions say something different from the speech. That gap is the clearest evidence of borrowed
+    audio carrying the creator's own writing on screen — which is precisely what neither the Library nor
+    the Production pipeline can see on its own.
+  </p>
+  {% endif %}
+</div>
+
+{% if i.on_screen_text %}
+<h2 style="margin-top:28px">Text read off the frames</h2>
+<div class="card"><p style="margin:0;white-space:pre-wrap">{{ i.on_screen_text }}</p></div>
+{% endif %}
+
+{% if i.transcript %}
+<h2 style="margin-top:28px">Transcript</h2>
+<div class="card" style="max-height:320px;overflow:auto"><p style="margin:0;white-space:pre-wrap">{{ i.transcript }}</p></div>
+{% endif %}
+
+<h2 style="margin-top:28px">Frames</h2>
+<div class="card">
+  {% set shown = frames | selectattr('captured') | list %}
+  {% if shown %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px">
+    {% for f in shown %}
+    <figure style="margin:0">
+      <img src="{{ url_for('format_input_frame_image', input_id=i.format_input_id, frame_id=f.frame_id) }}"
+           alt="Frame {{ f.frame_number }}" loading="lazy"
+           style="width:100%;border-radius:8px;display:block;background:var(--panel2)">
+      <figcaption class="muted" style="font-size:11.5px;margin-top:4px">
+        #{{ f.frame_number }}{% if f.at_sec is not none %} · {{ '%.1f' % f.at_sec }}s{% endif %}
+      </figcaption>
+    </figure>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0">No frames stored for this input.</p>
+  {% endif %}
+</div>
+{% endblock %}

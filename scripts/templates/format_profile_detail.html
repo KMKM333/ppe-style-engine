@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ p.profile_code }} {{ p.handle }} — Production Inputs (P+S){% endblock %}
+{% block title %}{{ p.profile_code }} {{ p.handle }} — Production P+S Profiles{% endblock %}
 {% block content %}
 <h1>{{ p.profile_code }} · {{ p.handle }}</h1>
 <div class="sub">
@@ -15,7 +15,8 @@
   <div class="muted" style="margin-top:6px; font-size:13.5px">
     These values were asserted from a description of the account, not measured from its videos. They are
     stored outside the fingerprint tables the scoring engine reads, so nothing here can affect a match or a
-    ranking. Import inputs against this profile to replace them with classified values.
+    ranking. Analyse videos for this account and the readings replace them with classified values —
+    see <a href="{{ url_for('format_inputs_list', profile=p.profile_code) }}">this profile's inputs</a>.
   </div>
 </div>
 {% endif %}

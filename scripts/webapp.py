@@ -3620,6 +3620,84 @@ def _format_profile_rows(conn):
     ).fetchall()
 
 
+@app.route("/production/formats/inputs")
+def format_inputs_list():
+    """Production Inputs (P+S) — the analysed VIDEOS, one row each.
+
+    Split from the PVS profile list for the same reason the Library splits
+    inputs from profiles: a profile is a claim about an account, and the
+    inputs are the evidence for it. Keeping them on one page hides how thin
+    (or how mixed) the evidence behind a reading actually is."""
+    profile_filter = request.args.get("profile", "").strip()
+    status_filter = request.args.get("status", "").strip()
+    q = request.args.get("q", "").strip()
+
+    query = """SELECT i.*, f.profile_code, f.handle
+               FROM format_inputs i
+               LEFT JOIN format_profiles f ON f.format_profile_id = i.format_profile_id
+               WHERE 1=1"""
+    params = []
+    if profile_filter:
+        query += " AND f.profile_code = ?"
+        params.append(profile_filter)
+    if status_filter:
+        query += " AND i.status = ?"
+        params.append(status_filter)
+    if q:
+        query += " AND (i.title LIKE ? OR i.channel_name LIKE ?)"
+        params += [f"%{q}%", f"%{q}%"]
+    query += " ORDER BY i.ingested_at DESC, i.format_input_id DESC"
+
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute(query, params)]
+    profiles = conn.execute(
+        "SELECT profile_code, handle FROM format_profiles "
+        "ORDER BY CAST(SUBSTR(profile_code, 5) AS INTEGER)"
+    ).fetchall()
+    conn.close()
+    return render_template("format_inputs_list.html", active="production-format-inputs",
+                           rows=rows, profiles=profiles,
+                           filters={"profile": profile_filter, "status": status_filter, "q": q})
+
+
+@app.route("/production/formats/inputs/<int:input_id>")
+def format_input_detail(input_id):
+    """One analysed video: what the joint pass read, and what it read it from."""
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT i.*, f.profile_code, f.handle
+           FROM format_inputs i
+           LEFT JOIN format_profiles f ON f.format_profile_id = i.format_profile_id
+           WHERE i.format_input_id = ?""",
+        (input_id,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        flash(f"No such P+S input: {input_id}")
+        return redirect(url_for("format_inputs_list"))
+    readings = {
+        r["axis"]: {"value": r["value"], "note": r["note"]}
+        for r in conn.execute(
+            "SELECT axis, value, note FROM format_input_readings WHERE format_input_id = ?", (input_id,)
+        )
+    }
+    frames = conn.execute(
+        "SELECT frame_id, frame_number, at_sec, captured FROM format_input_frames "
+        "WHERE format_input_id = ? ORDER BY frame_number", (input_id,)
+    ).fetchall()
+    conn.close()
+    return render_template("format_input_detail.html", active="production-format-inputs",
+                           i=dict(row), readings=readings, frames=frames, axes=FORMAT_AXES)
+
+
+@app.route("/production/formats/inputs/<int:input_id>/frame/<int:frame_id>.jpg")
+def format_input_frame_image(input_id, frame_id):
+    image_path = FORMAT_FRAMES_DIR / str(input_id) / f"frame_{frame_id}.jpg"
+    if not image_path.is_file():
+        abort(404)
+    return send_file(image_path, mimetype="image/jpeg")
+
+
 @app.route("/production/formats")
 def format_profiles_list():
     """Production Inputs (P+S) — format profiles (PVS.*), which describe how
@@ -3707,6 +3785,11 @@ ENTITY_SPECS = {
         "name_column": "title",
         "children": ["production_spec_shots", "production_spec_attributes"],
         "detach": [("video_creations", "source_input_id")],
+    },
+    "format_input": {
+        "label": "P+S input", "table": "format_inputs", "pk": "format_input_id",
+        "name_column": "title",
+        "children": ["format_input_readings", "format_input_frames"],
     },
     "format_profile": {
         "label": "format profile", "table": "format_profiles", "pk": "format_profile_id",

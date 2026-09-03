@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Production Inputs (P+S) — PPE Engine{% endblock %}
+{% block title %}Production P+S Profiles — PPE Engine{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
-<h1>Production Inputs (P+S)</h1>
+<h1>Production P+S Profiles</h1>
 <div class="sub">
   Format profiles (PVS.*) — how a creator's <strong>visuals</strong> and <strong>script</strong> relate to each other.
-  Separate from both the writing-style Library (A.*/BK.*, what a video says) and Production Inputs (Visual only)
+  Separate from both the writing-style Library (A.*/BK.*, what a video says) and Production Profiles
   (PS.*, how it's cut), because these attributes are <em>relational</em>: they don't exist in either pipeline alone.
+  Built from the videos on <a href="{{ url_for('format_inputs_list') }}">Production Inputs (P+S)</a>.
 </div>
 
 <div class="card" style="border-color:rgba(var(--accent-rgb),.35); background:rgba(var(--accent-rgb),.06)">

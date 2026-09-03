@@ -121,7 +121,10 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_number
     pending = [s for s in shots if s["shot_number"] not in skip_shot_numbers]
     batches, current, current_bytes = [], [], 0
     for s in pending:
-        frame_path = shot_dir / f"shot_{s['shot_id']}.png"
+        # JPEG preferred; PNG is the pre-conversion format (see webapp._shot_frame_file).
+        frame_path = shot_dir / f"shot_{s['shot_id']}.jpg"
+        if not frame_path.is_file():
+            frame_path = shot_dir / f"shot_{s['shot_id']}.png"
         if not frame_path.is_file():
             _mark_needs_review(input_id, f"Missing frame file for shot_id={s['shot_id']}.")
             return
@@ -139,7 +142,7 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_number
 
     for entry in batches:
         batch = [s for s, _ in entry]
-        images = [("image/png", path.read_bytes()) for _, path in entry]
+        images = [("image/jpeg" if path.suffix == ".jpg" else "image/png", path.read_bytes()) for _, path in entry]
         shot_numbers = [s["shot_number"] for s in batch]
         prompt = CLASSIFY_PROMPT.format(n=len(batch), shot_numbers=shot_numbers)
 

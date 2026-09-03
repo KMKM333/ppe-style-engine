@@ -3578,9 +3578,20 @@ def api_set_shot_frame(input_id, shot_id):
         conn.close()
         return jsonify({"ok": False, "error": "no such shot on this input"}), 404
 
+    raw = base64.b64decode(image_b64)
+    # Format from the bytes, not from a claim in the payload.
+    ext = "jpg" if raw[:2] == b"\xff\xd8" else "png"
     shot_dir = PRODUCTION_SPEC_SHOTS_DIR / str(input_id)
     shot_dir.mkdir(parents=True, exist_ok=True)
-    (shot_dir / f"shot_{shot_id}.png").write_bytes(base64.b64decode(image_b64))
+    # Remove the other-format copy FIRST. This is what lets the PNG→JPEG
+    # conversion run on a disk with zero bytes free: deleting the 450 KB
+    # PNG makes room for the 50 KB JPEG that replaces it.
+    for other in ("png", "jpg"):
+        if other != ext:
+            sibling = shot_dir / f"shot_{shot_id}.{other}"
+            if sibling.exists():
+                sibling.unlink()
+    (shot_dir / f"shot_{shot_id}.{ext}").write_bytes(raw)
 
     conn.execute("UPDATE production_spec_shots SET frame_captured = 1 WHERE shot_id = ?", (shot_id,))
     conn.commit()
@@ -3669,12 +3680,43 @@ def api_production_spec_status(input_id):
     })
 
 
+def _shot_frame_file(input_id, shot_id):
+    """A shot's stored frame, JPEG preferred. Frames were PNG until the
+    1 GB data disk filled with them (1,144 frames, 672 MB); they are JPEG
+    from here on, and old ones are converted in place, so both must serve."""
+    base = PRODUCTION_SPEC_SHOTS_DIR / str(input_id)
+    for ext, mime in (("jpg", "image/jpeg"), ("png", "image/png")):
+        path = base / f"shot_{shot_id}.{ext}"
+        if path.is_file():
+            return path, mime
+    return None, None
+
+
+@app.route("/api/production-spec/frames")
+def api_list_shot_frames():
+    """Every stored shot frame with its format — for the one-off PNG→JPEG
+    conversion, which has to run from the transcriber (the engine image has
+    no image library)."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    out = []
+    if PRODUCTION_SPEC_SHOTS_DIR.exists():
+        for d in sorted(PRODUCTION_SPEC_SHOTS_DIR.iterdir()):
+            if not d.is_dir() or not d.name.isdigit():
+                continue
+            for f in d.iterdir():
+                if f.suffix in (".png", ".jpg") and f.stem.startswith("shot_"):
+                    out.append({"input_id": int(d.name), "shot_id": int(f.stem[5:]),
+                                "ext": f.suffix[1:], "bytes": f.stat().st_size})
+    return jsonify({"ok": True, "frames": out})
+
+
 @app.route("/production/inputs/<int:input_id>/shot/<int:shot_id>.png")
 def production_spec_shot_image(input_id, shot_id):
-    image_path = PRODUCTION_SPEC_SHOTS_DIR / str(input_id) / f"shot_{shot_id}.png"
-    if not image_path.is_file():
+    image_path, mime = _shot_frame_file(input_id, shot_id)
+    if not image_path:
         abort(404)
-    return send_file(image_path, mimetype="image/png")
+    return send_file(image_path, mimetype=mime)
 
 
 @app.route("/production/inputs")

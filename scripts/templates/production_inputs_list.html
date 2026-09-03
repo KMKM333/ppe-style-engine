@@ -44,7 +44,7 @@
       <th>Status</th><th>Ingested</th><th></th>
     </tr>
     {% for r in rows %}
-    <tr>
+    <tr data-entity="production_input" data-id="{{ r.input_id }}" data-name="{{ r.title }}">
       <td><a href="{{ url_for('production_input_detail', input_id=r.input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title }}</a></td>
       <td>{{ r.channel_name }}</td>
       <td class="muted">{{ r.platform or '—' }}</td>

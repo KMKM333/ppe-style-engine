@@ -10,7 +10,7 @@
   <table>
     <tr><th>Channel</th><th>Subject</th><th class="num">Videos</th><th>Analysed</th><th>Profile</th><th>Status</th><th></th></tr>
     {% for c in channels %}
-    <tr class="channel-row" onclick="toggleChannelVideos({{ c.channel_id }})" style="cursor:pointer">
+    <tr class="channel-row" data-entity="channel" data-id="{{ c.channel_id }}" data-name="{{ c.channel_name }}" onclick="toggleChannelVideos({{ c.channel_id }})" style="cursor:pointer">
       <td><span id="chev-{{ c.channel_id }}" class="muted" style="display:inline-block;width:14px">▸</span><strong>{{ c.channel_name }}</strong></td>
       <td class="{{ 'muted' if not c.subject }}">{{ c.subject or '—' }}</td>
       <td class="num">{{ c.n_videos }}</td>

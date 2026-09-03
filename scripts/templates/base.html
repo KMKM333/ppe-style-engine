@@ -266,6 +266,24 @@
     background: rgba(var(--accent-rgb),.18); color: var(--accent);
   }
   .input-search-empty { padding:10px; font-size:13px; color: var(--muted); }
+  .ctx-menu {
+    position:fixed; z-index:2000; min-width:190px; padding:4px;
+    background:var(--panel2); border:1px solid var(--border); border-radius:10px;
+    box-shadow:0 12px 32px rgba(0,0,0,.35);
+  }
+  .ctx-menu-title {
+    padding:7px 10px 6px; font-size:11.5px; color:var(--muted);
+    border-bottom:1px solid var(--border); margin-bottom:4px;
+    max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .ctx-menu-item {
+    display:block; width:100%; text-align:left; background:none; border:none;
+    color:var(--text); font-size:13px; font-weight:500; padding:7px 10px;
+    border-radius:6px; cursor:pointer; margin:0;
+  }
+  .ctx-menu-item:hover { background:rgba(var(--accent-rgb),.15); }
+  .ctx-menu-item.danger { color:#f87171; }
+  .ctx-menu-item.danger:hover { background:rgba(248,113,113,.14); }
   .field-panel {
     display:flex; flex-direction:column; border:1px solid var(--border); border-radius:10px; padding:14px 16px;
   }
@@ -957,5 +975,84 @@
   }
 </script>
 {% endif %}
+
+<!-- Right-click menu. Any element carrying data-entity / data-id / data-name
+     becomes right-clickable for rename + delete, so a page opts in with
+     three attributes rather than its own menu code. -->
+<div id="ctx-menu" class="ctx-menu" hidden>
+  <div class="ctx-menu-title" id="ctx-menu-title"></div>
+  <button type="button" class="ctx-menu-item" data-action="rename">Rename…</button>
+  <button type="button" class="ctx-menu-item danger" data-action="delete">Delete…</button>
+</div>
+<script>
+(function () {
+  var menu = document.getElementById('ctx-menu');
+  var titleEl = document.getElementById('ctx-menu-title');
+  var target = null;
+
+  // Human labels, so a confirm dialog says "video" not "production_input".
+  var LABELS = {
+    video: 'video', book: 'book', production_input: 'production input',
+    format_profile: 'format profile', channel: 'channel'
+  };
+
+  function hide() { menu.hidden = true; target = null; }
+
+  document.addEventListener('contextmenu', function (e) {
+    var el = e.target.closest('[data-entity][data-id]');
+    if (!el) { hide(); return; }   // not ours: let the browser's own menu open
+    e.preventDefault();
+    target = { kind: el.dataset.entity, id: el.dataset.id, name: el.dataset.name || '', el: el };
+    titleEl.textContent = (LABELS[target.kind] || target.kind) + (target.name ? ': ' + target.name : '');
+    menu.hidden = false;
+    // Keep the menu on-screen when right-clicking near an edge.
+    var w = menu.offsetWidth, h = menu.offsetHeight;
+    menu.style.left = Math.min(e.clientX, window.innerWidth - w - 8) + 'px';
+    menu.style.top = Math.min(e.clientY, window.innerHeight - h - 8) + 'px';
+  });
+
+  document.addEventListener('click', function (e) { if (!menu.contains(e.target)) hide(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') hide(); });
+  window.addEventListener('scroll', hide, true);
+
+  async function send(path, body) {
+    var res = await fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    var data = await res.json().catch(function () { return { ok: false, error: 'server returned no JSON' }; });
+    if (!data.ok) throw new Error(data.error || ('HTTP ' + res.status));
+    return data;
+  }
+
+  menu.addEventListener('click', async function (e) {
+    var btn = e.target.closest('.ctx-menu-item');
+    if (!btn || !target) return;
+    var t = target;          // hide() clears target, so capture it first
+    var label = LABELS[t.kind] || t.kind;
+    hide();
+
+    if (btn.dataset.action === 'rename') {
+      var name = window.prompt('Rename this ' + label + ':', t.name);
+      if (name === null || !name.trim() || name === t.name) return;
+      try {
+        await send('/api/entity/rename', { kind: t.kind, id: t.id, name: name.trim() });
+        window.location.reload();
+      } catch (err) { window.alert('Rename failed: ' + err.message); }
+      return;
+    }
+
+    // Deletes remove children too and can't be undone, so spell that out
+    // rather than showing a generic "Are you sure?".
+    if (!window.confirm(
+        'Delete this ' + label + '?\n\n' + (t.name || '(untitled)') +
+        '\n\nThis also removes everything attached to it and cannot be undone.')) return;
+    try {
+      var out = await send('/api/entity/delete', { kind: t.kind, id: t.id });
+      if (out.profile_rebuilt) console.info('rebuilt profile ' + out.profile_rebuilt);
+      window.location.reload();
+    } catch (err) { window.alert('Delete failed: ' + err.message); }
+  });
+})();
+</script>
 </body>
 </html>

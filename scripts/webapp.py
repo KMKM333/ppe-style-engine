@@ -1415,6 +1415,10 @@ def inputs_list():
         for v in video_rows:
             rows.append({
                 "kind": "video",
+                # Identity for the right-click rename/delete menu. The row dicts
+                # are display-shaped (title/labels/urls), so without this the
+                # template has nothing to put in data-id.
+                "entity_id": v["video_id"],
                 "media_type": v["media_type"] or "Instagram",
                 "channel_name": v["channel_name"],
                 "profile_code": v["profile_code"],
@@ -1499,6 +1503,7 @@ def inputs_list():
             ]
             rows.append({
                 "kind": "book",
+                "entity_id": b["book_id"],
                 "media_type": "Book",
                 "channel_name": b["author"] or "—",
                 "profile_code": b["profile_code"],
@@ -3416,6 +3421,151 @@ def format_profile_detail(code):
     conn.close()
     return render_template("format_profile_detail.html", active="production-formats",
                            p=dict(row), attrs=attrs, axes=FORMAT_AXES, others=others)
+
+
+# --- generic rename/delete, for the right-click menu -------------------
+# One spec per entity the context menu can act on. Kept as data rather than
+# a route each, so adding an entity is one entry instead of two endpoints.
+#
+#   table/pk/name_column — what to rename
+#   children             — rows to remove BEFORE the parent, in order. The
+#                          schema has no ON DELETE CASCADE anywhere and
+#                          get_conn() sets PRAGMA foreign_keys = ON, so an
+#                          unlisted child means an IntegrityError and a 500.
+#   detach               — (table, column) pairs set to NULL instead of
+#                          deleted: tracking rows the user authored, which
+#                          shouldn't vanish because their source did.
+#
+# Channels are deliberately absent from delete: removing one would have to
+# take every video with it, which is a genuinely destructive action that
+# shouldn't sit one right-click away. Rename only.
+ENTITY_SPECS = {
+    "video": {
+        "label": "video", "table": "videos", "pk": "video_id", "name_column": "title",
+        "children": ["video_visuals", "video_points", "video_terms", "video_examples",
+                     "video_sections", "video_attributes"],
+        "detach": [("test_scores", "match_video_id"), ("swipe_candidates", "source_video_id"),
+                   ("production_spec_creations", "source_video_id")],
+        "rebuild_profile_for_channel": True,
+    },
+    "book": {
+        "label": "book", "table": "books", "pk": "book_id", "name_column": "title",
+        "children": ["book_examples", "book_terms", "book_points", "book_sections", "book_attributes"],
+        "detach": [("swipe_candidates", "source_book_id"), ("production_spec_creations", "source_book_id")],
+    },
+    "production_input": {
+        "label": "production input", "table": "production_spec_inputs", "pk": "input_id",
+        "name_column": "title",
+        "children": ["production_spec_shots", "production_spec_attributes"],
+        "detach": [("video_creations", "source_input_id")],
+    },
+    "format_profile": {
+        "label": "format profile", "table": "format_profiles", "pk": "format_profile_id",
+        "name_column": "display_name",
+        "children": ["format_profile_attributes"], "detach": [],
+    },
+    "channel": {
+        "label": "channel", "table": "channels", "pk": "channel_id", "name_column": "channel_name",
+        "no_delete": "Deleting a channel would take every one of its videos with it — "
+                     "delete the videos individually first.",
+    },
+}
+
+
+@app.route("/api/entity/rename", methods=["POST"])
+def api_entity_rename():
+    """Rename one row, for the right-click menu. Browser-facing (this app
+    has no login by design), so it validates the entity type against
+    ENTITY_SPECS rather than accepting a table name from the client."""
+    payload = request.get_json(silent=True) or {}
+    kind, entity_id, new_name = payload.get("kind"), payload.get("id"), (payload.get("name") or "").strip()
+    spec = ENTITY_SPECS.get(kind)
+    if not spec:
+        return jsonify({"ok": False, "error": f"unknown entity type: {kind}"}), 400
+    if not new_name:
+        return jsonify({"ok": False, "error": "a name is required"}), 400
+    try:
+        entity_id = int(entity_id)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid id"}), 400
+
+    conn = get_conn()
+    row = conn.execute(
+        f"SELECT {spec['name_column']} AS name FROM {spec['table']} WHERE {spec['pk']} = ?", (entity_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such {spec['label']}"}), 404
+    old = row["name"]
+    conn.execute(
+        f"UPDATE {spec['table']} SET {spec['name_column']} = ? WHERE {spec['pk']} = ?", (new_name, entity_id)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "kind": kind, "id": entity_id, "from": old, "to": new_name})
+
+
+@app.route("/api/entity/delete", methods=["POST"])
+def api_entity_delete():
+    """Delete one row and everything that references it, for the right-click
+    menu. Children are removed in the order listed in ENTITY_SPECS; rows
+    that merely point at it are detached rather than destroyed."""
+    payload = request.get_json(silent=True) or {}
+    kind, entity_id = payload.get("kind"), payload.get("id")
+    spec = ENTITY_SPECS.get(kind)
+    if not spec:
+        return jsonify({"ok": False, "error": f"unknown entity type: {kind}"}), 400
+    if spec.get("no_delete"):
+        return jsonify({"ok": False, "error": spec["no_delete"]}), 400
+    try:
+        entity_id = int(entity_id)
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "invalid id"}), 400
+
+    conn = get_conn()
+    row = conn.execute(
+        f"SELECT {spec['name_column']} AS name FROM {spec['table']} WHERE {spec['pk']} = ?", (entity_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": f"no such {spec['label']}"}), 404
+    name = row["name"]
+
+    channel_id = None
+    if spec.get("rebuild_profile_for_channel"):
+        c = conn.execute(
+            f"SELECT channel_id FROM {spec['table']} WHERE {spec['pk']} = ?", (entity_id,)
+        ).fetchone()
+        channel_id = c["channel_id"] if c else None
+
+    try:
+        for table, column in spec.get("detach", []):
+            conn.execute(f"UPDATE {table} SET {column} = NULL WHERE {column} = ?", (entity_id,))
+        for child in spec.get("children", []):
+            conn.execute(f"DELETE FROM {child} WHERE {spec['pk']} = ?", (entity_id,))
+        conn.execute(f"DELETE FROM {spec['table']} WHERE {spec['pk']} = ?", (entity_id,))
+        conn.commit()
+    except Exception as e:  # noqa: BLE001 - report the real reason rather than a bare 500
+        conn.rollback()
+        conn.close()
+        return jsonify({"ok": False, "error": f"delete failed: {e}"}), 500
+
+    # A deleted video's numbers must stop pulling on its channel's averages.
+    rebuilt = None
+    if channel_id:
+        prof = conn.execute(
+            "SELECT profile_code, length_band, channel_id FROM style_profiles "
+            "WHERE channel_id = ? AND media_type != 'ProductionSpec'", (channel_id,)
+        ).fetchone()
+        chan = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
+        if prof and chan:
+            try:
+                build_profile(chan["channel_name"], prof["profile_code"], prof["length_band"], min_n=1)
+                rebuilt = prof["profile_code"]
+            except Exception as e:  # noqa: BLE001 - a rebuild failure must not undo the delete
+                print(f"[api_entity_delete] profile rebuild failed (non-fatal): {e}")
+    conn.close()
+    return jsonify({"ok": True, "kind": kind, "id": entity_id, "deleted": name, "profile_rebuilt": rebuilt})
 
 
 @app.route("/production/profiles")

@@ -183,7 +183,7 @@
       <th></th>
     </tr>
     {% for r in rows %}
-    <tr data-quickview='{{ {
+    <tr {% if r.entity_id %}data-entity="{{ r.kind }}" data-id="{{ r.entity_id }}" data-name="{{ r.title }}"{% endif %} data-quickview='{{ {
         "kind": r.media_type or "Input",
         "title": r.title,
         "detail_url": r.detail_url,

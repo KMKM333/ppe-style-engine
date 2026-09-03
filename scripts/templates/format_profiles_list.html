@@ -10,15 +10,18 @@
   Built from the videos on <a href="{{ url_for('format_inputs_list') }}">Production Inputs (P+S)</a>.
 </div>
 
+{% if profiles | rejectattr('n_inputs_analysed') | list %}
 <div class="card" style="border-color:rgba(var(--accent-rgb),.35); background:rgba(var(--accent-rgb),.06)">
-  <strong>Preliminary — asserted, not measured.</strong>
+  <strong>Some profiles are still asserted, not measured.</strong>
   <div class="muted" style="margin-top:6px; font-size:13.5px">
     Every value below was written from a description of each account, not derived from analysed videos.
     Nothing here has been through a classification pass, and none of it is stored where the scoring engine
     reads — so it can't influence any match or ranking. It's here to show the shape of the analysis and to
-    be argued with. Import inputs against a profile and the values get replaced by measured ones.
+    be argued with. Analyse videos for an account and its values get replaced by measured ones.
+    Each profile's <strong>Inputs</strong> count below says which are which.
   </div>
 </div>
+{% endif %}
 
 <div class="card" style="padding:0">
   <table>

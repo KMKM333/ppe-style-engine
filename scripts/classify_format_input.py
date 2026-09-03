@@ -231,6 +231,14 @@ def classify(format_input_id):
         aggregate_profile(profile_id)
 
 
+# How many analysed videos before a profile stops being provisional. One is
+# not enough: a creator who varies format would be read off whichever video
+# happened to land first, and the page would present that as settled. This is
+# the A.1 failure — a profile reading as "confirmed" while knowing almost
+# nothing — and the cheapest place to not repeat it is here.
+MIN_INPUTS_CONFIRMED = 3
+
+
 def aggregate_profile(format_profile_id):
     """Rolls every classified input's readings up into the profile: per axis,
     the most common value wins, and the note records the split so a mixed
@@ -271,9 +279,10 @@ def aggregate_profile(format_profile_id):
             (format_profile_id, axis, top, note),
         )
 
+    status = "confirmed" if len(inputs) >= MIN_INPUTS_CONFIRMED else "preliminary"
     conn.execute(
-        "UPDATE format_profiles SET n_inputs_analysed = ?, status = 'confirmed' WHERE format_profile_id = ?",
-        (len(inputs), format_profile_id),
+        "UPDATE format_profiles SET n_inputs_analysed = ?, status = ? WHERE format_profile_id = ?",
+        (len(inputs), status, format_profile_id),
     )
     conn.commit()
     conn.close()

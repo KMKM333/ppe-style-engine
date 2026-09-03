@@ -11,12 +11,18 @@
 
 {% if p.status == 'preliminary' %}
 <div class="card" style="border-color:rgba(var(--accent-rgb),.35); background:rgba(var(--accent-rgb),.06)">
-  <strong>Preliminary reading — {{ p.n_inputs_analysed }} inputs analysed.</strong>
+  <strong>Preliminary reading — {{ p.n_inputs_analysed }} input(s) analysed.</strong>
   <div class="muted" style="margin-top:6px; font-size:13.5px">
-    These values were asserted from a description of the account, not measured from its videos. They are
-    stored outside the fingerprint tables the scoring engine reads, so nothing here can affect a match or a
-    ranking. Analyse videos for this account and the readings replace them with classified values —
-    see <a href="{{ url_for('format_inputs_list', profile=p.profile_code) }}">this profile's inputs</a>.
+    {% if p.n_inputs_analysed %}
+      Some axes below are marked <em>classified</em> and do come from analysed videos — but too few of them
+      to call this account's format settled, so the profile stays provisional. A creator who varies format
+      would otherwise be read off whichever video happened to land first.
+    {% else %}
+      These values were asserted from a description of the account, not measured from its videos.
+    {% endif %}
+    Nothing here is stored where the scoring engine reads, so it can't affect a match or a ranking.
+    Analyse more videos to settle it — see
+    <a href="{{ url_for('format_inputs_list', profile=p.profile_code) }}">this profile's inputs</a>.
   </div>
 </div>
 {% endif %}

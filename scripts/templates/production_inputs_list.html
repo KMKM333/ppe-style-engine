@@ -46,7 +46,10 @@
     {% for r in rows %}
     <tr data-entity="production_input" data-id="{{ r.input_id }}" data-name="{{ r.title }}">
       <td><a href="{{ url_for('production_input_detail', input_id=r.input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title }}</a></td>
-      <td>{{ r.channel_name }}</td>
+      {# Same reasoning as the Library's channel column: the row is the
+         production input, but this cell is the channel. Without its own
+         identity, right-clicking a source name renames the input instead. #}
+      <td {% if r.channel_id %}data-entity="channel" data-id="{{ r.channel_id }}" data-name="{{ r.channel_name }}"{% endif %}>{{ r.channel_name }}</td>
       <td class="muted">{{ r.platform or '—' }}</td>
       <td class="num">{{ r.total_shots if r.total_shots is not none else '—' }}</td>
       <td class="num">{{ '%.2fs' % r.avg_shot_length_sec if r.avg_shot_length_sec is not none else '—' }}</td>

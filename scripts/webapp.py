@@ -2716,6 +2716,112 @@ def get_or_create_format_profile(conn, channel):
     return row, True
 
 
+@app.route("/api/analysis/roster")
+def api_analysis_roster():
+    """Every Instagram account the engine knows about, across all three
+    analysis sections, with the videos already stored for each and which
+    pipelines have them.
+
+    Exists for the transcriber's Run page: tick accounts and pipelines, and
+    the runner works through links the engine ALREADY holds rather than
+    asking anyone to discover an account's reels (which Instagram blocks
+    without a logged-in session — not a road worth going down). The same
+    account shows up under three different names in three tables, so
+    accounts are unified by normalised handle, and each video by URL hash,
+    so a reel analysed in one section is recognised in the others."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    accounts = {}
+
+    def acct(name, section):
+        key = _norm_handle(name)
+        a = accounts.setdefault(key, {
+            "key": key, "names": {"library": None, "production": None, "format": None},
+            "codes": {"library": None, "production": None, "format": None}, "videos": {},
+        })
+        if not a["names"][section]:
+            a["names"][section] = name
+        return a
+
+    def add_video(a, section, ident, url, title, when, classified):
+        h = normalize_hash(url) if url else None
+        if not h:
+            return
+        v = a["videos"].setdefault(h, {"url": url, "title": title, "when": when or "",
+                                       "present": {}, "classified": {}, "ids": {}})
+        v["present"][section] = True
+        v["classified"][section] = bool(classified)
+        v["ids"][section] = ident
+        if when and when > v["when"]:
+            v["when"] = when
+        if title and not v["title"]:
+            v["title"] = title
+
+    # Library — Instagram channels only; YouTube has its own long-form path.
+    for r in conn.execute(
+        """SELECT c.channel_id, c.channel_name, v.video_id, v.url, v.title, v.ingested_at, a.classified_by
+           FROM videos v JOIN channels c ON c.channel_id = v.channel_id
+           LEFT JOIN video_attributes a ON a.video_id = v.video_id
+           WHERE v.media_type = 'Instagram'"""
+    ):
+        a = acct(r["channel_name"], "library")
+        add_video(a, "library", r["video_id"], r["url"], r["title"], r["ingested_at"],
+                  r["classified_by"] == "claude")
+    for r in conn.execute(
+        """SELECT p.profile_code, p.media_type, c.channel_name FROM style_profiles p
+           JOIN channels c ON c.channel_id = p.channel_id"""
+    ):
+        key = _norm_handle(r["channel_name"])
+        if key in accounts:
+            section = "production" if r["media_type"] == "ProductionSpec" else "library"
+            accounts[key]["codes"][section] = accounts[key]["codes"][section] or r["profile_code"]
+
+    # Production (shot analysis)
+    for r in conn.execute(
+        """SELECT c.channel_name, i.input_id, i.url, i.title, i.ingested_at, i.status, i.platform
+           FROM production_spec_inputs i JOIN channels c ON c.channel_id = i.channel_id"""
+    ):
+        if (r["platform"] or "").lower().startswith("youtube"):
+            continue
+        a = acct(r["channel_name"], "production")
+        add_video(a, "production", r["input_id"], r["url"], r["title"], r["ingested_at"],
+                  r["status"] == "classified")
+
+    # P+S — profiles count even with no inputs yet, so a freshly seeded
+    # account is offered on the Run page rather than invisible until someone
+    # pastes its first link elsewhere.
+    for r in conn.execute("SELECT format_profile_id, profile_code, handle FROM format_profiles"):
+        a = acct(r["handle"], "format")
+        a["codes"]["format"] = r["profile_code"]
+    for r in conn.execute(
+        """SELECT f.handle, i.format_input_id, i.url, i.title, i.ingested_at, i.status
+           FROM format_inputs i JOIN format_profiles f ON f.format_profile_id = i.format_profile_id"""
+    ):
+        a = acct(r["handle"], "format")
+        add_video(a, "format", r["format_input_id"], r["url"], r["title"], r["ingested_at"],
+                  r["status"] == "classified")
+    conn.close()
+
+    out = []
+    for a in accounts.values():
+        videos = sorted(a["videos"].values(), key=lambda v: v["when"], reverse=True)
+        counts = {}
+        for section in ("library", "production", "format"):
+            counts[section] = {
+                "stored": sum(1 for v in videos if v["present"].get(section)),
+                "classified": sum(1 for v in videos if v["classified"].get(section)),
+            }
+        names = a["names"]
+        display = names["format"] or names["library"] or names["production"] or a["key"]
+        if not display.startswith("@"):
+            display = "@" + display
+        out.append({"key": a["key"], "display": display, "names": names, "codes": a["codes"],
+                    "counts": counts, "videos": videos})
+    out.sort(key=lambda a: a["display"].lower())
+    return jsonify({"ok": True, "accounts": out})
+
+
 @app.route("/api/format/profiles", methods=["GET"])
 def api_format_profiles():
     """Lists the PVS profiles and the account handle each one belongs to.
@@ -2878,6 +2984,10 @@ def api_classify_format_input(input_id):
     if not row:
         conn.close()
         return jsonify({"ok": False, "error": "no such format input"}), 404
+    budget_reason = gatekeeper.check_daily_budget()  # same reasoning as the shot-analysis route
+    if budget_reason:
+        conn.close()
+        return jsonify({"ok": False, "held": "budget", "error": budget_reason})
     conn.execute(
         "UPDATE format_inputs SET status = 'classifying', classification_error = NULL WHERE format_input_id = ?",
         (input_id,),
@@ -3428,6 +3538,14 @@ def api_classify_production_spec(input_id):
     if not row:
         conn.close()
         return jsonify({"ok": False, "error": "no such input"}), 404
+    # The daily cap only governed Library classification; shot analysis —
+    # the most expensive of the three per video — ran past it unchecked.
+    # Refuse here, before anything is spent, and say so in a form the
+    # transcriber's runner can recognise and wait on rather than fail on.
+    budget_reason = gatekeeper.check_daily_budget()
+    if budget_reason:
+        conn.close()
+        return jsonify({"ok": False, "held": "budget", "error": budget_reason})
     conn.execute("UPDATE production_spec_inputs SET status = 'classifying' WHERE input_id = ?", (input_id,))
     conn.commit()
     conn.close()

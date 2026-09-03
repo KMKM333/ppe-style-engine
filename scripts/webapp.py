@@ -2662,14 +2662,68 @@ def api_ingest_video():
     return jsonify({"ok": True, "video_id": video_id, "status": "ingested, classifying in the background"})
 
 
+def _norm_handle(x):
+    """Account names for comparison only: case, @, spacing and punctuation
+    all ignored, so "@casuallyfinance", "casuallyfinance" and "Casually
+    Finance" are one account rather than three profiles."""
+    return re.sub(r"[^a-z0-9]", "", (x or "").lower())
+
+
+def _next_format_profile_code(conn):
+    """Next free PVS.N. Same convention as A.*/BK.*/C.*/PS.* — the code is
+    an allocated identifier, not something a human should have to choose
+    and keep straight in their head."""
+    max_n = 0
+    for r in conn.execute("SELECT profile_code FROM format_profiles WHERE profile_code LIKE 'PVS.%'"):
+        suffix = r["profile_code"].split(".", 1)[1]
+        if suffix.isdigit():
+            max_n = max(max_n, int(suffix))
+    return f"PVS.{max_n + 1}"
+
+
+def get_or_create_format_profile(conn, channel):
+    """Resolves an account name to its PVS profile, creating one if this
+    account has never been analysed before. Returns (row, created).
+
+    Matching is loose (see _norm_handle) for one reason: the failure that
+    matters here is no longer a wrong code but a TYPO — "casually finance"
+    silently forking a second profile that then splits an account's
+    readings across two pages, each too thin to say anything. Anything a
+    person would read as the same account resolves to the same profile."""
+    target = _norm_handle(channel)
+    if not target:
+        return None, False
+    for r in conn.execute(
+        "SELECT * FROM format_profiles ORDER BY format_profile_id"
+    ):
+        if target in (_norm_handle(r["handle"]), _norm_handle(r["display_name"])):
+            return r, False
+
+    # Single-token names get the @ the other profiles carry, so the pages
+    # stay visually consistent; a name with spaces is stored as typed.
+    given = channel.strip()
+    handle = given if (given.startswith("@") or " " in given) else f"@{given}"
+    code = _next_format_profile_code(conn)
+    conn.execute(
+        "INSERT INTO format_profiles (profile_code, handle, status, n_inputs_analysed) "
+        "VALUES (?, ?, 'preliminary', 0)",
+        (code, handle),
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT * FROM format_profiles WHERE profile_code = ?", (code,)
+    ).fetchone()
+    return row, True
+
+
 @app.route("/api/format/profiles", methods=["GET"])
 def api_format_profiles():
     """Lists the PVS profiles and the account handle each one belongs to.
 
-    Exists so a caller can check a code/account pairing BEFORE it starts
-    downloading videos. /api/ingest/format refuses a mismatch too, but by
-    then the video has already been fetched and transcribed; this lets the
-    mistake be caught while it is still free."""
+    Exists so a caller can offer the accounts already being tracked as
+    suggestions. Codes are allocated automatically now, so the mistake worth
+    preventing is a typo forking a second profile for an account that
+    already has one — picking from this list avoids it."""
     if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
         abort(403)
     conn = get_conn()
@@ -2690,37 +2744,41 @@ def api_ingest_format():
     /api/format/inputs/<id>/frames/<frame_id>, mirroring the production-spec
     pipeline.
 
-    Body: {profile_code, title, url, platform, duration_sec, transcript,
+    The account name is what a caller supplies; the PVS code is allocated
+    here, the way every other profile code in this project is, and a code
+    already in use for that account is reused. An explicit profile_code is
+    still accepted for a caller that has one.
+
+    Body: {channel, title, url, platform, duration_sec, transcript,
            has_audio, frames: [{frame_number, at_sec}, ...]}"""
     if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
         abort(403)
     data = request.get_json(silent=True) or {}
     code = (data.get("profile_code") or "").strip()
+    channel = (data.get("channel") or "").strip()
     frames = data.get("frames") or []
-    if not code:
-        return jsonify({"ok": False, "error": "'profile_code' is required (e.g. PVS.1)"}), 400
+    if not channel and not code:
+        return jsonify({"ok": False, "error": "'channel' is required (the account these videos came from)"}), 400
     if not frames:
         return jsonify({"ok": False, "error": "'frames' is required"}), 400
 
     conn = get_conn()
-    prof = conn.execute(
-        "SELECT format_profile_id, handle FROM format_profiles WHERE profile_code = ?", (code,)
-    ).fetchone()
-    if not prof:
-        conn.close()
-        return jsonify({"ok": False, "error": f"no such format profile: {code}"}), 404
-
-    # Guard against the expensive mistake: pasting one account's videos against
-    # another account's profile code. Nothing else would catch it — the videos
-    # would be downloaded, classified, paid for, and folded into the wrong
-    # creator's format readings, which is far harder to unpick afterwards than
-    # to refuse now. Compared loosely (case, @, spacing and punctuation all
-    # ignored) so a reasonable spelling of the same account still passes.
-    channel = (data.get("channel") or "").strip()
-    if channel and prof["handle"]:
-        def norm(x):
-            return re.sub(r"[^a-z0-9]", "", (x or "").lower())
-        if norm(channel) != norm(prof["handle"]) and not data.get("confirm_channel"):
+    created = False
+    if code:
+        # An explicit code still works, for a caller that has one. When a
+        # channel comes with it, the two must agree: pasting one account's
+        # videos against another's code would see them downloaded, classified,
+        # paid for, and folded into the wrong creator's readings — far harder
+        # to unpick afterwards than to refuse now.
+        prof = conn.execute(
+            "SELECT * FROM format_profiles WHERE profile_code = ?", (code,)
+        ).fetchone()
+        if not prof:
+            conn.close()
+            return jsonify({"ok": False, "error": f"no such format profile: {code}"}), 404
+        if (channel and prof["handle"]
+                and _norm_handle(channel) != _norm_handle(prof["handle"])
+                and not data.get("confirm_channel")):
             conn.close()
             return jsonify({
                 "ok": False,
@@ -2729,6 +2787,14 @@ def api_ingest_format():
                           f"with confirm_channel: true — otherwise check the profile code."),
                 "profile_code": code, "profile_handle": prof["handle"], "given_channel": channel,
             }), 400
+    else:
+        # The normal path: the account name is the only thing asked for, and
+        # the PVS code is allocated the way every other profile code is.
+        prof, created = get_or_create_format_profile(conn, channel)
+        if not prof:
+            conn.close()
+            return jsonify({"ok": False, "error": "'channel' is required (the account these videos came from)"}), 400
+        code = prof["profile_code"]
 
     url = data.get("url")
     chash = normalize_hash(url) if url else None
@@ -2746,6 +2812,8 @@ def api_ingest_format():
             ).fetchall()
             conn.close()
             return jsonify({"ok": True, "format_input_id": fid, "duplicate": True,
+                            "profile_code": code, "profile_handle": prof["handle"],
+                            "profile_created": created,
                             "frames": [{"frame_number": r["frame_number"], "frame_id": r["frame_id"]} for r in rows]})
 
     cur = conn.execute(
@@ -2767,7 +2835,9 @@ def api_ingest_format():
         out.append({"frame_number": f.get("frame_number"), "frame_id": c2.lastrowid})
     conn.commit()
     conn.close()
-    return jsonify({"ok": True, "format_input_id": fid, "duplicate": False, "frames": out})
+    return jsonify({"ok": True, "format_input_id": fid, "duplicate": False,
+                    "profile_code": code, "profile_handle": prof["handle"],
+                    "profile_created": created, "frames": out})
 
 
 @app.route("/api/format/inputs/<int:input_id>/frames/<int:frame_id>", methods=["POST"])

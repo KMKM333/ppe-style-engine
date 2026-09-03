@@ -3337,6 +3337,87 @@ def production_input_delete(input_id):
     return redirect(url_for("production_inputs_list"))
 
 
+# The format axes, mirrored from migrate_add_format_profiles.FORMAT_AXES so
+# the page can show a value against the vocabulary it was chosen from — a
+# value means little without the alternatives it was picked over.
+FORMAT_AXES = [
+    ("verbal_channel", "Where the words live",
+     ["Spoken monologue", "On-screen text", "Borrowed audio", "Caption only", "Mixed"]),
+    ("verbal_authorship", "Who wrote the words",
+     ["Original", "Borrowed", "Hybrid"]),
+    ("visual_role", "What the visuals do",
+     ["Illustrate the script", "Carry meaning alone", "Decorative", "Are the content"]),
+    ("audio_role", "Role of sound",
+     ["Primary", "Borrowed hook", "Ambient", "Silent"]),
+    ("coupling", "Script-visual coupling",
+     ["Beat-synced", "Loose", "Independent"]),
+]
+
+
+def _format_profile_rows(conn):
+    return conn.execute(
+        """SELECT f.*, c.channel_name,
+                  sp.profile_code AS style_code, pp.profile_code AS production_code
+           FROM format_profiles f
+           LEFT JOIN channels c ON c.channel_id = f.channel_id
+           LEFT JOIN style_profiles sp ON sp.profile_id = f.style_profile_id
+           LEFT JOIN style_profiles pp ON pp.profile_id = f.production_profile_id
+           ORDER BY CAST(SUBSTR(f.profile_code, 5) AS INTEGER)"""
+    ).fetchall()
+
+
+@app.route("/production/formats")
+def format_profiles_list():
+    """Production Inputs (P+S) — format profiles (PVS.*), which describe how
+    a creator's VISUALS and SCRIPT relate. Distinct from both A.* (what a
+    video says) and PS.* (how it is cut), because the attributes here are
+    relational and invisible to either pipeline alone."""
+    conn = get_conn()
+    rows = _format_profile_rows(conn)
+    profiles = []
+    for r in rows:
+        attrs = {
+            a["axis"]: {"value": a["value"], "note": a["note"], "source": a["source"]}
+            for a in conn.execute(
+                "SELECT axis, value, note, source FROM format_profile_attributes WHERE format_profile_id = ?",
+                (r["format_profile_id"],),
+            )
+        }
+        profiles.append({**dict(r), "attrs": attrs})
+    conn.close()
+    return render_template("format_profiles_list.html", active="production-formats",
+                           profiles=profiles, axes=FORMAT_AXES)
+
+
+@app.route("/production/formats/<code>")
+def format_profile_detail(code):
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT f.*, c.channel_name,
+                  sp.profile_code AS style_code, pp.profile_code AS production_code
+           FROM format_profiles f
+           LEFT JOIN channels c ON c.channel_id = f.channel_id
+           LEFT JOIN style_profiles sp ON sp.profile_id = f.style_profile_id
+           LEFT JOIN style_profiles pp ON pp.profile_id = f.production_profile_id
+           WHERE f.profile_code = ?""",
+        (code,),
+    ).fetchone()
+    if not row:
+        conn.close()
+        return "Format profile not found", 404
+    attrs = {
+        a["axis"]: {"value": a["value"], "note": a["note"], "source": a["source"]}
+        for a in conn.execute(
+            "SELECT axis, value, note, source FROM format_profile_attributes WHERE format_profile_id = ?",
+            (row["format_profile_id"],),
+        )
+    }
+    others = [dict(r) for r in _format_profile_rows(conn) if r["profile_code"] != code]
+    conn.close()
+    return render_template("format_profile_detail.html", active="production-formats",
+                           p=dict(row), attrs=attrs, axes=FORMAT_AXES, others=others)
+
+
 @app.route("/production/profiles")
 def production_profiles_list():
     conn = get_conn()

@@ -88,4 +88,11 @@ python3 migrate_add_production_creation_source_kinds.py
 # Safe on every boot: only touches the row if beats_json is still NULL.
 python3 migrate_backfill_militia_divide_creation.py
 
+# Adds the Production Inputs (P+S) layer: format_profiles (PVS.*) +
+# format_profile_attributes, describing how a creator's visuals and script
+# relate. Seeds five preliminary profiles. Safe on every boot: CREATE TABLE
+# IF NOT EXISTS + INSERT OR IGNORE, so it never overwrites a value a real
+# classification pass has since refined.
+python3 migrate_add_format_profiles.py
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

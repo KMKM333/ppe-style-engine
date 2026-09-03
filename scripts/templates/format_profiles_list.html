@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Production Inputs (P+S) — PPE Engine{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>Production Inputs (P+S)</h1>
+<div class="sub">
+  Format profiles (PVS.*) — how a creator's <strong>visuals</strong> and <strong>script</strong> relate to each other.
+  Separate from both the writing-style Library (A.*/BK.*, what a video says) and Production Inputs (Visual only)
+  (PS.*, how it's cut), because these attributes are <em>relational</em>: they don't exist in either pipeline alone.
+</div>
+
+<div class="card" style="border-color:rgba(var(--accent-rgb),.35); background:rgba(var(--accent-rgb),.06)">
+  <strong>Preliminary — asserted, not measured.</strong>
+  <div class="muted" style="margin-top:6px; font-size:13.5px">
+    Every value below was written from a description of each account, not derived from analysed videos.
+    Nothing here has been through a classification pass, and none of it is stored where the scoring engine
+    reads — so it can't influence any match or ranking. It's here to show the shape of the analysis and to
+    be argued with. Import inputs against a profile and the values get replaced by measured ones.
+  </div>
+</div>
+
+<div class="card" style="padding:0">
+  <table>
+    <tr>
+      <th>Code</th><th>Account</th><th>Format</th>
+      {% for axis, label, _ in axes %}<th>{{ label }}</th>{% endfor %}
+      <th>Linked profiles</th><th>Inputs</th><th></th>
+    </tr>
+    {% for p in profiles %}
+    <tr>
+      <td><a href="{{ url_for('format_profile_detail', code=p.profile_code) }}"><strong>{{ p.profile_code }}</strong></a></td>
+      <td>{{ p.handle }}</td>
+      <td style="max-width:280px">{{ p.summary }}</td>
+      {% for axis, label, _ in axes %}
+      <td>{% if p.attrs.get(axis) %}<span class="tag">{{ p.attrs[axis].value }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+      {% endfor %}
+      <td>
+        {% if p.style_code %}<span class="tag">{{ p.style_code }}</span>{% endif %}
+        {% if p.production_code %}<span class="tag">{{ p.production_code }}</span>{% endif %}
+        {% if not p.style_code and not p.production_code %}<span class="muted">none yet</span>{% endif %}
+      </td>
+      <td class="mono">{{ p.n_inputs_analysed }}</td>
+      <td><a class="btn secondary" href="{{ url_for('format_profile_detail', code=p.profile_code) }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<h2 style="margin-top:28px">The axes</h2>
+<div class="sub">Each profile is read against the same five questions. A value only means something against the alternatives it was chosen over, so the full vocabulary is shown.</div>
+<div class="card" style="padding:0">
+  <table>
+    <tr><th style="width:220px">Axis</th><th>Possible values</th></tr>
+    {% for axis, label, values in axes %}
+    <tr>
+      <td><strong>{{ label }}</strong><div class="muted mono" style="font-size:11.5px">{{ axis }}</div></td>
+      <td>{% for v in values %}<span class="tag">{{ v }}</span> {% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<h2 style="margin-top:28px">Why these need their own layer</h2>
+<div class="card">
+  <p class="muted" style="margin-top:0">
+    The Library and Visual-only pipelines both assume visuals and script are separable — analyse each,
+    pair them afterwards. For several of these accounts that assumption doesn't just lose nuance, it fails:
+  </p>
+  <table>
+    <tr><th style="width:180px">Account</th><th>What the current split gets wrong</th></tr>
+    {% for p in profiles %}
+    <tr><td><strong>{{ p.handle }}</strong><div class="muted">{{ p.profile_code }}</div></td><td>{{ p.breaks_today }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

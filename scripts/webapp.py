@@ -2662,6 +2662,26 @@ def api_ingest_video():
     return jsonify({"ok": True, "video_id": video_id, "status": "ingested, classifying in the background"})
 
 
+@app.route("/api/format/profiles", methods=["GET"])
+def api_format_profiles():
+    """Lists the PVS profiles and the account handle each one belongs to.
+
+    Exists so a caller can check a code/account pairing BEFORE it starts
+    downloading videos. /api/ingest/format refuses a mismatch too, but by
+    then the video has already been fetched and transcribed; this lets the
+    mistake be caught while it is still free."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT profile_code, handle FROM format_profiles ORDER BY profile_code"
+    ).fetchall()
+    conn.close()
+    return jsonify({"ok": True, "profiles": [
+        {"profile_code": r["profile_code"], "handle": r["handle"]} for r in rows
+    ]})
+
+
 @app.route("/api/ingest/format", methods=["POST"])
 def api_ingest_format():
     """Receives one video for Production Inputs (P+S) analysis: its transcript
@@ -2684,11 +2704,31 @@ def api_ingest_format():
 
     conn = get_conn()
     prof = conn.execute(
-        "SELECT format_profile_id FROM format_profiles WHERE profile_code = ?", (code,)
+        "SELECT format_profile_id, handle FROM format_profiles WHERE profile_code = ?", (code,)
     ).fetchone()
     if not prof:
         conn.close()
         return jsonify({"ok": False, "error": f"no such format profile: {code}"}), 404
+
+    # Guard against the expensive mistake: pasting one account's videos against
+    # another account's profile code. Nothing else would catch it — the videos
+    # would be downloaded, classified, paid for, and folded into the wrong
+    # creator's format readings, which is far harder to unpick afterwards than
+    # to refuse now. Compared loosely (case, @, spacing and punctuation all
+    # ignored) so a reasonable spelling of the same account still passes.
+    channel = (data.get("channel") or "").strip()
+    if channel and prof["handle"]:
+        def norm(x):
+            return re.sub(r"[^a-z0-9]", "", (x or "").lower())
+        if norm(channel) != norm(prof["handle"]) and not data.get("confirm_channel"):
+            conn.close()
+            return jsonify({
+                "ok": False,
+                "error": (f'Channel "{channel}" doesn\'t match {code}, which is '
+                          f'"{prof["handle"]}". If these videos really belong to {code}, resubmit '
+                          f"with confirm_channel: true — otherwise check the profile code."),
+                "profile_code": code, "profile_handle": prof["handle"], "given_channel": channel,
+            }), 400
 
     url = data.get("url")
     chash = normalize_hash(url) if url else None
@@ -2711,11 +2751,11 @@ def api_ingest_format():
     cur = conn.execute(
         """INSERT INTO format_inputs
            (format_profile_id, title, url, platform, duration_sec, content_hash, transcript,
-            has_audio, n_frames, status)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'ingested')""",
+            has_audio, n_frames, channel_name, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ingested')""",
         (prof["format_profile_id"], data.get("title"), url, data.get("platform"),
          data.get("duration_sec"), chash, data.get("transcript") or None,
-         1 if data.get("has_audio") else 0, len(frames)),
+         1 if data.get("has_audio") else 0, len(frames), channel or None),
     )
     fid = cur.lastrowid
     out = []

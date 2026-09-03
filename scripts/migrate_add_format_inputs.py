@@ -77,6 +77,10 @@ INDEXES = [
 # same pattern as the other add-column migrations in this project.
 ADDED_COLUMNS = [
     ("format_inputs", "text_audio_relation", "TEXT"),
+    # The account these videos came from, recorded per input so a profile's
+    # readings can be traced back to a source — and so a mismatch against the
+    # profile's own handle can be caught BEFORE the analysis is paid for.
+    ("format_inputs", "channel_name", "TEXT"),
 ]
 
 

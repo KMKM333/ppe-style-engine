@@ -2716,6 +2716,68 @@ def get_or_create_format_profile(conn, channel):
     return row, True
 
 
+ERROR_LOG_PATH = PRODUCTION_SPEC_SHOTS_DIR.parent / "errors.log"
+
+
+@app.errorhandler(500)
+def _log_unhandled_error(e):
+    """Render's logs are not reachable from where this gets debugged, so an
+    unhandled exception is also appended to a file on the data disk, where
+    /api/health can read it back. Without this, a 500 seen by the
+    transcriber is just "Internal Server Error" with no way to learn why."""
+    import traceback
+    try:
+        with open(ERROR_LOG_PATH, "a") as f:
+            f.write(f"\n=== {datetime.utcnow().isoformat(timespec='seconds')}Z {request.method} {request.path}\n")
+            f.write(traceback.format_exc())
+    except Exception:  # noqa: BLE001 - never let the logger itself fail the response
+        pass
+    return jsonify({"ok": False, "error": "internal error — see /api/health for the trace"}), 500
+
+
+@app.route("/api/health")
+def api_health():
+    """Disk, lock and recent-error picture of the engine, for diagnosing a
+    500 from outside. Key-authed because the error tail can include paths."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    import shutil, sqlite3 as _sq
+    from db_init import DB_PATH
+    data_dir = DB_PATH.parent
+    du = shutil.disk_usage(data_dir)
+
+    def dir_size(path):
+        total, n = 0, 0
+        if path.exists():
+            for f in path.rglob("*"):
+                if f.is_file():
+                    total += f.stat().st_size; n += 1
+        return {"files": n, "mb": round(total / 1e6, 1)}
+
+    # Can we take the write lock right now? A 2s timeout instead of the
+    # normal 30s, so this answers quickly whether something is holding it.
+    lock = "free"
+    try:
+        c = _sq.connect(DB_PATH, timeout=2)
+        c.execute("BEGIN IMMEDIATE"); c.rollback(); c.close()
+    except Exception as exc:  # noqa: BLE001
+        lock = f"held: {exc}"
+
+    tail = ""
+    if ERROR_LOG_PATH.exists():
+        with open(ERROR_LOG_PATH) as f:
+            tail = f.read()[-6000:]
+    return jsonify({
+        "ok": True, "data_dir": str(data_dir),
+        "disk": {"total_gb": round(du.total / 1e9, 2), "used_gb": round(du.used / 1e9, 2),
+                 "free_gb": round(du.free / 1e9, 2)},
+        "db_mb": round(DB_PATH.stat().st_size / 1e6, 1) if DB_PATH.exists() else None,
+        "shot_frames": dir_size(PRODUCTION_SPEC_SHOTS_DIR), "format_frames": dir_size(FORMAT_FRAMES_DIR),
+        "book_pages": dir_size(BOOK_PAGES_DIR), "video_visuals": dir_size(VIDEO_VISUALS_DIR),
+        "write_lock": lock, "recent_errors": tail,
+    })
+
+
 @app.route("/api/analysis/roster")
 def api_analysis_roster():
     """Every Instagram account the engine knows about, across all three
@@ -2779,10 +2841,20 @@ def api_analysis_roster():
 
     # Production (shot analysis)
     for r in conn.execute(
-        """SELECT c.channel_name, i.input_id, i.url, i.title, i.ingested_at, i.status, i.platform
+        """SELECT c.channel_name, i.input_id, i.url, i.title, i.ingested_at, i.status, i.platform,
+                  EXISTS(SELECT 1 FROM production_spec_shots s
+                         WHERE s.input_id = i.input_id AND s.frame_captured = 1) AS has_frames
            FROM production_spec_inputs i JOIN channels c ON c.channel_id = i.channel_id"""
     ):
         if (r["platform"] or "").lower().startswith("youtube"):
+            continue
+        # An input whose frames never arrived (an upload that failed midway)
+        # cannot be classified as it stands. Reporting it as absent makes the
+        # runner re-ingest it: ingest dedupes by URL and hands back the same
+        # input and shot ids, the frames get uploaded, and THEN it classifies.
+        # Reporting it as present would only ever re-trigger classification
+        # of nothing.
+        if r["status"] == "shots_detected" and not r["has_frames"]:
             continue
         a = acct(r["channel_name"], "production")
         add_video(a, "production", r["input_id"], r["url"], r["title"], r["ingested_at"],

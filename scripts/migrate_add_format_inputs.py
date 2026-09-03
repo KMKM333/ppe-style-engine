@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS format_inputs (
     has_audio                           INTEGER DEFAULT 0,
     n_frames                              INTEGER DEFAULT 0,
     on_screen_text                          TEXT,  -- text the vision pass read out of the frames
+    text_audio_relation                       TEXT,  -- same / differs / no_audio / no_on_screen_text
+                                              -- Captions that DIFFER from the speech are the
+                                              -- clearest evidence of borrowed audio with the
+                                              -- creator's own writing on screen.
     status                                    TEXT DEFAULT 'ingested',
                                               -- ingested / classifying / classified / needs_review
     classification_error                        TEXT,
@@ -68,12 +72,27 @@ INDEXES = [
 ]
 
 
+# Columns added after the table first shipped. CREATE TABLE IF NOT EXISTS is a
+# no-op once the table exists, so a new column needs an explicit ALTER —
+# same pattern as the other add-column migrations in this project.
+ADDED_COLUMNS = [
+    ("format_inputs", "text_audio_relation", "TEXT"),
+]
+
+
 def run():
     conn = get_conn()
     for stmt in (FORMAT_INPUTS_TABLE, FORMAT_INPUT_FRAMES_TABLE, FORMAT_INPUT_READINGS_TABLE):
         conn.execute(stmt)
     for idx in INDEXES:
         conn.execute(idx)
+
+    for table, column, coltype in ADDED_COLUMNS:
+        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+            print(f"[migrate_add_format_inputs] added {table}.{column}")
+
     conn.commit()
     conn.close()
     print("[migrate_add_format_inputs] format_inputs / format_input_frames / format_input_readings ready.")

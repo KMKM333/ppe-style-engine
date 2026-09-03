@@ -65,18 +65,36 @@ the topic, and NOT judging quality.
 Return a raw JSON object with exactly these keys:
 
 "on_screen_text": string — any words you can READ in the frames (captions, titles, lettering,
-  subtitles), joined with " / ". Empty string if none. This matters most when there is no
-  transcript: for a silent illustrated format the on-screen words ARE the script, so read them
-  carefully rather than describing them.
+  subtitles), joined with " / ". Empty string if none. READ THESE CAREFULLY IN EVERY VIDEO, not
+  only silent ones: in this kind of short-form content the script usually lives in the burned-in
+  subtitles, and the audio is often secondary. Transcribe what you can actually read rather than
+  describing it.
+
+"text_audio_relation": one of "same" / "differs" / "no_audio" / "no_on_screen_text" — how the
+  on-screen words relate to the spoken transcript. This is the single most useful cross-check
+  you can give, so weigh it before answering the axes below:
+    - "same": the captions are a transcription of the speech (burned-in subtitles of their own
+      script). Strong evidence for Original authorship.
+    - "differs": the words on screen are NOT what is being said. That usually means the audio is
+      borrowed (a meme/song/clip) while the on-screen writing is the creator's own — strong
+      evidence for Hybrid or Borrowed authorship. Say what differs in the note.
+    - "no_audio" / "no_on_screen_text": one side is absent.
+  When the two sources disagree about what the "script" is, trust the ON-SCREEN text as the
+  creator's own writing unless there is clear evidence otherwise.
 
 "readings": an object with exactly these five keys. Each value is an object
   {{"value": <one of the allowed values>, "note": <one sentence of evidence from what you saw>}}.
 
 - verbal_channel — where the words live. One of: {verbal_channel}
+  (If the script is carried by burned-in subtitles that mirror the speech, that is still
+   "Spoken monologue" — the words originate as speech. Choose "On-screen text" when the writing
+   is the primary carrier and the audio is absent, incidental or borrowed. Choose "Mixed" when
+   both genuinely carry different parts of the meaning.)
 - verbal_authorship — who wrote the words. One of: {verbal_authorship}
   (Choose "Borrowed" or "Hybrid" if the audio is a recognisable pre-existing meme/song/clip
    rather than the creator speaking their own script. If the spoken audio is borrowed but the
-   on-screen titles are the creator's own, that is "Hybrid".)
+   on-screen titles are the creator's own, that is "Hybrid". text_audio_relation="differs" is
+   your strongest clue here — captions that don't match the speech usually mean exactly this.)
 - visual_role — what the visuals do. One of: {visual_role}
   ("Are the content" means the images are not illustrating a script that exists separately —
    they ARE the piece, as in a drawn comic. "Carry meaning alone" means the point lands in the
@@ -114,7 +132,9 @@ def build_prompt(transcript):
         # for — say so plainly so the model reads the frames for the words
         # instead of assuming the audio simply failed to attach.
         block = ("TRANSCRIPT: none — this video has no spoken audio, or none was captured. "
-                 "Treat that as meaningful: the words, if any, will be in the frames.")
+                 "Treat that as meaningful rather than as a gap: in this kind of content the "
+                 "script usually lives in the burned-in subtitles, so read the words out of the "
+                 "frames and treat those as the script.")
     return PROMPT.format(transcript_block=block, **{k: " / ".join(v) for k, v in AXES.items()})
 
 
@@ -190,10 +210,13 @@ def classify(format_input_id):
             (format_input_id, axis, value, (entry.get("note") or "").strip()),
         )
         stored += 1
+    relation = (result.get("text_audio_relation") or "").strip().lower()
+    if relation not in ("same", "differs", "no_audio", "no_on_screen_text"):
+        relation = None   # same rule as the axes: don't invent a value
     conn.execute(
-        "UPDATE format_inputs SET on_screen_text = ?, status = 'classified', classification_error = NULL "
-        "WHERE format_input_id = ?",
-        ((result.get("on_screen_text") or "").strip(), format_input_id),
+        "UPDATE format_inputs SET on_screen_text = ?, text_audio_relation = ?, status = 'classified', "
+        "classification_error = NULL WHERE format_input_id = ?",
+        ((result.get("on_screen_text") or "").strip(), relation, format_input_id),
     )
     conn.commit()
     profile_id = row["format_profile_id"]

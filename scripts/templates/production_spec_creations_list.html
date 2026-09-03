@@ -13,7 +13,7 @@
 <div class="card" style="margin-top:16px">
   {% if rows %}
   <table>
-    <tr><th>Title</th><th>Status</th><th>Source</th><th>Profile style</th><th>Production profile</th><th></th></tr>
+    <tr><th>Title</th><th>Status</th><th>Source</th><th>Mode</th><th>Profile style</th><th>Production profile</th><th></th></tr>
     {% for r in rows %}
     <tr>
       <td><a href="{{ url_for('production_spec_creation_detail', creation_id=r.creation_id) }}"><strong>{{ r.title or ('Spec creation #' ~ r.creation_id) }}</strong></a></td>
@@ -27,6 +27,15 @@
         {% elif r.source_kind == 'video' %}<a href="{{ url_for('input_detail', video_id=r.source_video_id) }}">{{ r.source_title }}</a>
         {% elif r.source_kind == 'creation' %}<a href="{{ url_for('creation_detail', transformation_id=r.source_transformation_id) }}">{{ r.source_title }}</a> <span class="muted" style="font-size:11.5px">({{ r.source_kind_label }})</span>
         {% else %}{{ r.source_title }} <span class="muted" style="font-size:11.5px">({{ r.source_kind_label }})</span>{% endif %}
+      </td>
+      {# A Script + editing spec has neither of the next two profiles by
+         design, so name the mode rather than showing two dashes that read
+         as a broken row. #}
+      <td>
+        {% if r.format_profile_code %}
+          <span class="pill">Script + editing</span>
+          <div class="muted" style="font-size:11.5px"><a href="{{ url_for('format_profile_detail', code=r.format_profile_code) }}">{{ r.format_profile_code }}</a> · {{ r.format_handle }}</div>
+        {% else %}<span class="muted">Editing only</span>{% endif %}
       </td>
       <td>
         {% if r.style_profile_code %}<a href="{{ url_for('profile_detail', code=r.style_profile_code) }}">{{ r.style_profile_code }}</a>

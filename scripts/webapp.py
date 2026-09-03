@@ -4540,10 +4540,12 @@ def production_spec_creations_list():
         """SELECT c.creation_id, c.title, c.view_url, c.created_at, c.status,
                   c.source_kind, c.source_video_id, c.source_book_id, c.source_section_id, c.source_transformation_id,
                   sp.profile_code AS style_profile_code,
-                  pp.profile_code AS production_profile_code
+                  pp.profile_code AS production_profile_code,
+                  fp.profile_code AS format_profile_code, fp.handle AS format_handle
            FROM production_spec_creations c
            LEFT JOIN style_profiles sp ON sp.profile_id = c.style_profile_id
            LEFT JOIN style_profiles pp ON pp.profile_id = c.production_profile_id
+           LEFT JOIN format_profiles fp ON fp.format_profile_id = c.format_profile_id
            ORDER BY c.created_at DESC"""
     ).fetchall()
     rows = [

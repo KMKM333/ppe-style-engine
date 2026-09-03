@@ -28,7 +28,12 @@
       </td>
     </tr>
     {% for v in c.videos %}
-    <tr class="channel-videos-{{ c.channel_id }}" style="display:none;background:var(--bg-alt, rgba(127,127,127,.04))">
+    {# These sit BESIDE the channel row rather than inside it, so the context
+       menu's closest() lookup can't reach the channel — without their own
+       identity they simply aren't right-clickable. Marking them as videos
+       makes right-click behave the same here as everywhere else, and can't
+       be confused with the channel row above. #}
+    <tr class="channel-videos-{{ c.channel_id }}" data-entity="video" data-id="{{ v.video_id }}" data-name="{{ v.title }}" style="display:none;background:var(--bg-alt, rgba(127,127,127,.04))">
       <td class="muted" style="white-space:nowrap;padding-left:22px">Video {{ loop.index }}</td>
       <td colspan="2">
         <a href="{{ url_for('input_detail', video_id=v.video_id) }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ v.title }}</a>

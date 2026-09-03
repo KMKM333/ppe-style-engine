@@ -2655,9 +2655,16 @@ def api_ingest_video():
         gatekeeper.mark_needs_review(video_id, hold_reason)
         return jsonify({"ok": True, "video_id": video_id, "status": "held for review", "reason": hold_reason})
 
+    busy = _classifiers_busy()
+    if busy:
+        # The row exists; classification is simply not started yet. The
+        # caller re-requests it via /api/videos/<id>/classify when a slot frees.
+        return jsonify({"ok": True, "video_id": video_id, "held": "busy", "reason": busy,
+                        "status": "ingested, classification waiting for a free slot"})
+
     script_name = "auto_process_video.py" if platform == "YouTube" else "auto_process_shortform_video.py"
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
-    subprocess.Popen([sys.executable, script_path, "--video_id", str(video_id)], start_new_session=True)
+    _spawn_classifier([sys.executable, script_path, "--video_id", str(video_id)])
 
     return jsonify({"ok": True, "video_id": video_id, "status": "ingested, classifying in the background"})
 
@@ -2718,6 +2725,63 @@ def get_or_create_format_profile(conn, channel):
 
 ERROR_LOG_PATH = PRODUCTION_SPEC_SHOTS_DIR.parent / "errors.log"
 
+# --- classification concurrency cap -----------------------------------------
+# Every classify route spawns a detached subprocess. With the transcriber
+# sending one video at a time that was self-limiting; once it sends several
+# at once, nothing stops a dozen classifiers starting together on a 512 MB
+# instance — which is what fell over on 2026-09-03. A slot is a file named
+# by the child's pid; a slot whose pid is gone is stale and is dropped. The
+# spawning route claims the slot, so no classifier script has to know.
+CLASSIFIER_SLOTS_DIR = PRODUCTION_SPEC_SHOTS_DIR.parent / "classify_slots"
+MAX_CLASSIFIERS = int(os.environ.get("PPE_MAX_CLASSIFIERS", "2"))
+
+
+def _pid_alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _classifier_slots_in_use():
+    CLASSIFIER_SLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    live = 0
+    for f in CLASSIFIER_SLOTS_DIR.iterdir():
+        if not f.name.isdigit():
+            continue
+        if _pid_alive(int(f.name)):
+            live += 1
+        else:
+            try:
+                f.unlink()
+            except OSError:
+                pass
+    return live
+
+
+def _classifiers_busy():
+    """A reason string if no classifier slot is free, else None. Same shape
+    as gatekeeper.check_daily_budget(): the caller turns it into a
+    {"held": "busy"} reply that the transcriber's runner waits on."""
+    n = _classifier_slots_in_use()
+    if n >= MAX_CLASSIFIERS:
+        return f"{n} classification(s) already running (cap {MAX_CLASSIFIERS}) — retry shortly."
+    return None
+
+
+def _spawn_classifier(cmd):
+    """Popen + claim a slot for the child's pid."""
+    proc = subprocess.Popen(cmd, start_new_session=True)
+    try:
+        CLASSIFIER_SLOTS_DIR.mkdir(parents=True, exist_ok=True)
+        (CLASSIFIER_SLOTS_DIR / str(proc.pid)).write_text(" ".join(cmd[-2:]))
+    except OSError:
+        pass
+    return proc
+
 
 @app.errorhandler(500)
 def _log_unhandled_error(e):
@@ -2774,7 +2838,8 @@ def api_health():
         "db_mb": round(DB_PATH.stat().st_size / 1e6, 1) if DB_PATH.exists() else None,
         "shot_frames": dir_size(PRODUCTION_SPEC_SHOTS_DIR), "format_frames": dir_size(FORMAT_FRAMES_DIR),
         "book_pages": dir_size(BOOK_PAGES_DIR), "video_visuals": dir_size(VIDEO_VISUALS_DIR),
-        "write_lock": lock, "recent_errors": tail,
+        "write_lock": lock, "classifiers_running": _classifier_slots_in_use(),
+        "classifier_cap": MAX_CLASSIFIERS, "recent_errors": tail,
     })
 
 
@@ -3060,6 +3125,10 @@ def api_classify_format_input(input_id):
     if budget_reason:
         conn.close()
         return jsonify({"ok": False, "held": "budget", "error": budget_reason})
+    busy = _classifiers_busy()
+    if busy:
+        conn.close()
+        return jsonify({"ok": False, "held": "busy", "error": busy})
     conn.execute(
         "UPDATE format_inputs SET status = 'classifying', classification_error = NULL WHERE format_input_id = ?",
         (input_id,),
@@ -3068,7 +3137,7 @@ def api_classify_format_input(input_id):
     conn.close()
 
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "classify_format_input.py")
-    subprocess.Popen([sys.executable, script_path, "--format_input_id", str(input_id)], start_new_session=True)
+    _spawn_classifier([sys.executable, script_path, "--format_input_id", str(input_id)])
     return jsonify({"ok": True, "format_input_id": input_id, "status": "classifying"})
 
 
@@ -3353,9 +3422,13 @@ def api_classify_video(video_id):
     conn.commit()
     conn.close()
 
+    busy = _classifiers_busy()
+    if busy:
+        return jsonify({"ok": True, "video_id": video_id, "held": "busy", "reason": busy})
+
     script_name = "auto_process_video.py" if row["media_type"] == "YouTube" else "auto_process_shortform_video.py"
     script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
-    subprocess.Popen([sys.executable, script_path, "--video_id", str(video_id)], start_new_session=True)
+    _spawn_classifier([sys.executable, script_path, "--video_id", str(video_id)])
 
     return jsonify({"ok": True, "video_id": video_id, "status": "classifying"})
 
@@ -3629,6 +3702,10 @@ def api_classify_production_spec(input_id):
     if budget_reason:
         conn.close()
         return jsonify({"ok": False, "held": "budget", "error": budget_reason})
+    busy = _classifiers_busy()
+    if busy:
+        conn.close()
+        return jsonify({"ok": False, "held": "busy", "error": busy})
     conn.execute("UPDATE production_spec_inputs SET status = 'classifying' WHERE input_id = ?", (input_id,))
     conn.commit()
     conn.close()
@@ -3649,7 +3726,7 @@ def api_classify_production_spec(input_id):
         cmd += ["--batch_size", str(batch_size)]
     if skip_shots:
         cmd += ["--skip_shots", ",".join(str(n) for n in skip_shots)]
-    subprocess.Popen(cmd, start_new_session=True)
+    _spawn_classifier(cmd)
 
     return jsonify({"ok": True, "input_id": input_id, "status": "classifying", "batch_size": batch_size, "skip_shots": skip_shots})
 

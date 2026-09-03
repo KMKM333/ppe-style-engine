@@ -197,7 +197,13 @@
         ]
       } | tojson }}'>
       <td class="{{ 'muted' if not r.media_type }}" style="white-space:nowrap">{{ r.media_type or '—' }}</td>
-      <td>
+      {# The row as a whole is the video/book, but this CELL is the channel —
+         so it carries its own entity identity. The context menu uses
+         closest(), which finds this cell before the row, so right-clicking a
+         channel name renames the channel rather than the video that merely
+         belongs to it. Without this, the two are indistinguishable to a
+         right-click even though they look like different things. #}
+      <td {% if r.channel_id %}data-entity="channel" data-id="{{ r.channel_id }}" data-name="{{ r.channel_name }}"{% endif %}>
         {% if r.profile_code %}
         <a href="{{ url_for('profile_detail', code=r.profile_code) }}" title="View {{ r.profile_code }}'s fingerprint" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.channel_name }}</a>
         {% else %}

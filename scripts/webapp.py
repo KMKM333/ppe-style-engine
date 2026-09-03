@@ -1402,7 +1402,7 @@ def inputs_list():
 
         video_rows = conn.execute(
             f"""SELECT v.video_id, v.title, v.url, v.media_type, v.ingested_at, v.duration_sec,
-                       c.channel_name, p.profile_code, a.word_count, a.title_format,
+                       c.channel_name, c.channel_id, p.profile_code, a.word_count, a.title_format,
                        a.you_freq_per_100w, a.readability_score
                 FROM videos v
                 JOIN channels c ON c.channel_id = v.channel_id
@@ -1421,6 +1421,7 @@ def inputs_list():
                 "entity_id": v["video_id"],
                 "media_type": v["media_type"] or "Instagram",
                 "channel_name": v["channel_name"],
+                "channel_id": v["channel_id"],
                 "profile_code": v["profile_code"],
                 "unresolved_channel": v["channel_name"] == "Instagram Import",
                 "title": v["title"],

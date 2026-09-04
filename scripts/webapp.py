@@ -3828,6 +3828,88 @@ def _shot_frame_file(input_id, shot_id):
     return None, None
 
 
+@app.route("/api/production-spec/duration-repair")
+def api_duration_repair_list():
+    """Shot inputs ingested without a real duration, and what that cost them.
+
+    yt-dlp returns no duration for Instagram, so detect_shots built its final
+    shot as last_cut -> 0 and dropped it. The shots that ARE stored were
+    detected and classified correctly; only the closing shot is missing. This
+    lists the inputs to repair so the fix can append that one shot rather
+    than paying to re-classify everything already known."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT i.input_id, i.url, i.title, i.duration_sec, i.status, i.scene_threshold,
+                  COUNT(s.shot_id) AS n_shots, MAX(s.end_sec) AS last_end
+           FROM production_spec_inputs i
+           LEFT JOIN production_spec_shots s ON s.input_id = i.input_id
+           GROUP BY i.input_id ORDER BY i.input_id"""
+    ).fetchall()
+    conn.close()
+    out = [dict(r) for r in rows]
+    return jsonify({
+        "ok": True,
+        "needs_repair": [r for r in out if not r["duration_sec"]],
+        "total_inputs": len(out),
+    })
+
+
+@app.route("/api/production-spec/inputs/<int:input_id>/append-shot", methods=["POST"])
+def api_append_shot(input_id):
+    """Adds the closing shot that a missing duration caused to be dropped,
+    and records the real duration.
+
+    Deliberately append-only: the existing shots are correct and already
+    classified, so nothing else is touched. Idempotent — if a shot with that
+    number is already there, its id comes back instead of a duplicate."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    try:
+        shot_number = int(data["shot_number"])
+        start_sec = float(data["start_sec"])
+        end_sec = float(data["end_sec"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"ok": False, "error": "'shot_number', 'start_sec' and 'end_sec' are required"}), 400
+    if end_sec - start_sec <= 0.15:
+        return jsonify({"ok": False, "error": "shot is too short to be real"}), 400
+
+    conn = get_conn()
+    inp = conn.execute(
+        "SELECT input_id FROM production_spec_inputs WHERE input_id = ?", (input_id,)
+    ).fetchone()
+    if not inp:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such input"}), 404
+    existing = conn.execute(
+        "SELECT shot_id FROM production_spec_shots WHERE input_id = ? AND shot_number = ?",
+        (input_id, shot_number),
+    ).fetchone()
+    if existing:
+        shot_id = existing["shot_id"]
+    else:
+        cur = conn.execute(
+            "INSERT INTO production_spec_shots (input_id, shot_number, start_sec, end_sec, duration_sec) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (input_id, shot_number, round(start_sec, 3), round(end_sec, 3), round(end_sec - start_sec, 3)),
+        )
+        shot_id = cur.lastrowid
+    if data.get("duration_sec"):
+        conn.execute("UPDATE production_spec_inputs SET duration_sec = ? WHERE input_id = ?",
+                     (float(data["duration_sec"]), input_id))
+    # A repaired input must be re-aggregated, so its profile stops averaging
+    # the short shot list. Left to the caller's classify call to trigger.
+    conn.commit()
+    already = [r["shot_number"] for r in conn.execute(
+        "SELECT shot_number FROM production_spec_shots WHERE input_id = ? AND content_category IS NOT NULL",
+        (input_id,))]
+    conn.close()
+    return jsonify({"ok": True, "input_id": input_id, "shot_id": shot_id,
+                    "shot_number": shot_number, "already_classified_shots": already})
+
+
 @app.route("/api/production-spec/frames")
 def api_list_shot_frames():
     """Every stored shot frame with its format — for the one-off PNG→JPEG

@@ -3261,6 +3261,106 @@ def api_format_input_status(input_id):
                     "on_screen_text": row["on_screen_text"]})
 
 
+@app.route("/api/channels/merge", methods=["POST"])
+def api_merge_channels():
+    """Fold one channel into another: its videos, shot inputs and format
+    profile move across, its now-duplicate style profiles are removed, and
+    the survivor's profiles are rebuilt from the combined set.
+
+    Exists because the same creator arrives under several spellings —
+    "Null.histories" and "null.histories" each grew their own PS profile off
+    a slice of the same account, so neither described it. Renaming cannot fix
+    that: it would leave two rows with one name.
+
+    Body: {"from": <channel_id>, "into": <channel_id>}"""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    try:
+        src, dst = int(data["from"]), int(data["into"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"ok": False, "error": "'from' and 'into' channel ids are required"}), 400
+    if src == dst:
+        return jsonify({"ok": False, "error": "'from' and 'into' are the same channel"}), 400
+
+    conn = get_conn()
+    names = {r["channel_id"]: r["channel_name"] for r in conn.execute(
+        "SELECT channel_id, channel_name FROM channels WHERE channel_id IN (?, ?)", (src, dst))}
+    if src not in names or dst not in names:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such channel"}), 404
+
+    moved = {}
+    try:
+        for table in ("videos", "production_spec_inputs"):
+            cur = conn.execute(f"UPDATE {table} SET channel_id = ? WHERE channel_id = ?", (dst, src))
+            moved[table] = cur.rowcount
+        cur = conn.execute("UPDATE format_profiles SET channel_id = ? WHERE channel_id = ?", (dst, src))
+        moved["format_profiles"] = cur.rowcount
+
+        # A profile of the source channel is a duplicate when the target has
+        # one of the same media_type; otherwise it simply moves across.
+        dst_types = {r["media_type"] for r in conn.execute(
+            "SELECT media_type FROM style_profiles WHERE channel_id = ?", (dst,))}
+        dropped, reassigned = [], []
+        for r in conn.execute(
+                "SELECT profile_id, profile_code, media_type FROM style_profiles WHERE channel_id = ?", (src,)).fetchall():
+            if r["media_type"] in dst_types:
+                pid = r["profile_id"]
+                # Detach rather than delete anything a person authored against
+                # it; only the derived fingerprint rows are removed outright.
+                for t, col in (("test_scores", "profile_id"), ("transform_scores", "profile_id"),
+                               ("transformations", "target_profile_id"), ("video_creations", "target_profile_id"),
+                               ("production_spec_creations", "style_profile_id"),
+                               ("production_spec_creations", "production_profile_id"),
+                               ("format_profiles", "style_profile_id"),
+                               ("format_profiles", "production_profile_id"),
+                               ("style_profile_hybrid_sources", "source_profile_id")):
+                    try:
+                        conn.execute(f"UPDATE {t} SET {col} = NULL WHERE {col} = ?", (pid,))
+                    except Exception:  # noqa: BLE001 - table may not exist on an older disk
+                        pass
+                for t in ("profile_fingerprint_numeric", "profile_fingerprint_categorical",
+                          "profile_style_card", "profile_fingerprint_snapshots",
+                          "style_profile_hybrid_sources"):
+                    try:
+                        conn.execute(f"DELETE FROM {t} WHERE profile_id = ?", (pid,))
+                    except Exception:  # noqa: BLE001
+                        pass
+                conn.execute("DELETE FROM style_profiles WHERE profile_id = ?", (pid,))
+                dropped.append(r["profile_code"])
+            else:
+                conn.execute("UPDATE style_profiles SET channel_id = ? WHERE profile_id = ?", (dst, r["profile_id"]))
+                reassigned.append(r["profile_code"])
+        conn.execute("DELETE FROM channels WHERE channel_id = ?", (src,))
+        conn.commit()
+    except Exception as e:  # noqa: BLE001 - report the real reason rather than a bare 500
+        conn.rollback()
+        conn.close()
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+    survivors = [dict(r) for r in conn.execute(
+        "SELECT profile_code, media_type FROM style_profiles WHERE channel_id = ?", (dst,))]
+    conn.close()
+
+    # Rebuild what survived, so it describes the whole account rather than
+    # the slice it was built from.
+    rebuilt = []
+    for prof in survivors:
+        try:
+            if prof["media_type"] == "ProductionSpec":
+                production_spec_build_profile(names[dst], prof["profile_code"], min_n=1)
+            else:
+                build_profile(names[dst], prof["profile_code"], "A", min_n=1)
+            rebuilt.append(prof["profile_code"])
+        except Exception as e:  # noqa: BLE001 - a rebuild failure must not undo the merge
+            print(f"[merge] rebuild of {prof['profile_code']} failed: {e}")
+
+    return jsonify({"ok": True, "merged": names[src], "into": names[dst],
+                    "moved": moved, "profiles_dropped": dropped,
+                    "profiles_reassigned": reassigned, "profiles_rebuilt": rebuilt})
+
+
 @app.route("/api/channels/suggest")
 def api_suggest_channels():
     """Given a proposed channel name, return the existing channels it might
@@ -4064,7 +4164,12 @@ def production_inputs_list():
     groups = {}
     for r in out:
         name = r["channel_name"] or "Unknown"
-        g = groups.setdefault(name, {
+        # Keyed on the NORMALISED name: the shot pipeline stores a channel
+        # ("americanbaron") and the P+S pipeline stores a handle
+        # ("@americanbaron"), so the same account appeared as two rows with
+        # half its work each. Display keeps whichever spelling arrived first.
+        key = _norm_handle(name) or name.lower()
+        g = groups.setdefault(key, {
             "channel_name": name, "channel_id": r["channel_id"], "videos": [],
             "n_ps": 0, "n_pvs": 0, "n_both": 0, "last": "",
         })

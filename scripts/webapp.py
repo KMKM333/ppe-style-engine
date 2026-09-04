@@ -2736,7 +2736,46 @@ CLASSIFIER_SLOTS_DIR = PRODUCTION_SPEC_SHOTS_DIR.parent / "classify_slots"
 MAX_CLASSIFIERS = int(os.environ.get("PPE_MAX_CLASSIFIERS", "2"))
 
 
+# A finished classifier stays in the process table as a zombie until its
+# parent reaps it, and os.kill(pid, 0) reports a ZOMBIE AS ALIVE. Nothing
+# here reaped them, so every completed classification leaked its slot and
+# the cap jammed shut at 2/2 — the whole run stalled behind a limit that
+# could never fall. Three independent defences, because a stuck cap stops
+# everything and no single check should be load-bearing.
+CLASSIFIER_SLOT_MAX_AGE_SEC = int(os.environ.get("PPE_CLASSIFIER_SLOT_MAX_AGE_SEC", str(45 * 60)))
+
+
+def _reap_finished_children():
+    """Clear zombies belonging to THIS process, so they stop occupying the
+    process table at all. Only works for our own direct children — the
+    /proc check below covers the rest (gunicorn runs several workers, and
+    one worker cannot reap another's)."""
+    while True:
+        try:
+            pid, _status = os.waitpid(-1, os.WNOHANG)
+        except (ChildProcessError, OSError):
+            return
+        if pid == 0:
+            return
+
+
 def _pid_alive(pid):
+    """True only if the pid is a RUNNING process. A zombie is finished work
+    still waiting to be reaped, and must not hold a slot."""
+    # Only trust /proc where it exists. Where it does not (macOS), a missing
+    # /proc/<pid>/stat means nothing at all — reading it as "dead" would free
+    # every slot instantly and make the cap meaningless.
+    if os.path.isdir("/proc"):
+        try:
+            with open(f"/proc/{pid}/stat") as f:
+                # comm can contain spaces and parentheses, so the state field
+                # is the first token after the LAST ')'.
+                state = f.read().rsplit(")", 1)[1].split()[0]
+            return state != "Z"
+        except FileNotFoundError:
+            return False        # /proc exists but this pid does not
+        except (OSError, IndexError):
+            pass                # unreadable stat — fall back below
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -2748,11 +2787,21 @@ def _pid_alive(pid):
 
 def _classifier_slots_in_use():
     CLASSIFIER_SLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    _reap_finished_children()
+    now = time.time()
     live = 0
     for f in CLASSIFIER_SLOTS_DIR.iterdir():
         if not f.name.isdigit():
             continue
-        if _pid_alive(int(f.name)):
+        stale = False
+        try:
+            # Backstop: a slot older than any real classification can take is
+            # wrong however it got there — a reused pid, an unreadable /proc,
+            # a genuinely hung child. Better to over-admit than to deadlock.
+            stale = (now - f.stat().st_mtime) > CLASSIFIER_SLOT_MAX_AGE_SEC
+        except OSError:
+            pass
+        if not stale and _pid_alive(int(f.name)):
             live += 1
         else:
             try:
@@ -2839,7 +2888,12 @@ def api_health():
         "shot_frames": dir_size(PRODUCTION_SPEC_SHOTS_DIR), "format_frames": dir_size(FORMAT_FRAMES_DIR),
         "book_pages": dir_size(BOOK_PAGES_DIR), "video_visuals": dir_size(VIDEO_VISUALS_DIR),
         "write_lock": lock, "classifiers_running": _classifier_slots_in_use(),
-        "classifier_cap": MAX_CLASSIFIERS, "recent_errors": tail,
+        "classifier_cap": MAX_CLASSIFIERS,
+        "classifier_slots": sorted(
+            f"{f.name}:{'run' if _pid_alive(int(f.name)) else 'dead'}:{int(time.time() - f.stat().st_mtime)}s"
+            for f in CLASSIFIER_SLOTS_DIR.iterdir() if f.name.isdigit()
+        ) if CLASSIFIER_SLOTS_DIR.exists() else [],
+        "recent_errors": tail,
     })
 
 

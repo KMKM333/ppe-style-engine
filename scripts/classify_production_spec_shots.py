@@ -224,7 +224,17 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_number
     def pct(pred):
         return round(100 * sum(1 for d in durations if pred(d)) / n_dur, 1) if n_dur else None
 
-    categories = [category_by_shot.get(s["shot_number"], "other") for s in shots]
+    # The category of record is what is IN THE DATABASE, not what this run
+    # happened to classify. Reading only category_by_shot meant that in
+    # only_unclassified mode — where the dict holds just the one new shot —
+    # every other shot fell through to "other", and the percentages written
+    # here claimed ~96% other for an input whose stored shots were mostly
+    # illustration panels. The shot rows were always right; these derived
+    # numbers, and the profile built from them, were not.
+    categories = [
+        category_by_shot.get(s["shot_number"]) or s["content_category"] or "other"
+        for s in shots
+    ]
 
     def pct_cat(cat):
         return round(100 * sum(1 for c in categories if c == cat) / n_shots, 1) if n_shots else None

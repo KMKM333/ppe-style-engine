@@ -4057,11 +4057,49 @@ def production_inputs_list():
     elif status_filter:
         out = [r for r in out if (r["ps"] or {}).get("status") == status_filter
                or (r["pvs"] or {}).get("status") == status_filter]
-    out.sort(key=lambda r: r["when"], reverse=True)
+
+    # Grouped by account, the way the Library groups by channel: an account is
+    # the unit a production profile is built from, so its videos belong under
+    # it rather than interleaved with everyone else's.
+    groups = {}
+    for r in out:
+        name = r["channel_name"] or "Unknown"
+        g = groups.setdefault(name, {
+            "channel_name": name, "channel_id": r["channel_id"], "videos": [],
+            "n_ps": 0, "n_pvs": 0, "n_both": 0, "last": "",
+        })
+        g["channel_id"] = g["channel_id"] or r["channel_id"]
+        g["videos"].append(r)
+        ps_done = (r["ps"] or {}).get("status") == "classified"
+        pvs_done = (r["pvs"] or {}).get("status") == "classified"
+        g["n_ps"] += 1 if ps_done else 0
+        g["n_pvs"] += 1 if pvs_done else 0
+        g["n_both"] += 1 if (ps_done and pvs_done) else 0
+        if r["when"] > g["last"]:
+            g["last"] = r["when"]
+
+    for g in groups.values():
+        g["n_videos"] = len(g["videos"])
+        g["videos"].sort(key=lambda v: v["when"], reverse=True)
+
+    sort = request.args.get("sort", "channel")
+    direction = request.args.get("dir", "asc" if sort == "channel" else "desc")
+    keys = {
+        "channel": lambda g: (g["channel_name"] or "").lower(),
+        "videos": lambda g: g["n_videos"],
+        "ps": lambda g: g["n_ps"],
+        "pvs": lambda g: g["n_pvs"],
+        "both": lambda g: g["n_both"],
+        "last": lambda g: g["last"],
+    }
+    accounts = sorted(groups.values(), key=keys.get(sort, keys["channel"]),
+                      reverse=(direction == "desc"))
 
     return render_template(
-        "production_inputs_list.html", active="production-inputs", rows=out, channels=channels,
-        filters={"channel_id": channel_filter, "status": status_filter, "q": q},
+        "production_inputs_list.html", active="production-inputs",
+        accounts=accounts, channels=channels, n_videos=len(out),
+        filters={"channel_id": channel_filter, "status": status_filter, "q": q,
+                 "sort": sort, "dir": direction},
         n_ps=sum(1 for r in out if r["ps"]), n_pvs=sum(1 for r in out if r["pvs"]),
     )
 

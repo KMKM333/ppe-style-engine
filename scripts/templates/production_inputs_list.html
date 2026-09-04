@@ -1,13 +1,22 @@
 {% extends "base.html" %}
 {% block title %}Production Inputs — PPE Engine{% endblock %}
 {% block main_class %}wide{% endblock %}
+{% macro sort_th(col, label, cls='') %}
+  {% set is_active = filters.sort == col %}
+  {% set new_dir = 'desc' if (is_active and filters.dir != 'desc') else 'asc' %}
+  <th class="{{ cls }}">
+    <a href="{{ url_for('production_inputs_list', q=filters.q, channel_id=filters.channel_id, status=filters.status, sort=col, dir=new_dir) }}"
+       style="color:inherit;text-decoration:none;white-space:nowrap">
+      {{ label }}{% if is_active %}<span style="color:var(--accent)">{{ ' ▲' if filters.dir == 'asc' else ' ▼' }}</span>{% else %}<span class="muted" style="opacity:.4"> ⇅</span>{% endif %}
+    </a>
+  </th>
+{% endmacro %}
 {% block content %}
 <h1>Production Inputs</h1>
-<div class="sub">Videos imported for production. Each is downloaded once and read twice — how it's
-  <strong>cut</strong> (shot analysis, feeding <a href="{{ url_for('production_profiles_list') }}">Editing Profiles</a>)
+<div class="sub">Videos imported for production, grouped by account. Each is downloaded once and read twice —
+  how it's <strong>cut</strong> (feeding <a href="{{ url_for('production_profiles_list') }}">Editing Profiles</a>)
   and how its <strong>visuals and script relate</strong> (feeding
-  <a href="{{ url_for('format_profiles_list') }}">Script + Editing Profiles</a>). The two readings measure different
-  things and are chosen independently when generating; only the import is shared.</div>
+  <a href="{{ url_for('format_profiles_list') }}">Script + Editing Profiles</a>). Click an account to open its videos.</div>
 
 <form method="get" action="{{ url_for('production_inputs_list') }}" class="card">
   <div class="flex">
@@ -35,50 +44,71 @@
       </select>
     </div>
   </div>
+  <input type="hidden" name="sort" value="{{ filters.sort }}">
+  <input type="hidden" name="dir" value="{{ filters.dir }}">
   <button type="submit">Apply filters</button>
   <a href="{{ url_for('production_inputs_list') }}" class="btn secondary">Reset</a>
 </form>
 
 <div class="card">
-  {% if rows %}
-  <div class="sub" style="margin-bottom:10px">{{ rows|length }} video(s) · {{ n_ps }} with an editing reading · {{ n_pvs }} with a script+editing reading</div>
+  {% if accounts %}
+  <div class="sub" style="margin-bottom:10px">{{ accounts|length }} account(s) · {{ n_videos }} video(s) · {{ n_ps }} with an editing reading · {{ n_pvs }} with a script+editing reading</div>
   <table>
     <tr>
-      <th>Title</th><th>Account</th>
-      <th>Editing (PS)</th><th class="num">Shots</th><th class="num">Avg shot</th>
-      <th>Script + editing (PVS)</th>
-      <th>Imported</th><th></th>
+      {{ sort_th('channel', 'Account') }}
+      {{ sort_th('videos', 'Videos', 'num') }}
+      {{ sort_th('ps', 'Editing (PS)', 'num') }}
+      {{ sort_th('pvs', 'Script+editing (PVS)', 'num') }}
+      {{ sort_th('both', 'Both', 'num') }}
+      {{ sort_th('last', 'Last import') }}
+      <th></th>
     </tr>
-    {% for r in rows %}
-    <tr {% if r.ps %}data-entity="production_input" data-id="{{ r.ps.input_id }}" data-name="{{ r.title }}"{% endif %}>
-      <td>
-        {% if r.ps %}<a href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title or 'Untitled' }}</a>
-        {% elif r.pvs %}<a href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title or 'Untitled' }}</a>
+    {% for a in accounts %}
+    {% set gid = loop.index %}
+    <tr class="channel-row" {% if a.channel_id %}data-entity="channel" data-id="{{ a.channel_id }}" data-name="{{ a.channel_name }}"{% endif %} onclick="toggleAccountVideos({{ gid }})" style="cursor:pointer">
+      <td><span id="chev-{{ gid }}" class="muted" style="display:inline-block;width:14px">▸</span><strong>{{ a.channel_name }}</strong></td>
+      <td class="num">{{ a.n_videos }}</td>
+      <td class="num">
+        <span class="pill {{ 'confirmed' if a.n_ps == a.n_videos else ('draft' if a.n_ps else 'bad') }}" title="{{ a.n_ps }} of {{ a.n_videos }} have a shot/pacing reading">{{ a.n_ps }}/{{ a.n_videos }}</span>
+      </td>
+      <td class="num">
+        <span class="pill {{ 'confirmed' if a.n_pvs == a.n_videos else ('draft' if a.n_pvs else 'bad') }}" title="{{ a.n_pvs }} of {{ a.n_videos }} have a script+editing reading">{{ a.n_pvs }}/{{ a.n_videos }}</span>
+      </td>
+      <td class="num {{ 'muted' if not a.n_both }}">{{ a.n_both }}</td>
+      <td class="muted" style="white-space:nowrap">{{ a.last }}</td>
+      <td></td>
+    </tr>
+    {% for r in a.videos %}
+    {# Beside the account row, not inside it, so right-click resolves to the
+       video rather than reaching up to the account — same reasoning as the
+       Library's channel/video split. #}
+    <tr class="account-videos-{{ gid }}" {% if r.ps %}data-entity="production_input" data-id="{{ r.ps.input_id }}" data-name="{{ r.title }}"{% endif %} style="display:none;background:rgba(127,127,127,.04)">
+      <td style="padding-left:22px">
+        {% if r.ps %}<a href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title or 'Untitled' }}</a>
+        {% elif r.pvs %}<a href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}" style="color:var(--text);text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title or 'Untitled' }}</a>
         {% else %}{{ r.title or 'Untitled' }}{% endif %}
       </td>
-      {# The row is the import; this cell is the account. Without its own
-         identity, right-clicking a source name renames the video. #}
-      <td class="muted" {% if r.channel_id %}data-entity="channel" data-id="{{ r.channel_id }}" data-name="{{ r.channel_name }}"{% endif %}>{{ r.channel_name or '—' }}</td>
+      <td class="num muted">{{ r.ps.total_shots if r.ps and r.ps.total_shots is not none else '—' }}<div class="muted" style="font-size:11px">shots</div></td>
       <td>
-        {% if not r.ps %}<span class="muted">not analysed</span>
-        {% elif r.ps.status == 'classified' %}<a href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}"><span class="pill confirmed">classified</span></a>
-        {% elif r.ps.status == 'needs_review' %}<a href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}"><span class="pill bad">needs review</span></a>
+        {% if not r.ps %}<span class="muted">—</span>
+        {% elif r.ps.status == 'classified' %}<span class="pill confirmed">classified</span>{% if r.ps.avg_shot_length_sec %}<div class="muted" style="font-size:11px">{{ '%.2fs' % r.ps.avg_shot_length_sec }} avg</div>{% endif %}
+        {% elif r.ps.status == 'needs_review' %}<span class="pill bad">needs review</span>
         {% else %}<span class="pill draft">{{ r.ps.status }}</span>{% endif %}
       </td>
-      <td class="num">{{ r.ps.total_shots if r.ps and r.ps.total_shots is not none else '—' }}</td>
-      <td class="num">{{ '%.2fs' % r.ps.avg_shot_length_sec if r.ps and r.ps.avg_shot_length_sec is not none else '—' }}</td>
       <td>
-        {% if not r.pvs %}<span class="muted">not analysed</span>
-        {% elif r.pvs.status == 'classified' %}<a href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}"><span class="pill confirmed">classified</span></a>{% if r.pvs.profile_code %} <span class="muted" style="font-size:11.5px">{{ r.pvs.profile_code }}</span>{% endif %}
-        {% elif r.pvs.status == 'needs_review' %}<a href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}"><span class="pill bad">needs review</span></a>
+        {% if not r.pvs %}<span class="muted">—</span>
+        {% elif r.pvs.status == 'classified' %}<span class="pill confirmed">classified</span>{% if r.pvs.profile_code %}<div class="muted" style="font-size:11px">{{ r.pvs.profile_code }}</div>{% endif %}
+        {% elif r.pvs.status == 'needs_review' %}<span class="pill bad">needs review</span>
         {% else %}<span class="pill draft">{{ r.pvs.status }}</span>{% endif %}
       </td>
+      <td></td>
       <td class="muted" style="white-space:nowrap">{{ r.when }}</td>
       <td style="white-space:nowrap">
-        {% if r.ps %}<a class="btn secondary" style="margin:0;padding:5px 10px;font-size:12px" href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}">Cut</a>{% endif %}
-        {% if r.pvs %}<a class="btn secondary" style="margin:0;padding:5px 10px;font-size:12px" href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}">Script</a>{% endif %}
+        {% if r.ps %}<a class="btn secondary" style="margin:0;padding:4px 9px;font-size:11.5px" href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}">Cut</a>{% endif %}
+        {% if r.pvs %}<a class="btn secondary" style="margin:0;padding:4px 9px;font-size:11.5px" href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}">Script</a>{% endif %}
       </td>
     </tr>
+    {% endfor %}
     {% endfor %}
   </table>
   {% else %}
@@ -88,4 +118,16 @@
   </div>
   {% endif %}
 </div>
+
+<script>
+function toggleAccountVideos(gid) {
+  var rows = document.getElementsByClassName('account-videos-' + gid);
+  var chevron = document.getElementById('chev-' + gid);
+  var showing = rows.length && rows[0].style.display !== 'none';
+  for (var i = 0; i < rows.length; i++) {
+    rows[i].style.display = showing ? 'none' : 'table-row';
+  }
+  if (chevron) chevron.textContent = showing ? '▸' : '▾';
+}
+</script>
 {% endblock %}

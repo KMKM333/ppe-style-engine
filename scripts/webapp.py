@@ -3276,10 +3276,31 @@ def api_merge_channels():
     if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
         abort(403)
     data = request.get_json(silent=True) or {}
+    # Names are accepted as well as ids: the ids are not shown anywhere in the
+    # UI, and requiring them made a merge something only a database query
+    # could set up. Names must be exact, since guessing which of two
+    # near-identical spellings was meant is the very thing being fixed.
+    if data.get("from_name") or data.get("into_name"):
+        conn0 = get_conn()
+        found = {}
+        for field in ("from_name", "into_name"):
+            nm = (data.get(field) or "").strip()
+            if not nm:
+                continue
+            r = conn0.execute("SELECT channel_id FROM channels WHERE channel_name = ?", (nm,)).fetchone()
+            if not r:
+                conn0.close()
+                return jsonify({"ok": False, "error": f'no channel named exactly "{nm}"'}), 404
+            found[field] = r["channel_id"]
+        conn0.close()
+        data = dict(data)
+        data.setdefault("from", found.get("from_name"))
+        data.setdefault("into", found.get("into_name"))
     try:
         src, dst = int(data["from"]), int(data["into"])
     except (KeyError, TypeError, ValueError):
-        return jsonify({"ok": False, "error": "'from' and 'into' channel ids are required"}), 400
+        return jsonify({"ok": False,
+                        "error": "'from'/'into' channel ids, or 'from_name'/'into_name', are required"}), 400
     if src == dst:
         return jsonify({"ok": False, "error": "'from' and 'into' are the same channel"}), 400
 
@@ -3410,7 +3431,7 @@ def api_suggest_channels():
 
     candidates = [
         {
-            "channel_name": r["channel_name"], "platform": r["platform"],
+            "channel_id": r["channel_id"], "channel_name": r["channel_name"], "platform": r["platform"],
             "profile_code": r["profile_code"], "subject": r["subject"],
             "n_videos": r["n_videos"], "n_analysed": r["n_videos_analysed"],
             "confidence": round(ratio, 3),

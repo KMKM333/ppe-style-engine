@@ -3984,39 +3984,85 @@ def production_spec_shot_image(input_id, shot_id):
 
 @app.route("/production/inputs")
 def production_inputs_list():
+    """Every video imported for production, with BOTH readings on one row.
+
+    A production video is downloaded once and read twice — how it is CUT
+    (shot analysis, PS) and how its visuals and script RELATE (P+S, PVS).
+    Those live in separate tables because they measure different things and
+    are chosen independently when generating; but they describe the same
+    import, and showing them apart made one import look like two and hid
+    which videos had only half the work done. Matched on content_hash, the
+    normalised-URL key both pipelines already store."""
     channel_filter = request.args.get("channel_id", type=int)
     status_filter = request.args.get("status", "")
     q = request.args.get("q", "").strip()
 
-    query = """SELECT i.input_id, i.title, i.platform, i.url, i.status, i.ingested_at,
-                      c.channel_id, c.channel_name,
-                      a.total_shots, a.avg_shot_length_sec, a.dominant_shot_category
-               FROM production_spec_inputs i
-               JOIN channels c ON c.channel_id = i.channel_id
-               LEFT JOIN production_spec_attributes a ON a.input_id = i.input_id
-               WHERE 1=1"""
-    params = []
-    if channel_filter:
-        query += " AND c.channel_id = ?"
-        params.append(channel_filter)
-    if status_filter:
-        query += " AND i.status = ?"
-        params.append(status_filter)
-    if q:
-        query += " AND i.title LIKE ?"
-        params.append(f"%{q}%")
-    query += " ORDER BY i.ingested_at DESC"
-
     conn = get_conn()
-    rows = conn.execute(query, params).fetchall()
+    rows = {}
+
+    def slot(key, url, title, when):
+        r = rows.setdefault(key, {"url": url, "title": title, "when": when or "",
+                                  "channel_name": None, "channel_id": None, "platform": None,
+                                  "ps": None, "pvs": None})
+        if title and not r["title"]:
+            r["title"] = title
+        if when and when > r["when"]:
+            r["when"] = when
+        return r
+
+    for r in conn.execute(
+        """SELECT i.input_id, i.title, i.platform, i.url, i.status, i.ingested_at, i.content_hash,
+                  c.channel_id, c.channel_name,
+                  a.total_shots, a.avg_shot_length_sec, a.dominant_shot_category
+           FROM production_spec_inputs i
+           JOIN channels c ON c.channel_id = i.channel_id
+           LEFT JOIN production_spec_attributes a ON a.input_id = i.input_id"""
+    ):
+        row = slot(r["content_hash"] or f"ps{r['input_id']}", r["url"], r["title"], r["ingested_at"])
+        row["channel_name"] = row["channel_name"] or r["channel_name"]
+        row["channel_id"] = row["channel_id"] or r["channel_id"]
+        row["platform"] = row["platform"] or r["platform"]
+        row["ps"] = {"input_id": r["input_id"], "status": r["status"], "total_shots": r["total_shots"],
+                     "avg_shot_length_sec": r["avg_shot_length_sec"]}
+
+    for r in conn.execute(
+        """SELECT i.format_input_id, i.title, i.url, i.status, i.ingested_at, i.content_hash,
+                  i.channel_name, i.platform, f.profile_code
+           FROM format_inputs i
+           LEFT JOIN format_profiles f ON f.format_profile_id = i.format_profile_id"""
+    ):
+        row = slot(r["content_hash"] or f"pvs{r['format_input_id']}", r["url"], r["title"], r["ingested_at"])
+        row["channel_name"] = row["channel_name"] or r["channel_name"]
+        row["platform"] = row["platform"] or r["platform"]
+        row["pvs"] = {"input_id": r["format_input_id"], "status": r["status"],
+                      "profile_code": r["profile_code"]}
+
     channels = conn.execute(
         "SELECT DISTINCT c.channel_id, c.channel_name FROM channels c "
         "JOIN production_spec_inputs i ON i.channel_id = c.channel_id ORDER BY c.channel_name"
     ).fetchall()
     conn.close()
+
+    out = list(rows.values())
+    if channel_filter:
+        out = [r for r in out if r["channel_id"] == channel_filter]
+    if q:
+        ql = q.lower()
+        out = [r for r in out if ql in (r["title"] or "").lower() or ql in (r["channel_name"] or "").lower()]
+    if status_filter == "both":
+        out = [r for r in out if (r["ps"] or {}).get("status") == "classified"
+               and (r["pvs"] or {}).get("status") == "classified"]
+    elif status_filter == "missing":
+        out = [r for r in out if not r["ps"] or not r["pvs"]]
+    elif status_filter:
+        out = [r for r in out if (r["ps"] or {}).get("status") == status_filter
+               or (r["pvs"] or {}).get("status") == status_filter]
+    out.sort(key=lambda r: r["when"], reverse=True)
+
     return render_template(
-        "production_inputs_list.html", active="production-inputs", rows=rows, channels=channels,
+        "production_inputs_list.html", active="production-inputs", rows=out, channels=channels,
         filters={"channel_id": channel_filter, "status": status_filter, "q": q},
+        n_ps=sum(1 for r in out if r["ps"]), n_pvs=sum(1 for r in out if r["pvs"]),
     )
 
 

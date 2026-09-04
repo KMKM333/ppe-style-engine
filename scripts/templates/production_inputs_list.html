@@ -1,18 +1,22 @@
 {% extends "base.html" %}
-{% block title %}Production Inputs (Visual only) — PPE Engine{% endblock %}
+{% block title %}Production Inputs — PPE Engine{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
-<h1>Production Inputs (Visual only)</h1>
-<div class="sub">Videos submitted for shot/pacing analysis (ffmpeg scene-detection + shot-type classification) — a parallel pipeline to the writing-style Library, feeding Production Spec Profiles below.</div>
+<h1>Production Inputs</h1>
+<div class="sub">Videos imported for production. Each is downloaded once and read twice — how it's
+  <strong>cut</strong> (shot analysis, feeding <a href="{{ url_for('production_profiles_list') }}">Editing Profiles</a>)
+  and how its <strong>visuals and script relate</strong> (feeding
+  <a href="{{ url_for('format_profiles_list') }}">Script + Editing Profiles</a>). The two readings measure different
+  things and are chosen independently when generating; only the import is shared.</div>
 
 <form method="get" action="{{ url_for('production_inputs_list') }}" class="card">
   <div class="flex">
     <div>
-      <label for="q">Search title</label>
-      <input type="text" id="q" name="q" value="{{ filters.q }}" placeholder="e.g. Opium Wars">
+      <label for="q">Search title or account</label>
+      <input type="text" id="q" name="q" value="{{ filters.q }}" placeholder="e.g. versobooks">
     </div>
     <div>
-      <label for="channel_id">Source / channel</label>
+      <label for="channel_id">Source / account</label>
       <select id="channel_id" name="channel_id">
         <option value="">All sources</option>
         {% for c in channels %}
@@ -21,14 +25,13 @@
       </select>
     </div>
     <div>
-      <label for="status">Status</label>
+      <label for="status">Reading status</label>
       <select id="status" name="status">
         <option value="">Any</option>
-        <option value="ingested" {{ 'selected' if filters.status == 'ingested' }}>Ingested</option>
-        <option value="shots_detected" {{ 'selected' if filters.status == 'shots_detected' }}>Shots detected</option>
-        <option value="classifying" {{ 'selected' if filters.status == 'classifying' }}>Classifying</option>
-        <option value="classified" {{ 'selected' if filters.status == 'classified' }}>Classified</option>
+        <option value="both" {{ 'selected' if filters.status == 'both' }}>Both readings done</option>
+        <option value="missing" {{ 'selected' if filters.status == 'missing' }}>Missing a reading</option>
         <option value="needs_review" {{ 'selected' if filters.status == 'needs_review' }}>Needs review</option>
+        <option value="classifying" {{ 'selected' if filters.status == 'classifying' }}>Classifying</option>
       </select>
     </div>
   </div>
@@ -38,35 +41,50 @@
 
 <div class="card">
   {% if rows %}
+  <div class="sub" style="margin-bottom:10px">{{ rows|length }} video(s) · {{ n_ps }} with an editing reading · {{ n_pvs }} with a script+editing reading</div>
   <table>
     <tr>
-      <th>Title</th><th>Source</th><th>Platform</th><th class="num">Shots</th><th class="num">Avg shot length</th>
-      <th>Status</th><th>Ingested</th><th></th>
+      <th>Title</th><th>Account</th>
+      <th>Editing (PS)</th><th class="num">Shots</th><th class="num">Avg shot</th>
+      <th>Script + editing (PVS)</th>
+      <th>Imported</th><th></th>
     </tr>
     {% for r in rows %}
-    <tr data-entity="production_input" data-id="{{ r.input_id }}" data-name="{{ r.title }}">
-      <td><a href="{{ url_for('production_input_detail', input_id=r.input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title }}</a></td>
-      {# Same reasoning as the Library's channel column: the row is the
-         production input, but this cell is the channel. Without its own
-         identity, right-clicking a source name renames the input instead. #}
-      <td {% if r.channel_id %}data-entity="channel" data-id="{{ r.channel_id }}" data-name="{{ r.channel_name }}"{% endif %}>{{ r.channel_name }}</td>
-      <td class="muted">{{ r.platform or '—' }}</td>
-      <td class="num">{{ r.total_shots if r.total_shots is not none else '—' }}</td>
-      <td class="num">{{ '%.2fs' % r.avg_shot_length_sec if r.avg_shot_length_sec is not none else '—' }}</td>
+    <tr {% if r.ps %}data-entity="production_input" data-id="{{ r.ps.input_id }}" data-name="{{ r.title }}"{% endif %}>
       <td>
-        {% if r.status == 'classified' %}<span class="pill confirmed">classified</span>
-        {% elif r.status == 'needs_review' %}<span class="pill bad">needs review</span>
-        {% else %}<span class="pill draft">{{ r.status }}</span>{% endif %}
+        {% if r.ps %}<a href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title or 'Untitled' }}</a>
+        {% elif r.pvs %}<a href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}" style="color:var(--text);font-weight:600;text-decoration:none;border-bottom:1px dotted var(--muted)">{{ r.title or 'Untitled' }}</a>
+        {% else %}{{ r.title or 'Untitled' }}{% endif %}
       </td>
-      <td class="muted" style="white-space:nowrap">{{ r.ingested_at }}</td>
-      <td><a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('production_input_detail', input_id=r.input_id) }}">View</a></td>
+      {# The row is the import; this cell is the account. Without its own
+         identity, right-clicking a source name renames the video. #}
+      <td class="muted" {% if r.channel_id %}data-entity="channel" data-id="{{ r.channel_id }}" data-name="{{ r.channel_name }}"{% endif %}>{{ r.channel_name or '—' }}</td>
+      <td>
+        {% if not r.ps %}<span class="muted">not analysed</span>
+        {% elif r.ps.status == 'classified' %}<a href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}"><span class="pill confirmed">classified</span></a>
+        {% elif r.ps.status == 'needs_review' %}<a href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}"><span class="pill bad">needs review</span></a>
+        {% else %}<span class="pill draft">{{ r.ps.status }}</span>{% endif %}
+      </td>
+      <td class="num">{{ r.ps.total_shots if r.ps and r.ps.total_shots is not none else '—' }}</td>
+      <td class="num">{{ '%.2fs' % r.ps.avg_shot_length_sec if r.ps and r.ps.avg_shot_length_sec is not none else '—' }}</td>
+      <td>
+        {% if not r.pvs %}<span class="muted">not analysed</span>
+        {% elif r.pvs.status == 'classified' %}<a href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}"><span class="pill confirmed">classified</span></a>{% if r.pvs.profile_code %} <span class="muted" style="font-size:11.5px">{{ r.pvs.profile_code }}</span>{% endif %}
+        {% elif r.pvs.status == 'needs_review' %}<a href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}"><span class="pill bad">needs review</span></a>
+        {% else %}<span class="pill draft">{{ r.pvs.status }}</span>{% endif %}
+      </td>
+      <td class="muted" style="white-space:nowrap">{{ r.when }}</td>
+      <td style="white-space:nowrap">
+        {% if r.ps %}<a class="btn secondary" style="margin:0;padding:5px 10px;font-size:12px" href="{{ url_for('production_input_detail', input_id=r.ps.input_id) }}">Cut</a>{% endif %}
+        {% if r.pvs %}<a class="btn secondary" style="margin:0;padding:5px 10px;font-size:12px" href="{{ url_for('format_input_detail', input_id=r.pvs.input_id) }}">Script</a>{% endif %}
+      </td>
     </tr>
     {% endfor %}
   </table>
   {% else %}
   <div class="empty-state">
     <div class="empty-icon">{{ icon('layers') }}</div>
-    <p>No Production Spec inputs yet — submit a video for shot analysis via the Instagram Bulk Transcriber.</p>
+    <p>No production inputs yet — import videos through the Bulk Transcriber's Production section.</p>
   </div>
   {% endif %}
 </div>

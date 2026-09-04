@@ -615,7 +615,7 @@
       </div>
 
       <div class="nav-group">
-        <a href="{{ url_for('inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='inputs' else '' }}">Library</a>
+        <a href="{{ url_for('inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='inputs' else '' }}">Input Library</a>
         <a href="{{ url_for('books_list') }}" class="nav-item {{ 'active' if active=='books' else '' }}"><span class="nav-icon">{{ icon('book') }}</span>Books</a>
         <a href="{{ url_for('channels_list') }}" class="nav-item {{ 'active' if active=='channels' else '' }}"><span class="nav-icon">{{ icon('instagram') }}</span>Short Videos, Instagram</a>
         <a href="{{ url_for('channels_list', platform='YouTube') }}" class="nav-item {{ 'active' if active=='channels-youtube' else '' }}"><span class="nav-icon">{{ icon('youtube') }}</span>Long videos, Youtube</a>
@@ -635,10 +635,14 @@
         {# Ordered inputs → profiles, twice: the visual-only pair first, then
            the P+S pair. Same shape as the Library, where the evidence and the
            claim built from it are separate pages. #}
-        <a href="{{ url_for('production_inputs_list') }}" class="nav-item {{ 'active' if active=='production-inputs' else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Production Inputs (Visual only)</a>
-        <a href="{{ url_for('production_profiles_list') }}" class="nav-item {{ 'active' if active=='production-profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Production Profiles</a>
-        <a href="{{ url_for('format_inputs_list') }}" class="nav-item {{ 'active' if active=='production-format-inputs' else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Production Inputs (P+S)</a>
-        <a href="{{ url_for('format_profiles_list') }}" class="nav-item {{ 'active' if active=='production-formats' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Production P+S Profiles</a>
+        {# One import, two readings. A production video is downloaded once and
+           read twice — how it is CUT (PS) and how its visuals and script
+           RELATE (PVS). They stay separate pages because they measure
+           different things and are chosen independently in Transform; only
+           the importing is unified. #}
+        <a href="{{ url_for('production_inputs_list') }}" class="nav-item {{ 'active' if active in ('production-inputs','production-format-inputs') else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Production Inputs</a>
+        <a href="{{ url_for('production_profiles_list') }}" class="nav-item {{ 'active' if active=='production-profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Editing Profiles (PS)</a>
+        <a href="{{ url_for('format_profiles_list') }}" class="nav-item {{ 'active' if active=='production-formats' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Script + Editing Profiles (PVS)</a>
         <a href="{{ url_for('production_transform_form') }}" class="nav-item {{ 'active' if active=='production-transform' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Production Transform</a>
         <a href="{{ url_for('production_spec_creations_list') }}" class="nav-item {{ 'active' if active=='production-spec-creations' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Production Specs Creations</a>
         <a href="{{ url_for('video_creations_list') }}" class="nav-item {{ 'active' if active=='production-creations' else '' }}"><span class="nav-icon">{{ icon('sparkles') }}</span>Video Creations</a>

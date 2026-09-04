@@ -8,6 +8,22 @@
   reading; the readings roll up into the
   <a href="{{ url_for('format_profiles_list') }}">P+S Profiles</a> below.</div>
 
+{% if total_inputs and resampled < total_inputs %}
+<div class="card" style="border-color:rgba(var(--accent-rgb),.35); background:rgba(var(--accent-rgb),.06)">
+  <strong>Re-sampling in progress — {{ resampled }} of {{ total_inputs }} done.</strong>
+  <div class="muted" style="margin-top:6px;font-size:13.5px">
+    These inputs were first read without a duration, so their frames were taken one per second — a
+    100-second video judged on its opening nine. Each is being re-downloaded, sampled across its real
+    length and re-read. A row showing a real <strong>Length</strong> has been redone; <strong>0s</strong>
+    means it is still queued. Refresh to update.
+  </div>
+</div>
+{% elif total_inputs %}
+<div class="card" style="border-color:rgba(74,222,128,.35); background:rgba(74,222,128,.08)">
+  <strong>All {{ total_inputs }} inputs sampled across their full length.</strong>
+</div>
+{% endif %}
+
 <form method="get" action="{{ url_for('format_inputs_list') }}" class="card">
   <div class="flex">
     <div>

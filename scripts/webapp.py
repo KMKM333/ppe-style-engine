@@ -4195,9 +4195,16 @@ def format_inputs_list():
         "SELECT profile_code, handle FROM format_profiles "
         "ORDER BY CAST(SUBSTR(profile_code, 5) AS INTEGER)"
     ).fetchall()
+    # An input with no duration was sampled one frame per second, so it was
+    # read from its first nine seconds only. Counting them makes the
+    # re-sampling repair visible on the page instead of only in a log.
+    tot, resampled = conn.execute(
+        "SELECT COUNT(*), SUM(CASE WHEN duration_sec > 0 THEN 1 ELSE 0 END) FROM format_inputs"
+    ).fetchone()
     conn.close()
     return render_template("format_inputs_list.html", active="production-format-inputs",
                            rows=rows, profiles=profiles,
+                           resampled=resampled or 0, total_inputs=tot or 0,
                            filters={"profile": profile_filter, "status": status_filter, "q": q})
 
 

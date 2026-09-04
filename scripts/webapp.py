@@ -2973,7 +2973,12 @@ def api_analysis_roster():
         # absent makes the runner re-ingest it: ingest dedupes by URL and
         # hands back the same input and shot ids, every frame gets uploaded,
         # and THEN it classifies. "Some frames" is not "has frames".
-        if r["status"] == "shots_detected" and not r["has_frames"]:
+        #
+        # Keyed on "not classified" rather than on one status: a failed
+        # classify attempt leaves the row in needs_review/classifying, and
+        # keying on 'shots_detected' let exactly that row be offered for
+        # classification again, to fail on the same missing frames forever.
+        if r["status"] != "classified" and not r["has_frames"]:
             continue
         a = acct(r["channel_name"], "production")
         add_video(a, "production", r["input_id"], r["url"], r["title"], r["ingested_at"],

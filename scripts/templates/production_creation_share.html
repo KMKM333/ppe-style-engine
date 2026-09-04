@@ -1,20 +1,47 @@
-{% extends "base.html" %}
-{% block title %}{{ creation.title or ('Spec creation #' ~ creation.creation_id) }} — PPE Engine{% endblock %}
-{% block content %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ creation.title or ('Production spec #' ~ creation.creation_id) }}</title>
+<style>
+  /* Standalone: the app's variables are defined in base.html, which this page
+     deliberately does not extend — a spec handed to an editor should not carry
+     a sidebar or need a login. Light-only and print-friendly on purpose. */
+  :root{
+    --pc-ink:#14161c; --pc-ink-faint:#6b7280; --pc-rule:#e2e5ea;
+    --pc-surface:#fff; --pc-surface-2:#f6f7f9; --pc-accent:#1a5fd6;
+    --pc-slate-soft:#c9d3e4;
+    --bg:#f7f8fa; --panel:#fff; --panel2:#f1f3f6; --border:#e2e5ea;
+    --text:#14161c; --muted:#6b7280; --accent:#1a5fd6; --accent-rgb:26,95,214;
+    --good:#1a7a1a; --mid:#8a6d00; --bad:#a33;
+  }
+  body{ margin:0; padding:36px 20px 60px; background:var(--bg); color:var(--pc-ink);
+        font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+  .pc-wrap{ max-width:900px; margin:0 auto; }
+  table{ border-collapse:collapse; }
+  a{ color:var(--pc-accent); }
+  .pc-print{ display:inline-block; margin-bottom:18px; padding:7px 14px; border:1px solid var(--pc-rule);
+             background:#fff; border-radius:6px; font-size:0.85rem; cursor:pointer; }
+  @media print{ .pc-print{ display:none; } body{ background:#fff; padding:0; } }
+</style>
+</head>
+<body>
+<div class="pc-wrap">
+  <button class="pc-print" onclick="window.print()">Print / save as PDF</button>
+
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Expanded:wght@700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 
 <h1>{{ creation.title or ('Spec creation #' ~ creation.creation_id) }}</h1>
 <div class="sub">
-  <a href="{{ url_for('production_spec_creations_list') }}">&larr; Production Specs Creations</a>
+  
   &middot;
   {% if creation.status == 'generated' %}<span class="pill confirmed">generated {{ creation.generated_at }}</span>
   {% elif creation.status == 'failed' %}<span class="pill bad">failed</span>
   {% else %}<span class="pill draft">draft</span>{% endif %}
   &middot;
-  <form method="post" action="{{ url_for('production_spec_creation_regenerate', creation_id=creation.creation_id) }}" style="display:inline">
-    <button type="submit" class="btn secondary" style="margin:0;padding:3px 10px;font-size:12.5px;vertical-align:middle">{{ 'Regenerate' if creation.status == 'generated' else 'Retry generation' }}</button>
-  </form>
+  
 </div>
 
 {% if creation.status == 'failed' %}
@@ -232,4 +259,7 @@
     .pc-notes-grid{ grid-template-columns:1fr; }
   }
 </style>
-{% endblock %}
+
+</div>
+</body>
+</html>

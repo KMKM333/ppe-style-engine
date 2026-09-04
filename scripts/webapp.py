@@ -5281,7 +5281,7 @@ def production_spec_creation_create():
 
 
 @app.route("/production/spec-creations/<int:creation_id>")
-def production_spec_creation_detail(creation_id):
+def production_spec_creation_detail(creation_id, share=False):
     conn = get_conn()
     row = conn.execute(
         """SELECT c.*, sp.profile_code AS style_profile_code, sc.channel_name AS style_channel_name,
@@ -5320,12 +5320,40 @@ def production_spec_creation_detail(creation_id):
             v = (fp["numeric"].get(attr) or {}).get("mean_val")
             if v is not None:
                 shot_mix[label] = round(v, 1)
+
+    # The format axes a Script + editing spec was written to. Without these
+    # the page named the profile but never showed what it actually asked for,
+    # so there was no way to judge the result against its own brief.
+    format_axes = []
+    if row["format_profile_id"]:
+        by_axis = {
+            a["axis"]: a for a in conn.execute(
+                "SELECT axis, value, note, source FROM format_profile_attributes "
+                "WHERE format_profile_id = ?", (row["format_profile_id"],))
+        }
+        for axis, label, _values in FORMAT_AXES:
+            a = by_axis.get(axis)
+            if a:
+                format_axes.append({"label": label, "value": a["value"], "note": a["note"],
+                                    "source": a["source"]})
     conn.close()
 
-    return render_template(
-        "production_creation_detail.html", active="production-spec-creations",
-        creation=row, beats=beats, production_notes=production_notes, shot_mix=shot_mix,
-    )
+    ctx = dict(creation=row, beats=beats, production_notes=production_notes,
+               shot_mix=shot_mix, format_axes=format_axes)
+    if share:
+        return render_template("production_creation_share.html", **ctx)
+    return render_template("production_creation_detail.html", active="production-spec-creations", **ctx)
+
+
+@app.route("/production/spec-creations/<int:creation_id>/share")
+def production_spec_creation_share(creation_id):
+    """The same spec as a standalone page — no app chrome, print-friendly.
+
+    Every creation has one. Previously only the single hand-published spec
+    had anything shareable (an artifact URL stored in view_url), so there was
+    no way to hand a generated spec to whoever is cutting the video without
+    sending them into the app."""
+    return production_spec_creation_detail(creation_id, share=True)
 
 
 @app.route("/production/spec-creations/<int:creation_id>/regenerate", methods=["POST"])

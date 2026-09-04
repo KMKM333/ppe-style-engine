@@ -47,6 +47,10 @@
       </td>
       <td style="white-space:nowrap">
         <a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('production_spec_creation_detail', creation_id=r.creation_id) }}">View</a>
+        {# Every spec gets a standalone page, not just the one with an
+           externally-published URL — a spec you cannot hand to whoever is
+           cutting the video is only half a deliverable. #}
+        <a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ url_for('production_spec_creation_share', creation_id=r.creation_id) }}" target="_blank" rel="noopener" title="Standalone page — no sidebar, print-friendly, shareable">Share ↗</a>
         {% if r.view_url %}<a class="btn secondary" style="margin:0;padding:5px 12px;font-size:12px" href="{{ r.view_url }}" target="_blank" rel="noopener" title="External view URL">Ext ↗</a>{% endif %}
         <form method="post" action="{{ url_for('production_spec_creation_delete', creation_id=r.creation_id) }}" onsubmit="return confirm('Delete this spec creation?');" style="display:inline">
           <button type="submit" class="danger" style="margin:0;padding:5px 12px;font-size:12px">Delete</button>

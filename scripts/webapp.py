@@ -3018,6 +3018,31 @@ def api_analysis_roster():
     return jsonify({"ok": True, "accounts": out})
 
 
+@app.route("/api/format/duration-repair")
+def api_format_duration_repair_list():
+    """P+S inputs ingested without a real duration.
+
+    yt-dlp returns none for Instagram, and the frame sampler fell back to one
+    frame per second — so a 37-second video was read from its first nine
+    seconds. Unlike the shot pipeline nothing here can be patched in place:
+    the frames themselves are of the wrong moments, so these need
+    re-sampling and re-reading."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT i.format_input_id, i.url, i.title, i.duration_sec, i.status, i.n_frames,
+                  f.profile_code, f.handle
+           FROM format_inputs i
+           LEFT JOIN format_profiles f ON f.format_profile_id = i.format_profile_id
+           ORDER BY i.format_input_id"""
+    ).fetchall()
+    conn.close()
+    out = [dict(r) for r in rows]
+    return jsonify({"ok": True, "total_inputs": len(out),
+                    "needs_repair": [r for r in out if not r["duration_sec"] and r["url"]]})
+
+
 @app.route("/api/format/profiles", methods=["GET"])
 def api_format_profiles():
     """Lists the PVS profiles and the account handle each one belongs to.
@@ -3108,6 +3133,24 @@ def api_ingest_format():
             # Re-submitting the same URL reuses the row rather than making a
             # second one, so a retried job can't double-count in the aggregate.
             fid = existing["format_input_id"]
+            # A re-submission carrying a real duration is a REPAIR of an input
+            # sampled with a broken one: record the duration and the frames'
+            # true timestamps, so what the page shows matches the images the
+            # caller is about to upload over the old ones.
+            if data.get("duration_sec"):
+                conn.execute(
+                    "UPDATE format_inputs SET duration_sec = ?, transcript = COALESCE(?, transcript), "
+                    "has_audio = ? WHERE format_input_id = ?",
+                    (data["duration_sec"], data.get("transcript") or None,
+                     1 if data.get("has_audio") else 0, fid),
+                )
+                for f in frames:
+                    conn.execute(
+                        "UPDATE format_input_frames SET at_sec = ?, captured = 0 "
+                        "WHERE format_input_id = ? AND frame_number = ?",
+                        (f.get("at_sec"), fid, f.get("frame_number")),
+                    )
+                conn.commit()
             rows = conn.execute(
                 "SELECT frame_id, frame_number FROM format_input_frames WHERE format_input_id = ? "
                 "ORDER BY frame_number", (fid,)

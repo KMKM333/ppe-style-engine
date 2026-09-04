@@ -2907,18 +2907,18 @@ def api_analysis_roster():
     # Production (shot analysis)
     for r in conn.execute(
         """SELECT c.channel_name, i.input_id, i.url, i.title, i.ingested_at, i.status, i.platform,
-                  EXISTS(SELECT 1 FROM production_spec_shots s
-                         WHERE s.input_id = i.input_id AND s.frame_captured = 1) AS has_frames
+                  NOT EXISTS(SELECT 1 FROM production_spec_shots s
+                             WHERE s.input_id = i.input_id AND COALESCE(s.frame_captured, 0) = 0) AS has_frames
            FROM production_spec_inputs i JOIN channels c ON c.channel_id = i.channel_id"""
     ):
         if (r["platform"] or "").lower().startswith("youtube"):
             continue
-        # An input whose frames never arrived (an upload that failed midway)
-        # cannot be classified as it stands. Reporting it as absent makes the
-        # runner re-ingest it: ingest dedupes by URL and hands back the same
-        # input and shot ids, the frames get uploaded, and THEN it classifies.
-        # Reporting it as present would only ever re-trigger classification
-        # of nothing.
+        # An input with ANY frame missing (an upload that failed midway — the
+        # disk-full case left 37 of 40 in place) cannot be classified as it
+        # stands: the classifier refuses on the missing shots. Reporting it as
+        # absent makes the runner re-ingest it: ingest dedupes by URL and
+        # hands back the same input and shot ids, every frame gets uploaded,
+        # and THEN it classifies. "Some frames" is not "has frames".
         if r["status"] == "shots_detected" and not r["has_frames"]:
             continue
         a = acct(r["channel_name"], "production")

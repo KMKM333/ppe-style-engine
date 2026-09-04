@@ -3785,6 +3785,8 @@ def api_classify_production_spec(input_id):
         cmd += ["--batch_size", str(batch_size)]
     if skip_shots:
         cmd += ["--skip_shots", ",".join(str(n) for n in skip_shots)]
+    if payload.get("only_unclassified"):
+        cmd += ["--only_unclassified"]
     _spawn_classifier(cmd)
 
     return jsonify({"ok": True, "input_id": input_id, "status": "classifying", "batch_size": batch_size, "skip_shots": skip_shots})

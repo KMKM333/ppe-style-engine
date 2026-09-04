@@ -75,7 +75,16 @@ def _mark_needs_review(input_id, reason):
     print(f"[classify_production_spec_shots] input_id={input_id} needs review: {reason}")
 
 
-def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_numbers=None):
+def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_numbers=None,
+                               only_unclassified=False):
+    """only_unclassified: classify ONLY shots that have no category yet, and
+    leave every existing one exactly as it is.
+
+    For repairing an input that lost its closing shot to a missing duration:
+    the other shots were classified correctly and re-running them would pay
+    the vision cost again for an answer already known. Without this the
+    repair had no safe route — the write loop below rewrites every shot it
+    is given, so a plain re-run overwrites good data with 'other'."""
     skip_shot_numbers = set(skip_shot_numbers or [])
     conn = get_conn()
     input_row = conn.execute(
@@ -90,7 +99,7 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_number
         return
 
     shots = conn.execute(
-        "SELECT shot_id, shot_number, start_sec, end_sec, duration_sec, frame_captured "
+        "SELECT shot_id, shot_number, start_sec, end_sec, duration_sec, frame_captured, content_category "
         "FROM production_spec_shots WHERE input_id = ? ORDER BY shot_number",
         (input_id,),
     ).fetchall()
@@ -119,6 +128,11 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_number
     category_by_shot = {}
 
     pending = [s for s in shots if s["shot_number"] not in skip_shot_numbers]
+    if only_unclassified:
+        pending = [s for s in pending if not s["content_category"]]
+        if not pending:
+            print(f"[classify_production_spec_shots] input_id={input_id}: nothing unclassified — "
+                  "re-aggregating the profile only.")
     batches, current, current_bytes = [], [], 0
     for s in pending:
         # JPEG preferred; PNG is the pre-conversion format (see webapp._shot_frame_file).
@@ -188,6 +202,10 @@ def classify_and_build_profile(input_id, batch_size=BATCH_SIZE, skip_shot_number
 
     conn = get_conn()
     for s in shots:
+        # In repair mode an already-categorised shot is left untouched: its
+        # value came from a real classification and must not be rewritten.
+        if only_unclassified and s["content_category"]:
+            continue
         skipped = s["shot_number"] in skip_shot_numbers
         cat = "other" if skipped else category_by_shot.get(s["shot_number"], "other")
         classified_by = "skipped" if skipped else "claude"
@@ -271,6 +289,10 @@ if __name__ == "__main__":
                      help="Comma-separated shot_numbers to leave out of every vision call entirely "
                           "(e.g. one specific frame that reliably triggers an empty reply from Claude) "
                           "— those shots are marked content_category='other', classified_by='skipped'.")
+    ap.add_argument("--only_unclassified", action="store_true",
+                    help="Classify only shots with no category yet; leave existing ones untouched.")
     args = ap.parse_args()
     skip_shot_numbers = [int(x) for x in args.skip_shots.split(",") if x.strip()]
-    classify_and_build_profile(args.input_id, batch_size=args.batch_size, skip_shot_numbers=skip_shot_numbers)
+    classify_and_build_profile(args.input_id, batch_size=args.batch_size,
+                               skip_shot_numbers=skip_shot_numbers,
+                               only_unclassified=args.only_unclassified)

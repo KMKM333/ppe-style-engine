@@ -42,7 +42,8 @@
     <tr><th>Title</th><th>Status</th><th>Source input</th><th>Target profile</th><th>Tool</th><th>Output</th><th>Created</th><th></th></tr>
     {% for r in rows %}
     <tr>
-      <td><strong>{{ r.title }}</strong></td>
+      <td><strong>{{ r.title }}</strong>
+        {% if r.brief %}<div class="muted" style="font-size:11.5px">{{ r.brief }}</div>{% endif %}</td>
       <td>
         {# The final branch used to print the literal word "planned", so any
            status it did not already know about — an assembled video, say —

@@ -5897,10 +5897,23 @@ def api_record_assembled_video(creation_id):
     # The target profile is whichever one shaped it — the production profile
     # for Editing only, the format profile's account for Script + editing.
     target = spec["production_profile_id"] or spec["style_profile_id"]
-    existing = conn.execute(
-        "SELECT creation_id FROM video_creations WHERE spec_creation_id = ?", (creation_id,)).fetchone()
+    # Keyed by spec AND variant. Rebuilding the same variant replaces its row,
+    # since the video was remade rather than made twice — but a DIFFERENT
+    # build of the same spec is a different thing to look at. Three variants
+    # of one spec were collapsing into one row, so a comparison could not be
+    # made on the site at all.
+    variant = (data.get("variant") or "").strip() or None
+    if variant:
+        existing = conn.execute(
+            "SELECT creation_id FROM video_creations WHERE spec_creation_id = ? AND brief = ?",
+            (creation_id, variant)).fetchone()
+    else:
+        existing = conn.execute(
+            "SELECT creation_id FROM video_creations WHERE spec_creation_id = ? AND brief IS NULL",
+            (creation_id,)).fetchone()
     fields = (data.get("url"), data.get("path"), data.get("duration_sec"),
               data.get("n_shots"), data.get("cost_usd"), data.get("tool") or "assemble_video.py")
+    data = dict(data, brief=variant)
     if existing:
         conn.execute(
             """UPDATE video_creations SET output_url = ?, output_file_path = ?, duration_sec = ?,
@@ -5914,7 +5927,7 @@ def api_record_assembled_video(creation_id):
                (spec_creation_id, target_profile_id, title, brief, status, generation_tool,
                 output_url, output_file_path, duration_sec, n_shots, cost_usd, created_by)
                VALUES (?, ?, ?, ?, 'assembled', ?, ?, ?, ?, ?, ?, 'assemble_video.py')""",
-            (creation_id, target, spec["title"], data.get("brief"), fields[5],
+            (creation_id, target, spec["title"], variant, fields[5],
              fields[0], fields[1], fields[2], fields[3], fields[4]))
         vid = cur.lastrowid
     conn.commit()

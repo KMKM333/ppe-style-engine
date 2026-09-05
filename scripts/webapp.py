@@ -5975,6 +5975,22 @@ def api_assembly_plan(creation_id):
                 brief["palette"] = json.loads(brief.pop("palette_json") or "[]")
             except json.JSONDecodeError:
                 brief["palette"] = []
+    # Read while the connection is still OPEN. This block sat AFTER
+    # conn.close() and took the whole endpoint down with "Cannot operate on a
+    # closed database" — a 500 on every plan, including the ones that do not
+    # use tempo at all.
+    #
+    # The account's measured tempo, so a cut lands where its own videos land.
+    # Offered only when the account actually cuts to the beat: below about
+    # half, quantising would impose a rhythm it does not have.
+    tempo = None
+    if channel_id:
+        ch = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
+        tl = _timeline_for_channel(conn, ch["channel_name"]) if ch else None
+        if tl and tl.get("est_bpm") and (tl.get("pct_cuts_on_a_beat") or 0) >= 50:
+            tempo = {"bpm": tl["est_bpm"], "beat_sec": round(60.0 / tl["est_bpm"], 4),
+                     "pct_cuts_on_a_beat": tl["pct_cuts_on_a_beat"], "n_videos": tl["n_videos"]}
+
     conn.close()
 
     # The plan used to send the style template and the subject and nothing
@@ -5984,17 +6000,6 @@ def api_assembly_plan(creation_id):
     # something already measured or already decided; none of it is new
     # guesswork, and ?plain=1 returns the old bare prompt for comparison.
     plain = request.args.get("plain") == "1"
-    # The account's measured tempo, so the cut can land where its own videos
-    # land. Only offered when the account actually cuts to the beat: below
-    # about half, quantising would impose a rhythm it does not have.
-    tempo = None
-    if channel_id:
-        ch = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
-        tl = _timeline_for_channel(conn, ch["channel_name"]) if ch else None
-        if tl and tl.get("est_bpm") and (tl.get("pct_cuts_on_a_beat") or 0) >= 50:
-            tempo = {"bpm": tl["est_bpm"], "beat_sec": round(60.0 / tl["est_bpm"], 4),
-                     "pct_cuts_on_a_beat": tl["pct_cuts_on_a_beat"], "n_videos": tl["n_videos"]}
-
     template = (brief or {}).get("image_prompt_template") or "{subject}"
     palette = ", ".join((brief or {}).get("palette") or [])
     typography = (brief or {}).get("typography") or ""

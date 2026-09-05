@@ -74,18 +74,20 @@
           <span class="m">shots <b>{{ b.shot_count_min }}&ndash;{{ b.shot_count_max }}</b></span>
         </div>
       </div>
-      {% if b.script_lines %}
-      {# Only Script + editing specs carry written lines. They lead the beat
-         because in that mode they ARE the deliverable — the content points
-         below just say which source fact each line is carrying. #}
+      {% set lines = b.script_lines or b.script_excerpt %}
+      {% if lines %}
+      {# Both modes carry the words for the beat, and the heading says which
+         kind they are: rewritten in the target's cadence, or this script's
+         own sentences copied across. Either way it is what lets whoever
+         cuts the video see which words belong to which shots. #}
       <div class="pc-beat-script">
-        <h4>Script</h4>
-        {% for line in b.script_lines %}<p>{{ line }}</p>{% endfor %}
+        <h4>{{ 'Script' if b.script_lines else 'Script (verbatim from your creation)' }}</h4>
+        {% for line in lines %}<p>{{ line }}</p>{% endfor %}
       </div>
       {% endif %}
       <div class="pc-beat-body">
         <div class="pc-beat-col">
-          <h4>{{ 'Drawn from' if b.script_lines else 'Content' }}</h4>
+          <h4>{{ 'Drawn from' if (b.script_lines or b.script_excerpt) else 'Content' }}</h4>
           <ul>{% for p in b.content_points %}<li>{{ p }}</li>{% endfor %}</ul>
         </div>
         <div class="pc-beat-col">

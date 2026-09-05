@@ -4825,6 +4825,7 @@ Return ONLY a JSON object shaped exactly like this, no other text:
       "title": "short beat title",
       "duration_sec_min": 10, "duration_sec_max": 14,
       "shot_count_min": 4, "shot_count_max": 5,
+      "script_excerpt": ["the source script's own sentences for this beat, VERBATIM"],
       "content_points": ["fact drawn from the source content above, verbatim or close to it"],
       "illustration_captions": ["one visual direction per shot or shot-group"],
       "punch_tags": ["2-4 short punch words for on-screen captions"]
@@ -4837,7 +4838,11 @@ Return ONLY a JSON object shaped exactly like this, no other text:
 
 Split the source content into 5-7 beats that cover its real structure end to end — don't pad, and don't invent facts not present in the source content above.
 
-The script is already written and is not yours to restyle. The pacing target above governs how it is CUT and what is shown — shot lengths, shot mix, visual direction — and nothing else. Draw content_points from the source's own wording rather than paraphrasing it into a different voice."""
+The script is already written and is not yours to restyle. The pacing target above governs how it is CUT and what is shown — shot lengths, shot mix, visual direction — and nothing else. Draw content_points from the source's own wording rather than paraphrasing it into a different voice.
+
+Beat boundaries must fall where the SCRIPT turns — a new claim, a pivot, a payoff — not at even intervals. Set each beat's duration from how long its own words take to deliver, then derive its shot count from that duration and the target average shot length above (a 12-second beat at a 2.5s average is about 5 shots). That is what ties the cutting to this script rather than to a generic rhythm.
+
+script_excerpt is the source script's own sentences for that beat, copied EXACTLY — no rewriting, no summarising, no reordering. Every sentence of the source must appear in exactly one beat's script_excerpt, in order, so the beats together reproduce the whole script. It is what lets whoever cuts the video see which words belong to which shots."""
 
 
 # Mode B. The source is treated as information, and the creator named below
@@ -4878,7 +4883,9 @@ Return ONLY a JSON object shaped exactly like this, no other text:
   ]
 }}
 
-Split the source information into 5-7 beats. Write script_lines for every beat — they are the point of this spec, not an extra."""
+Split the source information into 5-7 beats. Write script_lines for every beat — they are the point of this spec, not an extra.
+
+Set each beat's duration from how long its own lines take to deliver, and derive its shot count from that duration and the pacing above. Beat boundaries fall where the writing turns, not at even intervals."""
 
 
 # Appended to the Mode B prompt only when the target account also has measured

@@ -4076,6 +4076,51 @@ def api_append_shot(input_id):
                     "shot_number": shot_number, "already_classified_shots": already})
 
 
+@app.route("/api/production-spec/channels/<int:channel_id>/visual-style", methods=["POST"])
+def api_analyse_visual_style(channel_id):
+    """Derives what this account's pictures LOOK like from its own stored
+    frames — the one thing neither profile measures, and the reason a spec
+    could name a panel without saying how to draw it.
+
+    One vision call, so it goes through the same cap and budget gates as any
+    other classification rather than being a free-for-all."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    ch = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
+    conn.close()
+    if not ch:
+        return jsonify({"ok": False, "error": "no such channel"}), 404
+    budget = gatekeeper.check_daily_budget()
+    if budget:
+        return jsonify({"ok": False, "held": "budget", "error": budget})
+    busy = _classifiers_busy()
+    if busy:
+        return jsonify({"ok": False, "held": "busy", "error": busy})
+
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "analyse_visual_style.py")
+    _spawn_classifier([sys.executable, script_path, "--channel_id", str(channel_id)])
+    return jsonify({"ok": True, "channel_id": channel_id, "channel": ch["channel_name"],
+                    "status": "analysing the account's visual style"})
+
+
+@app.route("/api/production-spec/channels/<int:channel_id>/visual-style", methods=["GET"])
+def api_get_visual_style(channel_id):
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    r = conn.execute("SELECT * FROM visual_style_briefs WHERE channel_id = ?", (channel_id,)).fetchone()
+    conn.close()
+    if not r:
+        return jsonify({"ok": True, "brief": None})
+    b = dict(r)
+    try:
+        b["palette"] = json.loads(b.pop("palette_json") or "[]")
+    except json.JSONDecodeError:
+        b["palette"] = []
+    return jsonify({"ok": True, "brief": b})
+
+
 @app.route("/api/production-spec/frames")
 def api_list_shot_frames():
     """Every stored shot frame with its format — for the one-off PNG→JPEG
@@ -4658,9 +4703,18 @@ def production_profile_detail(code):
            WHERE i.channel_id = ? ORDER BY i.ingested_at DESC""",
         (profile["channel_id"],),
     ).fetchall()
+    brief = conn.execute(
+        "SELECT * FROM visual_style_briefs WHERE channel_id = ?", (profile["channel_id"],)
+    ).fetchone()
+    brief = dict(brief) if brief else None
+    if brief:
+        try:
+            brief["palette"] = json.loads(brief["palette_json"] or "[]")
+        except json.JSONDecodeError:
+            brief["palette"] = []
     conn.close()
     return render_template(
-        "production_profile_detail.html", active="production-profiles",
+        "production_profile_detail.html", active="production-profiles", brief=brief,
         profile=profile, numeric=numeric, categorical=categorical, inputs=inputs,
     )
 

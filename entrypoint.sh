@@ -112,4 +112,10 @@ python3 migrate_add_format_inputs.py || echo "WARNING: migrate_add_format_inputs
 # how it should sound and be cut — same idempotent pattern, safe on every boot.
 python3 migrate_add_production_creation_format_profile.py || echo "WARNING: migrate_add_production_creation_format_profile.py failed — continuing so the site still serves; see /api/health"
 
+# Stores the LOOK of a production account — palette, art style, composition,
+# typography — derived from its own stored frames. Neither the PS nor the PVS
+# profile captures it, so nothing could reproduce an account's visual
+# identity. Same idempotent pattern, safe on every boot.
+python3 migrate_add_visual_style_brief.py || echo "WARNING: migrate_add_visual_style_brief.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

@@ -10,6 +10,47 @@
   <span class="pill {{ profile.status }}">{{ profile.status }}</span>
 </div>
 
+{# What this account's pictures LOOK like. Neither the shot fingerprint above
+   nor the P+S axes capture it, so without this a spec could call for an
+   "illustration panel" and say nothing about how to draw it. Derived from
+   this account's own frames, not asserted. #}
+<h2 style="margin-top:26px">Visual identity</h2>
+{% if brief %}
+<div class="sub">Read from {{ brief.n_frames_analysed }} of this account's own frames, spread across its videos &middot; {{ brief.analysed_at }}</div>
+<div class="card">
+  {% if brief.palette %}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    {% for hex in brief.palette %}
+    <div style="text-align:center">
+      <div style="width:46px;height:46px;border-radius:8px;border:1px solid var(--border);background:{{ hex }}"></div>
+      <div class="muted mono" style="font-size:10.5px;margin-top:3px">{{ hex }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <table>
+    <tr><th style="width:170px">Art style</th><td>{{ brief.art_style or '—' }}</td></tr>
+    <tr><th>Composition</th><td>{{ brief.composition or '—' }}</td></tr>
+    <tr><th>Typography</th><td>{{ brief.typography or '—' }}</td></tr>
+    <tr><th>Subject treatment</th><td>{{ brief.subject_treatment or '—' }}</td></tr>
+    <tr><th>Motion</th><td>{{ brief.motion or '—' }}</td></tr>
+    <tr><th>Would read as wrong</th><td>{{ brief.avoid or '—' }}</td></tr>
+  </table>
+  {% if brief.image_prompt_template %}
+  <div style="margin-top:14px">
+    <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em">Panel brief &mdash; replace {subject}</div>
+    <p class="mono" style="font-size:12.5px;background:var(--panel2);padding:10px 12px;border-radius:8px;margin:6px 0 0">{{ brief.image_prompt_template }}</p>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<div class="card">
+  <p class="muted" style="margin:0">Not analysed yet. One vision pass over this account's stored frames
+    (~$0.02) produces its palette, art style, composition and a reusable panel brief — the missing piece
+    between a spec that says <em>what</em> to show and a picture that looks like this account.</p>
+</div>
+{% endif %}
+
 <h2 style="margin-top:0">Numeric attributes</h2>
 <div class="card">
   {% if numeric %}

@@ -5523,6 +5523,27 @@ def _format_profile_prompt_block(conn, format_profile_id):
     )
 
 
+def _channel_id_for_format_profile(conn, format_profile):
+    """The channel this PVS profile describes.
+
+    format_profiles.channel_id is almost always NULL: profiles are resolved
+    by account name at ingest and the link is never written back. Anything
+    that needs the channel — the visual-style brief above all — has to
+    repeat that name match rather than trust the column.
+    """
+    if not format_profile:
+        return None
+    if format_profile["channel_id"]:
+        return format_profile["channel_id"]
+    target = _norm_handle(format_profile["handle"]) or _norm_handle(format_profile["display_name"])
+    if not target:
+        return None
+    for r in conn.execute("SELECT channel_id, channel_name FROM channels"):
+        if _norm_handle(r["channel_name"]) == target:
+            return r["channel_id"]
+    return None
+
+
 def _format_profile_pacing_profile(conn, format_profile):
     """The PS profile for the SAME account as this PVS profile, if one exists.
 
@@ -6083,6 +6104,14 @@ def api_assembly_plan(creation_id):
         if pacing_id:
             r2 = conn.execute("SELECT channel_id FROM style_profiles WHERE profile_id = ?", (pacing_id,)).fetchone()
             channel_id = r2["channel_id"] if r2 else None
+        # An account can have a P+S profile and no shot analysis at all —
+        # the normal state for the long-form accounts. Then there is no PS
+        # profile to borrow a channel from, and format_profiles.channel_id
+        # is NULL because get_or_create_format_profile never writes it. Fall
+        # back to resolving the account by name, the same loose match that
+        # function uses, so a brief derived from its own frames is found.
+        if not channel_id and fprof:
+            channel_id = _channel_id_for_format_profile(conn, fprof)
     brief = None
     if channel_id:
         b = conn.execute("SELECT * FROM visual_style_briefs WHERE channel_id = ?", (channel_id,)).fetchone()

@@ -21,6 +21,7 @@ import argparse
 import json
 
 import llm_client
+import re
 from db_init import get_conn, PRODUCTION_SPEC_SHOTS_DIR, FORMAT_FRAMES_DIR
 
 MAX_FRAMES = 12          # enough to see the identity; small enough to stay well inside the payload cap
@@ -43,6 +44,12 @@ Return ONLY a JSON object shaped exactly like this, no other text:
 }"""
 
 
+def _norm(x):
+    """Same loose match get_or_create_format_profile uses, so an account
+    resolves here exactly as it does there."""
+    return re.sub(r"[^a-z0-9]", "", (x or "").lower())
+
+
 def sample_format_frames(conn, channel_id, max_frames=MAX_FRAMES):
     """Fallback source: the P+S frames.
 
@@ -56,13 +63,24 @@ def sample_format_frames(conn, channel_id, max_frames=MAX_FRAMES):
     Promotional segments are skipped: their pictures are pricing tables and
     product shots, which is exactly not the look we are describing.
     """
+    # format_profiles.channel_id is usually NULL — get_or_create_format_profile
+    # resolves an account by name and never writes the link — so joining on it
+    # finds nothing. Match the way that function does: on the normalised name.
+    ch = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?",
+                      (channel_id,)).fetchone()
+    target = _norm(ch["channel_name"]) if ch else ""
+    profile_ids = [r["format_profile_id"] for r in conn.execute(
+        "SELECT format_profile_id, channel_id, handle, display_name FROM format_profiles")
+        if r["channel_id"] == channel_id
+        or (target and target in (_norm(r["handle"]), _norm(r["display_name"])))]
+    if not profile_ids:
+        return []
+    ph = ",".join("?" * len(profile_ids))
     inputs = [r["format_input_id"] for r in conn.execute(
-        """SELECT i.format_input_id
-           FROM format_inputs i
-           JOIN format_profiles f ON f.format_profile_id = i.format_profile_id
-           WHERE f.channel_id = ? AND i.status = 'classified'
-             AND COALESCE(i.excluded, 0) = 0
-           ORDER BY i.ingested_at DESC""", (channel_id,))]
+        f"""SELECT format_input_id FROM format_inputs
+            WHERE format_profile_id IN ({ph}) AND status = 'classified'
+              AND COALESCE(excluded, 0) = 0
+            ORDER BY ingested_at DESC""", profile_ids)]
     if not inputs:
         return []
     per_input = max(1, max_frames // max(1, min(len(inputs), max_frames)))

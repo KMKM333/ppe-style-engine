@@ -128,4 +128,9 @@ python3 migrate_add_video_creation_spec_link.py || echo "WARNING: migrate_add_vi
 # pattern, safe on every boot.
 python3 migrate_add_video_timelines.py || echo "WARNING: migrate_add_video_timelines.py failed — continuing so the site still serves; see /api/health"
 
+# Chapters need to know where they are: video_sections recorded order and
+# content but no position, so nothing could sample frames from a chapter or
+# cut a clip of one. Same idempotent pattern, safe on every boot.
+python3 migrate_add_section_timing.py || echo "WARNING: migrate_add_section_timing.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

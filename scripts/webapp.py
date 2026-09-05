@@ -5456,7 +5456,19 @@ def _feel_block(conn, channel_name):
         lines.append(f"- Brightness: mean luma {t['mean_luma']} "
                      f"({'bright, high-key' if t['mean_luma'] > 140 else 'dark and moody' if t['mean_luma'] < 95 else 'mid-key'})")
     if t.get("duration_sec"):
-        lines.append(f"- Typical length: {t['duration_sec']:.0f}s")
+        # A long-form creator's runtime does NOT transfer to a short. Their
+        # cut rhythm, movement and dynamics do — those are craft at any
+        # length — but "typical length 1980s" sitting in a spec whose first
+        # line asks for a short video reads as an instruction to pad to 33
+        # minutes. Say which half to carry over.
+        if t["duration_sec"] > 180:
+            lines.append(
+                f"- Typical length: {t['duration_sec']/60:.0f} min — this creator works in LONG FORM. "
+                f"Carry over the rhythm above (cut rate, movement, dynamics), NOT the runtime: "
+                f"the spec you are writing is a short video and must stand on its own at that length."
+            )
+        else:
+            lines.append(f"- Typical length: {t['duration_sec']:.0f}s")
     if not lines:
         return ""
     return FEEL_PROMPT_BLOCK.format(n_videos=t["n_videos"], channel=channel_name, lines="\n".join(lines))

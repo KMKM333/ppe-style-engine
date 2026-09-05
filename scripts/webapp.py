@@ -5270,7 +5270,13 @@ def _generate_production_creation(creation_id):
             prompt = _build_production_creation_prompt(
                 conn, content_block, row["style_profile_id"], row["production_profile_id"],
             )
-        data = generate_json(prompt, max_tokens=4096)
+        # 4096 was enough when a beat carried only facts and captions. Beats
+        # now also carry the script — verbatim in Editing only, rewritten in
+        # Script + editing — so a 900-word source needs several times that,
+        # and the ceiling showed up as an EMPTY reply rather than a truncated
+        # one: "Model didn't return valid JSON ... Reply was:" with nothing
+        # after it.
+        data = generate_json(prompt, max_tokens=16000)
         beats = data.get("beats") or []
         runtime = sum(
             ((b.get("duration_sec_min") or 0) + (b.get("duration_sec_max") or 0)) / 2

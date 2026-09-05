@@ -118,4 +118,9 @@ python3 migrate_add_production_creation_format_profile.py || echo "WARNING: migr
 # identity. Same idempotent pattern, safe on every boot.
 python3 migrate_add_visual_style_brief.py || echo "WARNING: migrate_add_visual_style_brief.py failed — continuing so the site still serves; see /api/health"
 
+# Lets a finished video point back at the spec it was assembled from —
+# video_creations predates the spec pipeline and could only describe a video
+# made by hand from a reference. Same idempotent pattern, safe on every boot.
+python3 migrate_add_video_creation_spec_link.py || echo "WARNING: migrate_add_video_creation_spec_link.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

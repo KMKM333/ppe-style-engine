@@ -49,7 +49,12 @@
         {% elif r.status == 'queued' %}<span class="pill draft">queued</span>
         {% else %}<span class="pill draft">planned</span>{% endif %}
       </td>
-      <td class="muted">{{ r.source_title or '—' }}</td>
+      <td>
+        {% if r.spec_id %}<a href="{{ url_for('production_spec_creation_detail', creation_id=r.spec_id) }}">{{ r.spec_title or ('Spec #' ~ r.spec_id) }}</a>
+          <div class="muted" style="font-size:11.5px">production spec</div>
+        {% elif r.source_title %}{{ r.source_title }}
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
       <td>{{ r.profile_code or '—' }}</td>
       <td class="muted">{{ r.generation_tool or '—' }}</td>
       <td>{% if r.output_url %}<a href="{{ r.output_url }}" target="_blank" rel="noopener">link ↗</a>{% else %}<span class="muted">—</span>{% endif %}</td>

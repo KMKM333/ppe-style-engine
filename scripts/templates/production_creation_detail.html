@@ -101,6 +101,26 @@
   </section>
   {% endif %}
 
+  {% if video %}
+  {# The finished video, linked back to the spec it was built from. Without
+     this an assembled video existed only on the machine that made it. #}
+  <section class="pc-section">
+    <h3 class="pc-section-title"><span class="pc-section-num">VID</span>Assembled video</h3>
+    <p class="pc-section-note">
+      {{ '%.0f' % video.duration_sec if video.duration_sec else '?' }}s &middot;
+      {{ video.n_shots or '?' }} shots &middot;
+      {% if video.cost_usd %}${{ '%.2f' % video.cost_usd }} &middot;{% endif %}
+      built by {{ video.generation_tool }} &middot; {{ video.updated_at or video.created_at }}
+    </p>
+    {% if video.output_url %}
+    <p style="margin:0"><a href="{{ video.output_url }}" target="_blank" rel="noopener">Watch it ↗</a></p>
+    {% endif %}
+    {% if video.output_file_path %}
+    <p class="pc-section-note mono" style="margin:6px 0 0">{{ video.output_file_path }}</p>
+    {% endif %}
+  </section>
+  {% endif %}
+
   {% if format_axes %}
   <section class="pc-section">
     <h3 class="pc-section-title"><span class="pc-section-num">FMT</span>Format brief &middot; {{ creation.format_handle }} ({{ creation.format_profile_code }})</h3>

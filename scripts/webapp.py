@@ -4724,10 +4724,15 @@ def video_creations_list():
     status_filter = request.args.get("status", "")
     profile_filter = request.args.get("profile", "")
 
-    query = """SELECT vc.*, p.profile_code, i.title AS source_title
+    # A video assembled from a spec has no source production INPUT — its
+    # lineage runs through the spec instead, and joining only on the input
+    # left those rows looking sourceless.
+    query = """SELECT vc.*, p.profile_code, i.title AS source_title,
+                      sc.title AS spec_title, sc.creation_id AS spec_id
                FROM video_creations vc
                LEFT JOIN style_profiles p ON p.profile_id = vc.target_profile_id
                LEFT JOIN production_spec_inputs i ON i.input_id = vc.source_input_id
+               LEFT JOIN production_spec_creations sc ON sc.creation_id = vc.spec_creation_id
                WHERE 1=1"""
     params = []
     if status_filter:
@@ -5569,11 +5574,65 @@ def production_spec_creation_detail(creation_id, share=False):
                                     "source": a["source"]})
     conn.close()
 
+    conn2 = get_conn()
+    video = conn2.execute(
+        "SELECT * FROM video_creations WHERE spec_creation_id = ? ORDER BY creation_id DESC LIMIT 1",
+        (creation_id,)).fetchone()
+    conn2.close()
     ctx = dict(creation=row, beats=beats, production_notes=production_notes,
-               shot_mix=shot_mix, format_axes=format_axes)
+               shot_mix=shot_mix, format_axes=format_axes,
+               video=dict(video) if video else None)
     if share:
         return render_template("production_creation_share.html", **ctx)
     return render_template("production_creation_detail.html", active="production-spec-creations", **ctx)
+
+
+@app.route("/api/creations/<int:creation_id>/assembled", methods=["POST"])
+def api_record_assembled_video(creation_id):
+    """Records a video built from a spec, so it appears in the engine rather
+    than only on the machine that made it.
+
+    Body: {url, path, duration_sec, n_shots, cost_usd, tool}
+    Idempotent per spec: re-assembling updates the row instead of adding a
+    second one, since the video was rebuilt, not made twice."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    conn = get_conn()
+    spec = conn.execute(
+        """SELECT c.creation_id, c.title, c.production_profile_id, c.format_profile_id,
+                  c.style_profile_id
+           FROM production_spec_creations c WHERE c.creation_id = ?""", (creation_id,)).fetchone()
+    if not spec:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such spec creation"}), 404
+
+    # The target profile is whichever one shaped it — the production profile
+    # for Editing only, the format profile's account for Script + editing.
+    target = spec["production_profile_id"] or spec["style_profile_id"]
+    existing = conn.execute(
+        "SELECT creation_id FROM video_creations WHERE spec_creation_id = ?", (creation_id,)).fetchone()
+    fields = (data.get("url"), data.get("path"), data.get("duration_sec"),
+              data.get("n_shots"), data.get("cost_usd"), data.get("tool") or "assemble_video.py")
+    if existing:
+        conn.execute(
+            """UPDATE video_creations SET output_url = ?, output_file_path = ?, duration_sec = ?,
+               n_shots = ?, cost_usd = ?, generation_tool = ?, status = 'assembled',
+               updated_at = datetime('now') WHERE creation_id = ?""",
+            fields + (existing["creation_id"],))
+        vid = existing["creation_id"]
+    else:
+        cur = conn.execute(
+            """INSERT INTO video_creations
+               (spec_creation_id, target_profile_id, title, brief, status, generation_tool,
+                output_url, output_file_path, duration_sec, n_shots, cost_usd, created_by)
+               VALUES (?, ?, ?, ?, 'assembled', ?, ?, ?, ?, ?, ?, 'assemble_video.py')""",
+            (creation_id, target, spec["title"], data.get("brief"), fields[5],
+             fields[0], fields[1], fields[2], fields[3], fields[4]))
+        vid = cur.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "video_creation_id": vid, "spec_creation_id": creation_id})
 
 
 @app.route("/api/creations/<int:creation_id>/assembly-plan")

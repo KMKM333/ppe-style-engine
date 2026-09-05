@@ -4862,6 +4862,18 @@ ENTITY_SPECS = {
         "children": ["production_spec_shots", "production_spec_attributes"],
         "detach": [("video_creations", "source_input_id")],
     },
+    # A spec creation inherits its source creation's title, so re-speccing
+    # the same script against three profiles gives three identically-named
+    # rows. Renaming is the only way to tell them apart by eye.
+    "spec_creation": {
+        "label": "spec creation", "table": "production_spec_creations", "pk": "creation_id",
+        "name_column": "title", "children": [],
+        # A rendered video points back at the spec it was cut from. Deleting
+        # the spec shouldn't delete that record of work, and with
+        # foreign_keys = ON a bare DELETE would raise instead — so the link
+        # is cleared rather than followed.
+        "detach": [("video_creations", "spec_creation_id")],
+    },
     "format_input": {
         "label": "P+S input", "table": "format_inputs", "pk": "format_input_id",
         "name_column": "title",

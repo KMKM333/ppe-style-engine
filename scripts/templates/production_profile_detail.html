@@ -18,12 +18,26 @@
    separate two accounts that cut at the same rate; movement and sound can. #}
 <h2 style="margin-top:26px">Measured feel</h2>
 {% if timeline %}
-<div class="sub">Median across {{ timeline.n_videos }} of this account's own videos, computed from the files — free, and recomputable at any time.</div>
+<div class="sub">Median across {{ timeline.n_videos }} of this account's own videos, computed from the files — free, and recomputable at any time.
+  A value only appears when at least half the videos could produce it; otherwise it says so rather than averaging whichever happened to work.</div>
 <div class="card" style="padding:0">
   <table>
     <tr><th style="width:180px">Cut rhythm</th>
-      <td>{{ timeline.cuts_per_min }} cuts/min &middot; median shot {{ timeline.median_shot_sec }}s
-        {% if timeline.pct_cuts_on_a_pause is not none %}<span class="muted"> &middot; {{ timeline.pct_cuts_on_a_pause }}% of cuts land on a pause</span>{% endif %}</td></tr>
+      <td>{{ timeline.cuts_per_min }} cuts/min &middot; median shot {{ timeline.median_shot_sec }}s</td></tr>
+    <tr><th>Beat sync</th>
+      <td>
+        {# Two different questions, and which one applies depends on the
+           video. A music-led video never falls silent, so the pause test is
+           undefined there rather than zero. #}
+        {% if timeline.pct_cuts_on_a_beat is not none %}
+          <strong>{{ timeline.pct_cuts_on_a_beat }}%</strong> of cuts land on a musical beat
+          {% if timeline.est_bpm %}<span class="muted"> &middot; ~{{ timeline.est_bpm }} BPM</span>{% endif %}
+        {% elif timeline.pct_cuts_on_a_pause is not none %}
+          <strong>{{ timeline.pct_cuts_on_a_pause }}%</strong> of cuts land on a speech pause
+        {% else %}
+          <span class="muted">not measurable &mdash; only {{ timeline.measured_on.pct_cuts_on_a_beat }} videos gave a reading</span>
+        {% endif %}
+      </td></tr>
     <tr><th>Movement</th>
       <td>
         {% if timeline.pct_near_still is not none %}

@@ -4144,10 +4144,11 @@ def api_ingest_timeline():
            (content_hash, url, title, channel_name, duration_sec,
             n_cuts, n_shots, cuts_per_min, avg_shot_sec, median_shot_sec,
             shortest_shot_sec, longest_shot_sec, pct_cuts_on_a_pause,
+            pct_cuts_on_a_beat, est_bpm,
             integrated_lufs, loudness_range_lu, true_peak_dbfs, n_pauses, pct_quiet,
             motion_mean, motion_max, pct_near_still, mean_luma, luma_stdev,
             detail_json, analysed_at)
-           VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?, datetime('now'))
+           VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?, datetime('now'))
            ON CONFLICT(content_hash) DO UPDATE SET
              url=excluded.url, title=COALESCE(excluded.title, video_timelines.title),
              channel_name=COALESCE(excluded.channel_name, video_timelines.channel_name),
@@ -4157,6 +4158,7 @@ def api_ingest_timeline():
              median_shot_sec=excluded.median_shot_sec, shortest_shot_sec=excluded.shortest_shot_sec,
              longest_shot_sec=excluded.longest_shot_sec,
              pct_cuts_on_a_pause=excluded.pct_cuts_on_a_pause,
+             pct_cuts_on_a_beat=excluded.pct_cuts_on_a_beat, est_bpm=excluded.est_bpm,
              integrated_lufs=excluded.integrated_lufs, loudness_range_lu=excluded.loudness_range_lu,
              true_peak_dbfs=excluded.true_peak_dbfs, n_pauses=excluded.n_pauses,
              pct_quiet=excluded.pct_quiet, motion_mean=excluded.motion_mean,
@@ -4167,7 +4169,8 @@ def api_ingest_timeline():
          d.get("duration_sec"),
          e.get("n_cuts"), e.get("n_shots"), e.get("cuts_per_min"), e.get("avg_shot_sec"),
          e.get("median_shot_sec"), e.get("shortest_shot_sec"), e.get("longest_shot_sec"),
-         e.get("pct_cuts_on_a_pause"),
+         e.get("pct_cuts_on_a_pause"), e.get("pct_cuts_on_a_beat"),
+         (d.get("rhythm") or {}).get("est_bpm"),
          so.get("integrated_lufs"), so.get("loudness_range_lu"), so.get("true_peak_dbfs"),
          so.get("n_pauses"), so.get("pct_quiet"),
          mo.get("mean"), mo.get("max"), mo.get("pct_near_still"),
@@ -4211,11 +4214,21 @@ def _timeline_for_channel(conn, channel_name):
         return None
     fields = ("cuts_per_min", "avg_shot_sec", "median_shot_sec", "integrated_lufs",
               "loudness_range_lu", "pct_quiet", "n_pauses", "motion_mean", "pct_near_still",
-              "mean_luma", "luma_stdev", "duration_sec", "pct_cuts_on_a_pause")
-    out = {"n_videos": len(rows)}
+              "mean_luma", "luma_stdev", "duration_sec", "pct_cuts_on_a_pause",
+              "pct_cuts_on_a_beat", "est_bpm")
+    out = {"n_videos": len(rows), "measured_on": {}}
     for f in fields:
         vals = [r[f] for r in rows if r.get(f) is not None]
-        out[f] = round(_st.median(vals), 2) if vals else None
+        # A metric most videos could not produce is NOT a median of the
+        # survivors. Silence detection returns nothing on a music-backed
+        # video — 49 of 110 measured — and averaging the two that happened to
+        # work reported an instrument's blindness as a fact about the
+        # creator. Under half the videos, it is withheld and the page says so.
+        if vals and len(vals) * 2 >= len(rows):
+            out[f] = round(_st.median(vals), 2)
+        else:
+            out[f] = None
+        out["measured_on"][f] = f"{len(vals)}/{len(rows)}"
     return out
 
 

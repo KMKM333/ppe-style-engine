@@ -33,7 +33,8 @@
         <th style="width:120px">Editing</th>
         <td>{{ timeline.n_cuts }} cuts, {{ '%.1f'|format(timeline.cuts_per_min) if timeline.cuts_per_min is not none else '—' }}/min
           &middot; avg shot {{ '%.2fs'|format(timeline.avg_shot_sec) if timeline.avg_shot_sec is not none else '—' }}
-          {% if timeline.pct_cuts_on_a_pause is not none %}<br><span class="muted">{{ timeline.pct_cuts_on_a_pause }}% of cuts land on a pause</span>{% endif %}
+          {% if timeline.pct_cuts_on_a_beat is not none %}<br><span class="muted">{{ timeline.pct_cuts_on_a_beat }}% of cuts land on a musical beat{% if timeline.est_bpm %} (~{{ timeline.est_bpm }} BPM){% endif %}</span>
+          {% elif timeline.pct_cuts_on_a_pause is not none %}<br><span class="muted">{{ timeline.pct_cuts_on_a_pause }}% of cuts land on a speech pause</span>{% endif %}
         </td>
       </tr>
       <tr>

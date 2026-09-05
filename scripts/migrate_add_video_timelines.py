@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS video_timelines (
     median_shot_sec                       REAL,
     shortest_shot_sec                       REAL,
     longest_shot_sec                          REAL,
-    pct_cuts_on_a_pause                         REAL,  -- what "beat-synced" means, measured
+    pct_cuts_on_a_pause                         REAL,  -- undefined on music-backed video
+    pct_cuts_on_a_beat                            REAL,  -- what "beat-synced" means, measured
+    est_bpm                                         REAL,
 
     -- sound: every 'Role of sound' reading before this was inferred from
     -- whether a transcript existed. These come from listening to the track.
@@ -65,9 +67,20 @@ INDEXES = [
 ]
 
 
+ADDED_COLUMNS = [
+    ("video_timelines", "pct_cuts_on_a_beat", "REAL"),
+    ("video_timelines", "est_bpm", "REAL"),
+]
+
+
 def run():
     conn = get_conn()
     conn.execute(TABLE)
+    for table, column, coltype in ADDED_COLUMNS:
+        existing = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+        if column not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+            print(f"[migrate_add_video_timelines] added {table}.{column}")
     for idx in INDEXES:
         conn.execute(idx)
     conn.commit()

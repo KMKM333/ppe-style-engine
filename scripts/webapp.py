@@ -5257,6 +5257,8 @@ Return ONLY a JSON object shaped exactly like this, no other text:
 {{
   "title": "a punchy title, in the target creator's register",
   "dek": "one sentence describing what this is and whose format it is built to",
+  "runtime_target_sec": 0,
+  "runtime_rationale": "one sentence: why this material wants this length rather than a shorter or longer one",
   "beats": [
     {{
       "step": 1,
@@ -5274,9 +5276,31 @@ Return ONLY a JSON object shaped exactly like this, no other text:
   ]
 }}
 
-Split the source information into 5-7 beats. Write script_lines for every beat — they are the point of this spec, not an extra.
+HOW LONG THIS SHOULD BE
 
-Set each beat's duration from how long its own lines take to deliver, and derive its shot count from that duration and the pacing above. Beat boundaries fall where the writing turns, not at even intervals."""
+Choose a total runtime between 40 and 120 seconds, and say why in runtime_rationale. This is a
+judgement about the material, not a formula: a single sharp idea with one example earns 40-60s and
+is spoiled by padding; a claim needing several pieces of evidence, or a turn the viewer has to be
+walked through, earns 90-120s and is spoiled by rushing. Ask what this source can actually sustain,
+then commit to a length and write to it. Landing anywhere inside the band is right; the failure is
+writing to no length at all.
+
+Then WRITE TO IT. Narration is delivered at almost exactly 16 characters per second — measured from
+this pipeline's own renders, not estimated — so the total length of every script_line together must
+come to about 16 x your chosen runtime in characters:
+
+  40s = ~640 chars    60s = ~960 chars    90s = ~1440 chars    120s = ~1920 chars
+
+Each beat's duration_sec is then its own lines' character count divided by 16, and the beat
+durations must add up to your runtime_target_sec. Getting this wrong is the most visible defect in
+the finished video: the pictures are cut to your durations but the voice runs to its own length, so
+an overwritten spec stretches every shot and destroys the cut rhythm above.
+
+Split the source into 5-9 beats — nearer 5 at the short end of the band, nearer 9 at the long end.
+Write script_lines for every beat — they are the point of this spec, not an extra.
+
+Derive each beat's shot count from its duration and the pacing above. Beat boundaries fall where
+the writing turns, not at even intervals."""
 
 
 # Appended to the Mode B prompt only when the target account also has measured
@@ -5753,11 +5777,15 @@ def _generate_production_creation(creation_id):
             """UPDATE production_spec_creations SET
                title = COALESCE(NULLIF(title, ''), ?), dek = ?, beats_json = ?, production_notes_json = ?,
                target_runtime_sec = ?, target_shot_count_min = ?, target_shot_count_max = ?,
+               runtime_rationale = ?, runtime_intended_sec = ?,
                status = 'generated', generation_error = NULL, generated_at = datetime('now')
                WHERE creation_id = ?""",
             (
                 data.get("title"), data.get("dek"), json.dumps(beats), json.dumps(data.get("production_notes") or []),
-                runtime, shot_min, shot_max, creation_id,
+                runtime, shot_min, shot_max,
+                (data.get("runtime_rationale") or "").strip() or None,
+                data.get("runtime_target_sec") or None,
+                creation_id,
             ),
         )
         conn.commit()

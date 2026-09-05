@@ -64,7 +64,7 @@
     </div>
     {% if creation.dek %}<p class="pc-dek">{{ creation.dek }}</p>{% endif %}
     <div class="pc-stat-strip">
-      <div class="pc-stat"><span class="pc-stat-value pc-mono">{{ creation.target_runtime_sec|round|int if creation.target_runtime_sec else '—' }}s</span><span class="pc-stat-label">Target runtime</span></div>
+      <div class="pc-stat" {% if creation.runtime_rationale %}title="{{ creation.runtime_rationale }}"{% endif %}><span class="pc-stat-value pc-mono">{{ creation.target_runtime_sec|round|int if creation.target_runtime_sec else '—' }}s</span><span class="pc-stat-label">Target runtime</span></div>
       <div class="pc-stat"><span class="pc-stat-value pc-mono">{{ creation.target_shot_count_min|int if creation.target_shot_count_min else '—' }}&ndash;{{ creation.target_shot_count_max|int if creation.target_shot_count_max else '—' }}</span><span class="pc-stat-label">Target shot count</span></div>
       <div class="pc-stat"><span class="pc-stat-value pc-mono">{{ beats|length }}</span><span class="pc-stat-label">Beats</span></div>
       <div class="pc-stat"><span class="pc-stat-value pc-mono">n={{ creation.production_n_analysed or 0 }}</span><span class="pc-stat-label">Pacing sample size</span></div>

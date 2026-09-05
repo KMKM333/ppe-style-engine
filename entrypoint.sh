@@ -139,4 +139,9 @@ python3 migrate_add_section_timing.py || echo "WARNING: migrate_add_section_timi
 # segment be excluded from the aggregate while staying visible on its own page.
 python3 migrate_add_format_input_excluded.py || echo "WARNING: migrate_add_format_input_excluded.py failed — continuing so the site still serves; see /api/health"
 
+# A spec now chooses its own runtime inside a 40-120s band and says why.
+# Records the reasoning, and the length it said it was aiming for, so a spec
+# that argued for 90s and then wrote 140 is visible rather than silent.
+python3 migrate_add_spec_runtime_rationale.py || echo "WARNING: migrate_add_spec_runtime_rationale.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

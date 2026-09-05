@@ -37,11 +37,23 @@
     </div>
     {% if creation.dek %}<p class="pc-dek">{{ creation.dek }}</p>{% endif %}
     <div class="pc-stat-strip">
-      <div class="pc-stat"><span class="pc-stat-value pc-mono">{{ creation.target_runtime_sec|round|int if creation.target_runtime_sec else '—' }}s</span><span class="pc-stat-label">Target runtime</span></div>
+      <div class="pc-stat" {% if creation.runtime_rationale %}title="{{ creation.runtime_rationale }}"{% endif %}><span class="pc-stat-value pc-mono">{{ creation.target_runtime_sec|round|int if creation.target_runtime_sec else '—' }}s</span><span class="pc-stat-label">Target runtime</span></div>
       <div class="pc-stat"><span class="pc-stat-value pc-mono">{{ creation.target_shot_count_min|int if creation.target_shot_count_min else '—' }}&ndash;{{ creation.target_shot_count_max|int if creation.target_shot_count_max else '—' }}</span><span class="pc-stat-label">Target shot count</span></div>
       <div class="pc-stat"><span class="pc-stat-value pc-mono">{{ beats|length }}</span><span class="pc-stat-label">Beats</span></div>
       <div class="pc-stat"><span class="pc-stat-value pc-mono">n={{ creation.production_n_analysed or 0 }}</span><span class="pc-stat-label">Pacing sample size</span></div>
     </div>
+{% if creation.runtime_rationale %}
+{# Length is now a judgement the spec makes and defends, inside a 40-120s
+   band, rather than whatever fell out of writing the beats. Showing the
+   reasoning is what makes it reviewable. #}
+<div class="sub" style="margin-top:10px">
+  <strong>Why this length:</strong> {{ creation.runtime_rationale }}
+  {% if creation.runtime_intended_sec and creation.target_runtime_sec
+        and (creation.runtime_intended_sec - creation.target_runtime_sec)|abs > 8 %}
+  <span class="pill bad" style="margin-left:8px">aimed for {{ creation.runtime_intended_sec|round|int }}s, beats sum to {{ creation.target_runtime_sec|round|int }}s</span>
+  {% endif %}
+</div>
+{% endif %}
   </header>
 
   {% if beats %}

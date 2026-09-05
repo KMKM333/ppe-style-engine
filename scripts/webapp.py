@@ -8437,5 +8437,63 @@ def api_swipe_create():
     })
 
 
+@app.route("/api/creations/from-text", methods=["POST"])
+def api_creation_from_text():
+    """Write one Library creation from a piece of source text.
+
+    The swipe loop already does this — rate the input, build the prompt for a
+    profile and an output form, generate, save, score — but it picks its own
+    sources at random, so there is no way to aim it at a particular book
+    example. This is the same chain with the text supplied directly, for when
+    you know exactly which example you want written up and in whose voice.
+
+    POST {"text": "...", "title": "...", "profile_code": "C.1",
+          "format": "insta_script", "label": "..."}
+    """
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    d = request.get_json(silent=True) or {}
+    text = (d.get("text") or "").strip()
+    profile_code = (d.get("profile_code") or "").strip()
+    form = (d.get("format") or "insta_script").strip()
+    if not text or not profile_code:
+        return jsonify({"ok": False, "error": "'text' and 'profile_code' are required"}), 400
+    if form not in FORM_SPECS:
+        return jsonify({"ok": False, "error": f"format must be one of {sorted(FORM_SPECS)}"}), 400
+
+    budget = gatekeeper.check_daily_budget()
+    if budget:
+        return jsonify({"ok": False, "held": "budget", "error": budget})
+
+    conn = get_conn()
+    prof = conn.execute("SELECT profile_id FROM style_profiles WHERE profile_code = ?",
+                        (profile_code,)).fetchone()
+    conn.close()
+    if not prof:
+        return jsonify({"ok": False, "error": f"no such profile: {profile_code}"}), 404
+
+    title = (d.get("title") or "").strip() or "Untitled source"
+    try:
+        result = rate_input(text, title=title,
+                            source_label=(d.get("label") or "").strip() or title,
+                            input_type="book_example")
+        test_id = result["test_id"]
+        prompt_text = build_data_output_prompt(test_id, profile_code, form)
+        gen = generate_transform(prompt_text)
+        transformation_id = save_transformation(test_id, profile_code, gen["title"],
+                                                gen["script"], generated_by="api")
+        scored = score_transformation(transformation_id)
+    except LLMConfigError as e:
+        return jsonify({"ok": False, "error": str(e)}), 503
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"generation failed: {e}"}), 500
+
+    return jsonify({"ok": True, "transformation_id": transformation_id,
+                    "title": gen["title"], "profile_code": profile_code, "format": form,
+                    "score": (scored or {}).get("post_score"),
+                    "url": url_for("creation_detail", transformation_id=transformation_id,
+                                   _external=True)})
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=5050, debug=True, use_reloader=False, threaded=True)

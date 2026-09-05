@@ -3078,6 +3078,66 @@ def api_analysis_roster():
     return jsonify({"ok": True, "accounts": out})
 
 
+@app.route("/api/format/link-profiles", methods=["POST"])
+def api_link_format_profiles():
+    """Match every PVS profile to the A.* and PS.* profiles of the SAME
+    account, by normalised handle.
+
+    These links are the whole point of the three layers: they are what lets a
+    spec say "this account's writing, this account's cutting, this account's
+    format" and mean one creator rather than three. They were being set by
+    hand at seed time and, for the pacing link, lazily during a Script +
+    editing generation — so an account analysed later simply never got
+    linked, and its page said "none yet" despite both profiles existing.
+
+    Only fills blanks: a link already set by hand is left alone unless
+    relink is passed."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    relink = bool((request.get_json(silent=True) or {}).get("relink"))
+    conn = get_conn()
+    by_handle = {}
+    for r in conn.execute(
+        """SELECT p.profile_id, p.profile_code, p.media_type, c.channel_name
+           FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id"""
+    ):
+        key = _norm_handle(r["channel_name"])
+        if not key:
+            continue
+        slot = "production" if r["media_type"] == "ProductionSpec" else "style"
+        by_handle.setdefault(key, {}).setdefault(slot, dict(r))
+
+    linked, already, unmatched = [], [], []
+    for f in conn.execute("SELECT * FROM format_profiles ORDER BY CAST(SUBSTR(profile_code,5) AS INTEGER)"):
+        key = _norm_handle(f["handle"])
+        cand = by_handle.get(key, {})
+        sets, cols = [], []
+        for slot, col in (("style", "style_profile_id"), ("production", "production_profile_id")):
+            match = cand.get(slot)
+            if not match:
+                continue
+            if f[col] and not relink:
+                already.append({"profile_code": f["profile_code"], "slot": slot})
+                continue
+            sets.append(match["profile_id"])
+            cols.append(col)
+        if cols:
+            conn.execute(
+                f"UPDATE format_profiles SET {', '.join(c + ' = ?' for c in cols)} "
+                f"WHERE format_profile_id = ?", (*sets, f["format_profile_id"]))
+            linked.append({
+                "profile_code": f["profile_code"], "handle": f["handle"],
+                "linked": {c.replace("_profile_id", ""): cand[
+                    "style" if c == "style_profile_id" else "production"]["profile_code"] for c in cols},
+            })
+        elif not cand:
+            unmatched.append({"profile_code": f["profile_code"], "handle": f["handle"]})
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "linked": linked, "already_linked": len(already),
+                    "no_counterpart_yet": unmatched})
+
+
 @app.route("/api/format/duration-repair")
 def api_format_duration_repair_list():
     """P+S inputs ingested without a real duration.

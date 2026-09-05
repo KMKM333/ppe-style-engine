@@ -5523,6 +5523,54 @@ def _format_profile_prompt_block(conn, format_profile_id):
     )
 
 
+def _reference_frame_urls(conn, channel_id, n=4):
+    """A few real frames from the account, as public image URLs.
+
+    A visual brief describes the look in words, and words lose most of it —
+    "muted earthy tones, archival collage" is true of a thousand different
+    images. Handing the renderer the actual frames lets it match the grade,
+    framing and texture directly instead of reinventing them from a
+    description.
+
+    Spread across inputs rather than taken from one, and promotional
+    segments are skipped: their frames are pricing tables.
+    """
+    if not channel_id or n <= 0:
+        return []
+    ch = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?",
+                      (channel_id,)).fetchone()
+    target = _norm_handle(ch["channel_name"]) if ch else ""
+    profile_ids = [r["format_profile_id"] for r in conn.execute(
+        "SELECT format_profile_id, channel_id, handle, display_name FROM format_profiles")
+        if r["channel_id"] == channel_id
+        or (target and target in (_norm_handle(r["handle"]), _norm_handle(r["display_name"])))]
+    if not profile_ids:
+        return []
+    ph = ",".join("?" * len(profile_ids))
+    inputs = [r["format_input_id"] for r in conn.execute(
+        f"""SELECT format_input_id FROM format_inputs
+            WHERE format_profile_id IN ({ph}) AND status = 'classified'
+              AND COALESCE(excluded, 0) = 0
+            ORDER BY format_input_id""", profile_ids)]
+    if not inputs:
+        return []
+    # One frame from each of n inputs spread across the account, and from the
+    # middle of each: the first frames of a segment are often a title card.
+    step = max(1, len(inputs) // n)
+    urls = []
+    for input_id in inputs[::step][:n]:
+        rows = conn.execute(
+            "SELECT frame_id FROM format_input_frames WHERE format_input_id = ? AND captured = 1 "
+            "ORDER BY frame_number", (input_id,)).fetchall()
+        if not rows:
+            continue
+        r = rows[len(rows) // 2]
+        if (FORMAT_FRAMES_DIR / str(input_id) / f"frame_{r['frame_id']}.jpg").is_file():
+            urls.append(url_for("format_input_frame_image", input_id=input_id,
+                                frame_id=r["frame_id"], _external=True))
+    return urls
+
+
 def _channel_id_for_format_profile(conn, format_profile):
     """The channel this PVS profile describes.
 
@@ -6121,6 +6169,7 @@ def api_assembly_plan(creation_id):
                 brief["palette"] = json.loads(brief.pop("palette_json") or "[]")
             except json.JSONDecodeError:
                 brief["palette"] = []
+    reference_frames = _reference_frame_urls(conn, channel_id) if channel_id else []
     # Read while the connection is still OPEN. This block sat AFTER
     # conn.close() and took the whole endpoint down with "Cannot operate on a
     # closed database" — a 500 on every plan, including the ones that do not
@@ -6247,6 +6296,7 @@ def api_assembly_plan(creation_id):
         "profile": row["format_profile_code"] or row["production_profile_code"],
         "account": row["format_handle"] or row["production_channel_name"],
         "visual_brief": brief, "has_visual_brief": bool(brief), "tempo": tempo,
+        "reference_frames": reference_frames,
         "total_shots": len(shots),
         "runtime_sec": round(sum(s["duration_sec"] or 0 for s in shots), 1),
         "shots": shots,

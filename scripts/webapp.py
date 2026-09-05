@@ -5750,7 +5750,50 @@ def api_assembly_plan(creation_id):
                 brief["palette"] = []
     conn.close()
 
+    # The plan used to send the style template and the subject and nothing
+    # else, discarding facts it already held — most glaringly the caption
+    # TEXT, so the model was asked for "a short bold white caption" without
+    # being told what it said, and invented words. Each clause below is
+    # something already measured or already decided; none of it is new
+    # guesswork, and ?plain=1 returns the old bare prompt for comparison.
+    plain = request.args.get("plain") == "1"
     template = (brief or {}).get("image_prompt_template") or "{subject}"
+    palette = ", ".join((brief or {}).get("palette") or [])
+    typography = (brief or {}).get("typography") or ""
+    treatment = (brief or {}).get("subject_treatment") or ""
+
+    def enrich(base, shot_no, total, beat_lines, caption, prev_subject):
+        if plain:
+            return base
+        parts = [base]
+        if caption:
+            # Rendered text has to be quoted verbatim or the model writes its
+            # own — the usual cause of garbled words in a generated frame.
+            parts.append(f'The on-screen caption reads exactly: "{caption}". '
+                         f"Render that text and no other text.")
+        if typography:
+            parts.append(f"Caption styling: {typography}")
+        if palette:
+            parts.append(f"Use this account's measured palette: {palette}.")
+        if treatment:
+            parts.append(f"This account habitually pictures: {treatment}")
+        if shot_no == 1:
+            role = ("This is the OPENING shot — it has to stop a scroller in the first second, "
+                    "so make it the most arresting frame in the piece.")
+        elif shot_no == total:
+            role = "This is the CLOSING shot — it should land and resolve, not open a new idea."
+        else:
+            role = (f"This is shot {shot_no} of {total}, in the middle of the argument — "
+                    f"it supports the narration rather than competing with it.")
+        parts.append(role)
+        if beat_lines:
+            parts.append(f'It plays under the narration: "{beat_lines}" — illustrate that sentence, '
+                         f"not just the label.")
+        if prev_subject:
+            parts.append(f"It follows a shot of: {prev_subject}. Same sequence, same world, "
+                         f"consistent lighting and materials.")
+        return "\n\n".join(parts)
+
     shots, n = [], 0
     for b in beats:
         lines = b.get("script_lines") or b.get("script_excerpt") or []
@@ -5778,19 +5821,32 @@ def api_assembly_plan(creation_id):
                 subject = captions[min(len(captions) - 1, i * len(captions) // count)]
             else:
                 subject = b.get("title") or ""
+            caption = tags[i] if i < len(tags) else None
             shots.append({
                 "shot": n, "beat": b.get("step"), "beat_title": b.get("title"),
                 "duration_sec": per_shot,
                 "subject": subject,
                 "image_prompt": template.replace("{subject}", subject) if subject else template,
-                "caption": tags[i] if i < len(tags) else None,
+                "caption": caption,
+                "_beat_lines": " ".join(lines) if lines else None,
                 # The whole beat's lines ride under its first shot: audio is
                 # continuous across a beat, the pictures change under it.
                 "voiceover": " ".join(lines) if i == 0 and lines else None,
             })
 
+    # Enrichment runs after the loop because continuity needs the shot before
+    # it and the total, neither of which exists while the list is being built.
+    total_shots = len(shots)
+    for idx, sh in enumerate(shots):
+        prev_subject = shots[idx - 1]["subject"] if idx else None
+        if prev_subject == sh["subject"]:
+            prev_subject = None      # same panel repeated; nothing to carry over
+        sh["image_prompt"] = enrich(sh["image_prompt"], sh["shot"], total_shots,
+                                    sh.pop("_beat_lines", None), sh.get("caption"), prev_subject)
+
     return jsonify({
         "ok": True, "creation_id": creation_id, "title": row["title"],
+        "enriched": not plain,
         "mode": "script_editing" if row["format_profile_id"] else "editing_only",
         "profile": row["format_profile_code"] or row["production_profile_code"],
         "account": row["format_handle"] or row["production_channel_name"],

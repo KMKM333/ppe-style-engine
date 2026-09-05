@@ -3138,6 +3138,37 @@ def api_link_format_profiles():
                     "no_counterpart_yet": unmatched})
 
 
+@app.route("/api/videos/section-timing", methods=["POST"])
+def api_derive_section_timing():
+    """Works out where each chapter sits in its video.
+
+    Body: {"video_id": N} for one, or {"all": true} for every video with
+    chapters. Pure arithmetic on data already stored — no model call, so it
+    costs nothing and can be re-run whenever the transcript improves."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    import derive_section_timing
+    d = request.get_json(silent=True) or {}
+    conn = get_conn()
+    try:
+        if d.get("all"):
+            ids = [r["video_id"] for r in conn.execute(
+                "SELECT DISTINCT video_id FROM video_sections ORDER BY video_id")]
+            matched = allocated = 0
+            for vid in ids:
+                r = derive_section_timing.derive(vid, conn)
+                matched += r.get("matched", 0)
+                allocated += r.get("allocated", 0)
+            return jsonify({"ok": True, "videos": len(ids),
+                            "boundaries_matched": matched, "boundaries_allocated": allocated})
+        vid = d.get("video_id")
+        if not vid:
+            return jsonify({"ok": False, "error": "'video_id' or 'all' is required"}), 400
+        return jsonify({"ok": True, **derive_section_timing.derive(int(vid), conn)})
+    finally:
+        conn.close()
+
+
 @app.route("/api/format/duration-repair")
 def api_format_duration_repair_list():
     """P+S inputs ingested without a real duration.

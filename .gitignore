@@ -1,6 +1,11 @@
 instagram_transcriber/
 .tunnel/
-.claude/
+# Ignore the contents of .claude, NOT the directory itself — git never
+# descends into an excluded directory, so a negation inside one is dead.
+.claude/*
+# …but the PPE skill is part of the project: updating the engine and
+# updating the instructions for driving it should be the same commit.
+!.claude/skills/
 db_backups/
 db/*.db
 db/*.db-journal

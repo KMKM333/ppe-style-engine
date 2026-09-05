@@ -2897,6 +2897,66 @@ def api_health():
     })
 
 
+@app.route("/api/skill/context")
+def api_skill_context():
+    """Everything a Claude session needs to drive this engine, read live.
+
+    The point is that NOTHING about the current state lives in the skill
+    file. Profile codes, which accounts have which readings, which have a
+    visual brief — all of it changes every time videos are imported, and a
+    skill that embedded any of it would start lying the same day it was
+    written. The skill describes the WORKFLOW; this describes the WORLD.
+
+    Public on purpose: it exposes no keys and no content, only the shape of
+    what exists, so a session can orient itself before it has a key."""
+    conn = get_conn()
+
+    def rows(q, *a):
+        return [dict(r) for r in conn.execute(q, a)]
+
+    voices = rows(
+        """SELECT p.profile_code, c.channel_name, p.media_type, p.n_videos_analysed, p.subject
+           FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.media_type IS NULL OR p.media_type != 'ProductionSpec'
+           ORDER BY p.n_videos_analysed DESC""")
+    editing = rows(
+        """SELECT p.profile_code, c.channel_name, p.n_videos_analysed, c.channel_id,
+                  EXISTS(SELECT 1 FROM visual_style_briefs v WHERE v.channel_id = c.channel_id) AS has_visual_brief
+           FROM style_profiles p JOIN channels c ON c.channel_id = p.channel_id
+           WHERE p.media_type = 'ProductionSpec' ORDER BY p.n_videos_analysed DESC""")
+    fmt = rows(
+        """SELECT f.profile_code, f.handle, f.status, f.n_inputs_analysed,
+                  (SELECT COUNT(*) FROM format_profile_attributes a
+                   WHERE a.format_profile_id = f.format_profile_id AND a.source = 'classified') AS axes_measured
+           FROM format_profiles f ORDER BY f.n_inputs_analysed DESC""")
+    creations = rows(
+        """SELECT t.transformation_id, t.generated_title, p.profile_code
+           FROM transformations t LEFT JOIN style_profiles p ON p.profile_id = t.target_profile_id
+           ORDER BY t.generated_at DESC LIMIT 25""")
+    specs = rows(
+        """SELECT c.creation_id, c.title, c.status,
+                  CASE WHEN c.format_profile_id IS NOT NULL THEN 'script_editing' ELSE 'editing_only' END AS mode,
+                  (SELECT v.output_url FROM video_creations v WHERE v.spec_creation_id = c.creation_id
+                   ORDER BY v.creation_id DESC LIMIT 1) AS video_url
+           FROM production_spec_creations c ORDER BY c.creation_id DESC LIMIT 15""")
+    conn.close()
+    from datetime import datetime as _dt
+    return jsonify({
+        "ok": True,
+        "generated_at": _dt.utcnow().isoformat(timespec="seconds") + "Z",
+        "voice_profiles": voices,
+        "editing_profiles": editing,
+        "format_profiles": fmt,
+        "recent_creations": creations,
+        "recent_specs": specs,
+        "ready_to_generate": [
+            e["channel_name"] for e in editing
+            if e["has_visual_brief"] and any(
+                _norm_handle(f["handle"]) == _norm_handle(e["channel_name"]) for f in fmt)
+        ],
+    })
+
+
 @app.route("/api/analysis/roster")
 def api_analysis_roster():
     """Every Instagram account the engine knows about, across all three

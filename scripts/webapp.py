@@ -4114,6 +4114,111 @@ def _shot_frame_file(input_id, shot_id):
     return None, None
 
 
+@app.route("/api/timelines", methods=["POST"])
+def api_ingest_timeline():
+    """Stores one video's measured editing, sound and movement.
+
+    Keyed by content_hash — the same normalised-URL key both ingest paths
+    already use — because one video can be a shot input, a P+S input and a
+    Library video at once, and this measures the FILE, not any pipeline's row.
+    Idempotent: re-measuring replaces, since the numbers describe a file that
+    has not changed."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    d = request.get_json(silent=True) or {}
+    url = (d.get("url") or "").strip()
+    chash = normalize_hash(url) if url else None
+    if not chash:
+        return jsonify({"ok": False, "error": "'url' is required"}), 400
+
+    e = d.get("editing") or {}
+    so = d.get("sound") or {}
+    mo = d.get("movement") or {}
+    pi = d.get("picture") or {}
+    detail = {"cut_times": e.get("cut_times") or [], "pauses": so.get("pauses") or [],
+              "motion_series": mo.get("series") or []}
+
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO video_timelines
+           (content_hash, url, title, channel_name, duration_sec,
+            n_cuts, n_shots, cuts_per_min, avg_shot_sec, median_shot_sec,
+            shortest_shot_sec, longest_shot_sec, pct_cuts_on_a_pause,
+            integrated_lufs, loudness_range_lu, true_peak_dbfs, n_pauses, pct_quiet,
+            motion_mean, motion_max, pct_near_still, mean_luma, luma_stdev,
+            detail_json, analysed_at)
+           VALUES (?,?,?,?,?, ?,?,?,?,?, ?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?, datetime('now'))
+           ON CONFLICT(content_hash) DO UPDATE SET
+             url=excluded.url, title=COALESCE(excluded.title, video_timelines.title),
+             channel_name=COALESCE(excluded.channel_name, video_timelines.channel_name),
+             duration_sec=excluded.duration_sec,
+             n_cuts=excluded.n_cuts, n_shots=excluded.n_shots,
+             cuts_per_min=excluded.cuts_per_min, avg_shot_sec=excluded.avg_shot_sec,
+             median_shot_sec=excluded.median_shot_sec, shortest_shot_sec=excluded.shortest_shot_sec,
+             longest_shot_sec=excluded.longest_shot_sec,
+             pct_cuts_on_a_pause=excluded.pct_cuts_on_a_pause,
+             integrated_lufs=excluded.integrated_lufs, loudness_range_lu=excluded.loudness_range_lu,
+             true_peak_dbfs=excluded.true_peak_dbfs, n_pauses=excluded.n_pauses,
+             pct_quiet=excluded.pct_quiet, motion_mean=excluded.motion_mean,
+             motion_max=excluded.motion_max, pct_near_still=excluded.pct_near_still,
+             mean_luma=excluded.mean_luma, luma_stdev=excluded.luma_stdev,
+             detail_json=excluded.detail_json, analysed_at=datetime('now')""",
+        (chash, url, d.get("title"), (d.get("account") or "").lstrip("@") or None,
+         d.get("duration_sec"),
+         e.get("n_cuts"), e.get("n_shots"), e.get("cuts_per_min"), e.get("avg_shot_sec"),
+         e.get("median_shot_sec"), e.get("shortest_shot_sec"), e.get("longest_shot_sec"),
+         e.get("pct_cuts_on_a_pause"),
+         so.get("integrated_lufs"), so.get("loudness_range_lu"), so.get("true_peak_dbfs"),
+         so.get("n_pauses"), so.get("pct_quiet"),
+         mo.get("mean"), mo.get("max"), mo.get("pct_near_still"),
+         pi.get("mean_luma"), pi.get("luma_stdev"), json.dumps(detail)))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "content_hash": chash})
+
+
+# The source videos live on the transcriber box, which is where ffmpeg and
+# the download cache are. Point at them rather than copying 1.3 GB onto this
+# disk; a viewer off the Tailscale network simply sees the poster frame
+# instead, which is what the page showed before anyway.
+VIDEO_CACHE_BASE = os.environ.get("VIDEO_CACHE_BASE", "http://100.116.54.94:5001/cached")
+
+
+def _cached_video_url(url):
+    if not url:
+        return None
+    import hashlib
+    clean = url.split("?")[0].rstrip("/").lower()
+    return f"{VIDEO_CACHE_BASE}/{hashlib.sha256(clean.encode()).hexdigest()[:20]}.mp4"
+
+
+def _timeline_for_url(conn, url):
+    h = normalize_hash(url) if url else None
+    if not h:
+        return None
+    r = conn.execute("SELECT * FROM video_timelines WHERE content_hash = ?", (h,)).fetchone()
+    return dict(r) if r else None
+
+
+def _timeline_for_channel(conn, channel_name):
+    """The account's median across every measured video. Median rather than
+    mean because one 3-minute outlier should not redefine an account that
+    otherwise runs 30 seconds."""
+    import statistics as _st
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM video_timelines WHERE LOWER(channel_name) = LOWER(?)", (channel_name or "",))]
+    if not rows:
+        return None
+    fields = ("cuts_per_min", "avg_shot_sec", "median_shot_sec", "integrated_lufs",
+              "loudness_range_lu", "pct_quiet", "n_pauses", "motion_mean", "pct_near_still",
+              "mean_luma", "luma_stdev", "duration_sec", "pct_cuts_on_a_pause")
+    out = {"n_videos": len(rows)}
+    for f in fields:
+        vals = [r[f] for r in rows if r.get(f) is not None]
+        out[f] = round(_st.median(vals), 2) if vals else None
+    return out
+
+
 @app.route("/api/production-spec/duration-repair")
 def api_duration_repair_list():
     """Shot inputs ingested without a real duration, and what that cost them.
@@ -4409,6 +4514,7 @@ def production_input_detail(input_id):
         conn.close()
         flash(f"No such Production Spec input: {input_id}")
         return redirect(url_for("production_inputs_list"))
+    timeline = _timeline_for_url(conn, row["url"])
     attrs = conn.execute("SELECT * FROM production_spec_attributes WHERE input_id = ?", (input_id,)).fetchone()
     shots = conn.execute(
         "SELECT shot_id, shot_number, start_sec, end_sec, duration_sec, content_category, frame_captured "
@@ -4416,7 +4522,7 @@ def production_input_detail(input_id):
     ).fetchall()
     conn.close()
     return render_template(
-        "production_input_detail.html", active="production-inputs",
+        "production_input_detail.html", timeline=timeline, video_url=_cached_video_url(row["url"]), active="production-inputs",
         input=row, attrs=attrs, shots=shots,
     )
 
@@ -4823,6 +4929,7 @@ def production_profile_detail(code):
            WHERE i.channel_id = ? ORDER BY i.ingested_at DESC""",
         (profile["channel_id"],),
     ).fetchall()
+    timeline = _timeline_for_channel(conn, profile["channel_name"])
     brief = conn.execute(
         "SELECT * FROM visual_style_briefs WHERE channel_id = ?", (profile["channel_id"],)
     ).fetchone()
@@ -4834,7 +4941,7 @@ def production_profile_detail(code):
             brief["palette"] = []
     conn.close()
     return render_template(
-        "production_profile_detail.html", active="production-profiles", brief=brief,
+        "production_profile_detail.html", active="production-profiles", brief=brief, timeline=timeline,
         profile=profile, numeric=numeric, categorical=categorical, inputs=inputs,
     )
 
@@ -4991,7 +5098,7 @@ SOURCE VIDEO CONTENT — use these real facts/points as the beats' content, don'
 PACING TARGET — measured from {production_channel_name}'s real shot-by-shot analysis (n={n_analysed} video(s) classified so far, so treat this as directional, not gospel):
 - Average shot length: {avg_shot_length:.2f}s
 - Shot-type mix: {shot_mix_summary}
-
+{feel_block}
 VOICE/STYLE TARGET: {style_channel_name}{style_overview_suffix}
 {format_block}
 Return ONLY a JSON object shaped exactly like this, no other text:
@@ -5219,6 +5326,49 @@ def _production_profile_fingerprint(conn, profile_id):
     }
 
 
+# Shot length alone cannot tell two accounts apart that cut at the same rate:
+# damileearch and americanbaron both cut ~20 times a minute, but one is 41%
+# near-still and the other 85%. One is kinetic footage, the other is static
+# panels flying past, and a spec that knows only the cutting rate writes the
+# same brief for both. These are measured with ffmpeg from the source file,
+# so they cost nothing and are not asserted.
+FEEL_PROMPT_BLOCK = """
+MEASURED FEEL — from {n_videos} of {channel}'s own videos, computed from the files:
+{lines}
+
+Let this shape the beats, not just their length: a still account wants held frames and
+composition; a moving one wants motion in the shot itself. Pauses are where a cut belongs.
+"""
+
+
+def _feel_block(conn, channel_name):
+    t = _timeline_for_channel(conn, channel_name) if channel_name else None
+    if not t:
+        return ""
+    lines = []
+    if t.get("motion_mean") is not None and t.get("pct_near_still") is not None:
+        still = t["pct_near_still"]
+        how = ("mostly static frames" if still > 70 else
+               "a mix of held and moving shots" if still > 45 else "near-constant movement")
+        lines.append(f"- Movement: {how} ({still:.0f}% of frames near-still, motion index {t['motion_mean']})")
+    if t.get("cuts_per_min") is not None:
+        lines.append(f"- Cut rhythm: {t['cuts_per_min']} cuts per minute")
+    if t.get("pct_quiet") is not None and t.get("n_pauses") is not None:
+        lines.append(f"- Speech rhythm: {t['n_pauses']:.0f} pauses per video, {t['pct_quiet']}% silence — "
+                     f"{'it breathes' if t['pct_quiet'] > 2 else 'it runs with almost no gaps'}")
+    if t.get("loudness_range_lu") is not None:
+        lines.append(f"- Dynamics: loudness range {t['loudness_range_lu']} LU "
+                     f"({'wide, with light and shade' if t['loudness_range_lu'] > 5 else 'compressed and constant'})")
+    if t.get("mean_luma") is not None:
+        lines.append(f"- Brightness: mean luma {t['mean_luma']} "
+                     f"({'bright, high-key' if t['mean_luma'] > 140 else 'dark and moody' if t['mean_luma'] < 95 else 'mid-key'})")
+    if t.get("duration_sec"):
+        lines.append(f"- Typical length: {t['duration_sec']:.0f}s")
+    if not lines:
+        return ""
+    return FEEL_PROMPT_BLOCK.format(n_videos=t["n_videos"], channel=channel_name, lines="\n".join(lines))
+
+
 def _format_profile_prompt_block(conn, format_profile_id):
     """The P+S axes for a chosen format profile, as prompt constraints.
     Returns "" when no profile is chosen — the spec is still valid without
@@ -5328,6 +5478,9 @@ def _build_combined_creation_prompt(conn, content_block, format_profile_id):
     else:
         pacing_block = COMBINED_NO_PACING_BLOCK
 
+    feel = _feel_block(conn, (prof["handle"] or "").lstrip("@"))
+    if feel:
+        pacing_block = pacing_block + feel
     return PRODUCTION_CREATION_COMBINED_PROMPT.format(
         content_block=content_block,
         handle=prof["handle"] or prof["profile_code"], profile_code=prof["profile_code"],
@@ -5365,6 +5518,7 @@ def _build_production_creation_prompt(conn, content_block, style_profile_id, pro
         style_channel_name=style_row["channel_name"] if style_row else "the style profile",
         style_overview_suffix=f" — {style_overview[:300]}" if style_overview else "",
         format_block=_format_profile_prompt_block(conn, format_profile_id),
+        feel_block=_feel_block(conn, prod_row["channel_name"] if prod_row else None),
     )
 
 

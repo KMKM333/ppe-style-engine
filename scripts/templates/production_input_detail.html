@@ -4,7 +4,60 @@
 <h1>{{ input.title }}</h1>
 <div class="sub">
   {{ input.channel_name }}{% if input.platform %} &middot; {{ input.platform }}{% endif %}
-  {% if input.url %} &middot; <a href="{{ input.url }}" target="_blank" rel="noopener">source ↗</a>{% endif %}
+  {% if input.url %} &middot; <a href="{{ input.url }}" target="_blank" rel="noopener">original ↗</a>{% endif %}
+</div>
+
+{# The source video itself, not just a link away to Instagram. It is kept on
+   the transcriber box, so this plays for anyone on the Tailscale network and
+   quietly falls back to the first captured frame for anyone else — which is
+   all the page could show before. #}
+<div class="card" style="display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start">
+  <div style="width:230px;flex-shrink:0">
+    <video controls preload="metadata" playsinline
+           style="width:100%;aspect-ratio:9/16;border-radius:10px;background:#000;display:block"
+           {% if shots and shots[0].frame_captured %}poster="{{ url_for('production_spec_shot_image', input_id=input.input_id, shot_id=shots[0].shot_id) }}"{% endif %}>
+      {% if video_url %}<source src="{{ video_url }}" type="video/mp4">{% endif %}
+    </video>
+    <div class="muted" style="font-size:11.5px;margin-top:5px">
+      {% if video_url %}Source video — plays on the local network{% else %}No stored copy{% endif %}
+    </div>
+  </div>
+
+  <div style="flex:1;min-width:280px">
+    {% if timeline %}
+    <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
+      Measured from the file &middot; {{ timeline.analysed_at }}
+    </div>
+    <table>
+      <tr>
+        <th style="width:120px">Editing</th>
+        <td>{{ timeline.n_cuts }} cuts, {{ '%.1f'|format(timeline.cuts_per_min) if timeline.cuts_per_min is not none else '—' }}/min
+          &middot; avg shot {{ '%.2fs'|format(timeline.avg_shot_sec) if timeline.avg_shot_sec is not none else '—' }}
+          {% if timeline.pct_cuts_on_a_pause is not none %}<br><span class="muted">{{ timeline.pct_cuts_on_a_pause }}% of cuts land on a pause</span>{% endif %}
+        </td>
+      </tr>
+      <tr>
+        <th>Sound</th>
+        <td>{{ timeline.integrated_lufs }} LUFS &middot; range {{ timeline.loudness_range_lu }} LU
+          &middot; {{ timeline.n_pauses }} pauses ({{ timeline.pct_quiet }}% quiet)</td>
+      </tr>
+      <tr>
+        <th>Movement</th>
+        <td>motion {{ timeline.motion_mean }} &middot; {{ timeline.pct_near_still }}% of frames near-still</td>
+      </tr>
+      <tr>
+        <th>Picture</th>
+        <td>mean luma {{ timeline.mean_luma }} &middot; spread {{ timeline.luma_stdev }}</td>
+      </tr>
+    </table>
+    {% else %}
+    <p class="muted" style="margin:0">No timeline measured yet. It costs nothing — ffmpeg reads the
+      stored file — and covers what the shot classifier cannot see: movement, loudness, pauses and
+      brightness.</p>
+    {% endif %}
+  </div>
+</div>
+<div class="sub" style="display:none">
   &middot;
   {% if input.status == 'classified' %}<span class="pill confirmed">classified</span>
   {% elif input.status == 'needs_review' %}<span class="pill bad">needs review</span>

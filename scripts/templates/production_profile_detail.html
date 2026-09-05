@@ -14,6 +14,38 @@
    nor the P+S axes capture it, so without this a spec could call for an
    "illustration panel" and say nothing about how to draw it. Derived from
    this account's own frames, not asserted. #}
+{# The account's median across every measured video. Shot length alone cannot
+   separate two accounts that cut at the same rate; movement and sound can. #}
+<h2 style="margin-top:26px">Measured feel</h2>
+{% if timeline %}
+<div class="sub">Median across {{ timeline.n_videos }} of this account's own videos, computed from the files — free, and recomputable at any time.</div>
+<div class="card" style="padding:0">
+  <table>
+    <tr><th style="width:180px">Cut rhythm</th>
+      <td>{{ timeline.cuts_per_min }} cuts/min &middot; median shot {{ timeline.median_shot_sec }}s
+        {% if timeline.pct_cuts_on_a_pause is not none %}<span class="muted"> &middot; {{ timeline.pct_cuts_on_a_pause }}% of cuts land on a pause</span>{% endif %}</td></tr>
+    <tr><th>Movement</th>
+      <td>
+        {% if timeline.pct_near_still is not none %}
+          {% if timeline.pct_near_still > 70 %}<span class="pill">mostly static</span>
+          {% elif timeline.pct_near_still > 45 %}<span class="pill draft">mixed</span>
+          {% else %}<span class="pill confirmed">kinetic</span>{% endif %}
+          <span class="muted"> {{ timeline.pct_near_still }}% of frames near-still &middot; motion index {{ timeline.motion_mean }}</span>
+        {% else %}—{% endif %}
+      </td></tr>
+    <tr><th>Sound</th>
+      <td>{{ timeline.integrated_lufs }} LUFS &middot; range {{ timeline.loudness_range_lu }} LU
+        &middot; {{ timeline.n_pauses }} pauses, {{ timeline.pct_quiet }}% quiet</td></tr>
+    <tr><th>Picture</th>
+      <td>mean luma {{ timeline.mean_luma }} &middot; spread {{ timeline.luma_stdev }}</td></tr>
+    <tr><th>Typical length</th><td>{{ timeline.duration_sec }}s</td></tr>
+  </table>
+</div>
+{% else %}
+<div class="card"><p class="muted" style="margin:0">Not measured yet. Costs nothing —
+  <code>analyse_timeline.py</code> reads the stored source files.</p></div>
+{% endif %}
+
 <h2 style="margin-top:26px">Visual identity</h2>
 {% if brief %}
 <div class="sub">Read from {{ brief.n_frames_analysed }} of this account's own frames, spread across its videos &middot; {{ brief.analysed_at }}</div>

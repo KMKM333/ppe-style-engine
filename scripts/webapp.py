@@ -5570,6 +5570,102 @@ def production_spec_creation_detail(creation_id, share=False):
     return render_template("production_creation_detail.html", active="production-spec-creations", **ctx)
 
 
+@app.route("/api/creations/<int:creation_id>/assembly-plan")
+def api_assembly_plan(creation_id):
+    """Turns a spec into a shot-by-shot plan something can actually build.
+
+    The spec says what each BEAT contains; assembly needs what each SHOT is.
+    This expands beats into shots — dividing a beat's duration by its own shot
+    count, so the timing follows the beat's words rather than a fixed grid —
+    and gives each shot the three things needed to make it: a panel prompt in
+    the account's visual identity, the caption to burn in, and the audio line
+    it sits under.
+
+    Derived, not generated: no model is called here, so a plan can be
+    inspected and corrected for free before anything is paid for."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT c.*, pp.profile_code AS production_profile_code, pc.channel_id AS production_channel_id,
+                  pc.channel_name AS production_channel_name,
+                  fp.profile_code AS format_profile_code, fp.handle AS format_handle
+           FROM production_spec_creations c
+           LEFT JOIN style_profiles pp ON pp.profile_id = c.production_profile_id
+           LEFT JOIN channels pc ON pc.channel_id = pp.channel_id
+           LEFT JOIN format_profiles fp ON fp.format_profile_id = c.format_profile_id
+           WHERE c.creation_id = ?""", (creation_id,)).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such creation"}), 404
+    beats = json.loads(row["beats_json"]) if row["beats_json"] else []
+    if not beats:
+        conn.close()
+        return jsonify({"ok": False, "error": "this creation has no beats yet"}), 400
+
+    # The visual identity comes from the account the spec was cut to. A Script
+    # + editing spec has no production profile of its own, so fall back to the
+    # PS profile of the SAME account, which is what supplied its pacing.
+    channel_id = row["production_channel_id"]
+    if not channel_id and row["format_profile_id"]:
+        fprof = conn.execute("SELECT * FROM format_profiles WHERE format_profile_id = ?",
+                             (row["format_profile_id"],)).fetchone()
+        pacing_id = _format_profile_pacing_profile(conn, fprof) if fprof else None
+        if pacing_id:
+            r2 = conn.execute("SELECT channel_id FROM style_profiles WHERE profile_id = ?", (pacing_id,)).fetchone()
+            channel_id = r2["channel_id"] if r2 else None
+    brief = None
+    if channel_id:
+        b = conn.execute("SELECT * FROM visual_style_briefs WHERE channel_id = ?", (channel_id,)).fetchone()
+        if b:
+            brief = dict(b)
+            try:
+                brief["palette"] = json.loads(brief.pop("palette_json") or "[]")
+            except json.JSONDecodeError:
+                brief["palette"] = []
+    conn.close()
+
+    template = (brief or {}).get("image_prompt_template") or "{subject}"
+    shots, n = [], 0
+    for b in beats:
+        lines = b.get("script_lines") or b.get("script_excerpt") or []
+        captions = b.get("illustration_captions") or []
+        tags = b.get("punch_tags") or []
+        lo = b.get("duration_sec_min") or 0
+        hi = b.get("duration_sec_max") or lo
+        beat_sec = (lo + hi) / 2 if (lo or hi) else 0
+        smin = b.get("shot_count_min") or 0
+        smax = b.get("shot_count_max") or smin
+        count = max(1, round((smin + smax) / 2) if (smin or smax) else len(captions) or 1)
+        # A beat's seconds divided by its OWN shot count: the cut follows the
+        # beat's words, which is the whole point of deriving beats from them.
+        per_shot = round(beat_sec / count, 2) if beat_sec else None
+        for i in range(count):
+            n += 1
+            subject = captions[i] if i < len(captions) else (captions[-1] if captions else b.get("title") or "")
+            shots.append({
+                "shot": n, "beat": b.get("step"), "beat_title": b.get("title"),
+                "duration_sec": per_shot,
+                "subject": subject,
+                "image_prompt": template.replace("{subject}", subject) if subject else template,
+                "caption": tags[i] if i < len(tags) else None,
+                # The whole beat's lines ride under its first shot: audio is
+                # continuous across a beat, the pictures change under it.
+                "voiceover": " ".join(lines) if i == 0 and lines else None,
+            })
+
+    return jsonify({
+        "ok": True, "creation_id": creation_id, "title": row["title"],
+        "mode": "script_editing" if row["format_profile_id"] else "editing_only",
+        "profile": row["format_profile_code"] or row["production_profile_code"],
+        "account": row["format_handle"] or row["production_channel_name"],
+        "visual_brief": brief, "has_visual_brief": bool(brief),
+        "total_shots": len(shots),
+        "runtime_sec": round(sum(s["duration_sec"] or 0 for s in shots), 1),
+        "shots": shots,
+    })
+
+
 @app.route("/production/spec-creations/<int:creation_id>/share")
 def production_spec_creation_share(creation_id):
     """The same spec as a standalone page — no app chrome, print-friendly.

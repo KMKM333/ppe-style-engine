@@ -5984,6 +5984,17 @@ def api_assembly_plan(creation_id):
     # something already measured or already decided; none of it is new
     # guesswork, and ?plain=1 returns the old bare prompt for comparison.
     plain = request.args.get("plain") == "1"
+    # The account's measured tempo, so the cut can land where its own videos
+    # land. Only offered when the account actually cuts to the beat: below
+    # about half, quantising would impose a rhythm it does not have.
+    tempo = None
+    if channel_id:
+        ch = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,)).fetchone()
+        tl = _timeline_for_channel(conn, ch["channel_name"]) if ch else None
+        if tl and tl.get("est_bpm") and (tl.get("pct_cuts_on_a_beat") or 0) >= 50:
+            tempo = {"bpm": tl["est_bpm"], "beat_sec": round(60.0 / tl["est_bpm"], 4),
+                     "pct_cuts_on_a_beat": tl["pct_cuts_on_a_beat"], "n_videos": tl["n_videos"]}
+
     template = (brief or {}).get("image_prompt_template") or "{subject}"
     palette = ", ".join((brief or {}).get("palette") or [])
     typography = (brief or {}).get("typography") or ""
@@ -6035,6 +6046,13 @@ def api_assembly_plan(creation_id):
         # A beat's seconds divided by its OWN shot count: the cut follows the
         # beat's words, which is the whole point of deriving beats from them.
         per_shot = round(beat_sec / count, 2) if beat_sec else None
+        # Then snapped to the account's measured tempo, so a cut lands on a
+        # musical beat rather than at an arbitrary fraction of a sentence.
+        # moneymindnews puts 90.9% of its cuts on the beat at 120 BPM; a spec
+        # that ignores that is asking for a rhythm the account never uses.
+        if per_shot and tempo:
+            beats_per_shot = max(1, round(per_shot / tempo["beat_sec"]))
+            per_shot = round(beats_per_shot * tempo["beat_sec"], 3)
         for i in range(count):
             n += 1
             # The prompt asks for one direction per shot OR SHOT-GROUP, so a
@@ -6077,7 +6095,7 @@ def api_assembly_plan(creation_id):
         "mode": "script_editing" if row["format_profile_id"] else "editing_only",
         "profile": row["format_profile_code"] or row["production_profile_code"],
         "account": row["format_handle"] or row["production_channel_name"],
-        "visual_brief": brief, "has_visual_brief": bool(brief),
+        "visual_brief": brief, "has_visual_brief": bool(brief), "tempo": tempo,
         "total_shots": len(shots),
         "runtime_sec": round(sum(s["duration_sec"] or 0 for s in shots), 1),
         "shots": shots,

@@ -78,9 +78,14 @@ def sample_format_frames(conn, channel_id, max_frames=MAX_FRAMES):
             continue
         step = max(1, len(rows) // (per_input + 1))
         for r in rows[step::step][:per_input]:
-            f = frame_dir / f"frame_{r['frame_id']}.jpg"
-            if f.is_file():
-                picked.append(("image/jpeg", f.read_bytes()))
+            # Frames were PNG before the disk filled and JPEG after, and both
+            # still sit on disk — look for either rather than silently finding
+            # nothing for the older inputs.
+            for ext, mime in (("jpg", "image/jpeg"), ("png", "image/png")):
+                f = frame_dir / f"frame_{r['frame_id']}.{ext}"
+                if f.is_file():
+                    picked.append((mime, f.read_bytes()))
+                    break
             if len(picked) >= max_frames:
                 return picked
     return picked

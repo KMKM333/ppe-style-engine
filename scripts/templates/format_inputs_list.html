@@ -47,6 +47,7 @@
         <option value="classifying" {{ 'selected' if filters.status == 'classifying' }}>Classifying</option>
         <option value="classified" {{ 'selected' if filters.status == 'classified' }}>Classified</option>
         <option value="needs_review" {{ 'selected' if filters.status == 'needs_review' }}>Needs review</option>
+        <option value="excluded" {{ 'selected' if filters.status == 'excluded' }}>Excluded (promotional)</option>
       </select>
     </div>
   </div>
@@ -74,7 +75,8 @@
       <td class="num">{{ r.n_frames or 0 }}</td>
       <td>{% if r.has_audio %}<span class="pill draft">spoken</span>{% else %}<span class="pill">silent</span>{% endif %}</td>
       <td>
-        {% if r.status == 'classified' %}<span class="pill confirmed">classified</span>
+        {% if r.excluded %}<span class="pill" title="{{ r.exclusion_reason or 'Excluded from the profile aggregate' }}">excluded</span>
+        {% elif r.status == 'classified' %}<span class="pill confirmed">classified</span>
         {% elif r.status == 'needs_review' %}<span class="pill bad">needs review</span>
         {% else %}<span class="pill draft">{{ r.status }}</span>{% endif %}
       </td>

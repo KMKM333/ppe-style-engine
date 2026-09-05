@@ -9,7 +9,19 @@
   {% if i.platform %} · {{ i.platform }}{% endif %}
   {% if i.duration_sec %} · {{ '%.0f' % i.duration_sec }}s{% endif %}
   {% if i.url %} · <a href="{{ i.url }}" target="_blank" rel="noopener">Original ↗</a>{% endif %}
+  {% if i.segment_kind %} · {{ i.segment_kind }}{% endif %}
 </div>
+
+{% if i.excluded %}
+<div class="card" style="border-color:rgba(200,120,40,.45); background:rgba(200,120,40,.07)">
+  <strong>Excluded from {{ i.profile_code or 'the profile' }}</strong>
+  <div class="muted" style="margin-top:6px;font-size:13.5px">
+    {{ i.exclusion_reason or 'Excluded from the profile aggregate.' }}
+    This reading is kept and shown in full below — it is a true description of this segment.
+    It simply isn't averaged into the account's style, because it isn't describing the style.
+  </div>
+</div>
+{% endif %}
 
 {% if i.status != 'classified' %}
 <div class="card" style="border-color:rgba(var(--accent-rgb),.35); background:rgba(var(--accent-rgb),.06)">

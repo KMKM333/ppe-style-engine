@@ -3412,6 +3412,50 @@ def api_format_input_status(input_id):
                     "on_screen_text": row["on_screen_text"]})
 
 
+@app.route("/api/format/inputs/<int:input_id>/exclude", methods=["POST"])
+def api_format_input_exclude(input_id):
+    """Take one P+S input in or out of its profile's aggregate.
+
+    A long video arrives as a run of segments, and some of them are the
+    creator selling something rather than showing their editorial style.
+    The reading stays — it is a true description of that segment, and the
+    classification was paid for — but the profile stops averaging it in.
+
+    Re-aggregates immediately, so the profile page reflects the change
+    without re-classifying anything.
+
+    POST {"excluded": true|false, "reason": "..."}
+    """
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    excluded = 1 if data.get("excluded", True) else 0
+    reason = (data.get("reason") or "").strip() or None
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT format_profile_id FROM format_inputs WHERE format_input_id = ?", (input_id,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such format input"}), 404
+    conn.execute(
+        "UPDATE format_inputs SET excluded = ?, exclusion_reason = ? WHERE format_input_id = ?",
+        (excluded, reason if excluded else None, input_id),
+    )
+    conn.commit()
+    profile_id = row["format_profile_id"]
+    conn.close()
+    if profile_id:
+        try:
+            from classify_format_input import aggregate_profile
+            aggregate_profile(profile_id)
+        except Exception as exc:  # noqa: BLE001
+            return jsonify({"ok": True, "format_input_id": input_id, "excluded": bool(excluded),
+                            "reaggregated": False, "error": str(exc)})
+    return jsonify({"ok": True, "format_input_id": input_id, "excluded": bool(excluded),
+                    "reason": reason, "reaggregated": bool(profile_id)})
+
+
 @app.route("/api/channels/merge", methods=["POST"])
 def api_merge_channels():
     """Fold one channel into another: its videos, shot inputs and format
@@ -4660,7 +4704,12 @@ def format_inputs_list():
     if profile_filter:
         query += " AND f.profile_code = ?"
         params.append(profile_filter)
-    if status_filter:
+    if status_filter == "excluded":
+        # Excluded is not a status — it is orthogonal to one — but it is what
+        # you actually want to filter for when checking what a long video's
+        # promotional segments were.
+        query += " AND COALESCE(i.excluded, 0) = 1"
+    elif status_filter:
         query += " AND i.status = ?"
         params.append(status_filter)
     if q:

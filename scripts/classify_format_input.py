@@ -82,6 +82,15 @@ Return a raw JSON object with exactly these keys:
   When the two sources disagree about what the "script" is, trust the ON-SCREEN text as the
   creator's own writing unless there is clear evidence otherwise.
 
+"segment_kind": one of "editorial" / "promotional" — is this video (or, for a long video cut
+  into segments, THIS SEGMENT) delivering editorial content, or is it selling something? Answer
+  "promotional" when the dominant purpose is to promote a product, service, sponsor, membership,
+  subscription, course, merchandise or the creator's own venture — the tells are pricing, tiers,
+  sign-up calls, a product name repeated with a URL, "link in the description", "use code".
+  A passing mention inside an otherwise editorial stretch is still "editorial"; answer
+  "promotional" only when selling is what the segment is mainly DOING. This is judged separately
+  from the axes below, and the axes should still be answered honestly for what you see.
+
 "readings": an object with exactly these five keys. Each value is an object
   {{"value": <one of the allowed values>, "note": <one sentence of evidence from what you saw>}}.
 
@@ -213,10 +222,21 @@ def classify(format_input_id):
     relation = (result.get("text_audio_relation") or "").strip().lower()
     if relation not in ("same", "differs", "no_audio", "no_on_screen_text"):
         relation = None   # same rule as the axes: don't invent a value
+    kind = (result.get("segment_kind") or "").strip().lower()
+    if kind not in ("editorial", "promotional"):
+        kind = None       # same rule as the axes: don't invent a value
+    # A promotional segment is excluded from the profile aggregate the moment
+    # it is recognised. The reading itself is kept and still shown on the
+    # input's own page — it is a true description of a sales pitch, and only
+    # wrong as evidence of the creator's editorial style.
     conn.execute(
-        "UPDATE format_inputs SET on_screen_text = ?, text_audio_relation = ?, status = 'classified', "
+        "UPDATE format_inputs SET on_screen_text = ?, text_audio_relation = ?, segment_kind = ?, "
+        "excluded = ?, exclusion_reason = ?, status = 'classified', "
         "classification_error = NULL WHERE format_input_id = ?",
-        ((result.get("on_screen_text") or "").strip(), relation, format_input_id),
+        ((result.get("on_screen_text") or "").strip(), relation, kind,
+         1 if kind == "promotional" else 0,
+         "Promotional segment: selling, not editorial style." if kind == "promotional" else None,
+         format_input_id),
     )
     conn.commit()
     profile_id = row["format_profile_id"]
@@ -245,10 +265,15 @@ def aggregate_profile(format_profile_id):
     account reads as mixed rather than as whichever value happened to lead.
 
     Only overwrites axes that have at least one classified reading, so a
-    preliminary value survives until something real replaces it."""
+    preliminary value survives until something real replaces it.
+
+    Excluded inputs are skipped: a long video's promotional segments are real
+    readings of a sales pitch, and averaging them in would describe the pitch
+    as part of the creator's style."""
     conn = get_conn()
     inputs = [r["format_input_id"] for r in conn.execute(
-        "SELECT format_input_id FROM format_inputs WHERE format_profile_id = ? AND status = 'classified'",
+        "SELECT format_input_id FROM format_inputs WHERE format_profile_id = ? AND status = 'classified' "
+        "AND COALESCE(excluded, 0) = 0",
         (format_profile_id,),
     )]
     if not inputs:

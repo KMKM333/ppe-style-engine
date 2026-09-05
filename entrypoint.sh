@@ -133,4 +133,10 @@ python3 migrate_add_video_timelines.py || echo "WARNING: migrate_add_video_timel
 # cut a clip of one. Same idempotent pattern, safe on every boot.
 python3 migrate_add_section_timing.py || echo "WARNING: migrate_add_section_timing.py failed — continuing so the site still serves; see /api/health"
 
+# A long video's segments are not all editorial: some are the creator selling
+# their own venture or a sponsor. Those readings are true but describe a sales
+# pitch, and averaging them into the profile teaches the wrong style. Lets a
+# segment be excluded from the aggregate while staying visible on its own page.
+python3 migrate_add_format_input_excluded.py || echo "WARNING: migrate_add_format_input_excluded.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

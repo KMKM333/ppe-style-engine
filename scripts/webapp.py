@@ -5707,7 +5707,17 @@ def api_assembly_plan(creation_id):
         per_shot = round(beat_sec / count, 2) if beat_sec else None
         for i in range(count):
             n += 1
-            subject = captions[i] if i < len(captions) else (captions[-1] if captions else b.get("title") or "")
+            # The prompt asks for one direction per shot OR SHOT-GROUP, so a
+            # beat routinely comes back with fewer directions than shots.
+            # Falling through to the last one repeated it for every remaining
+            # shot — beat 1 of spec 5 had 4 directions across 11 shots and
+            # ended with SEVEN identical frames. Spread them instead, so each
+            # direction covers a contiguous group, which is what a
+            # shot-group direction means.
+            if captions:
+                subject = captions[min(len(captions) - 1, i * len(captions) // count)]
+            else:
+                subject = b.get("title") or ""
             shots.append({
                 "shot": n, "beat": b.get("step"), "beat_title": b.get("title"),
                 "duration_sec": per_shot,

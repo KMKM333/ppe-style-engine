@@ -3,7 +3,7 @@
 {% block content %}
 <h1>Video Creations</h1>
 <div class="sub">
-  Planned/queued video outputs against a Production Spec profile — a status board, not an
+  Video outputs against a Production Spec profile, including ones assembled from a spec — a status board, not an
   auto-generation pipeline yet. Fill in a generation tool + output link once a video is actually made.
   {{ rows|length }} shown.
 </div>
@@ -44,10 +44,12 @@
     <tr>
       <td><strong>{{ r.title }}</strong></td>
       <td>
-        {% if r.status == 'done' %}<span class="pill confirmed">done</span>
-        {% elif r.status == 'in_progress' %}<span class="pill draft">in progress</span>
-        {% elif r.status == 'queued' %}<span class="pill draft">queued</span>
-        {% else %}<span class="pill draft">planned</span>{% endif %}
+        {# The final branch used to print the literal word "planned", so any
+           status it did not already know about — an assembled video, say —
+           was labelled as not yet started. Show what the row actually says. #}
+        {% if r.status in ('done', 'assembled') %}<span class="pill confirmed">{{ r.status }}</span>
+        {% elif r.status in ('in_progress', 'queued') %}<span class="pill draft">{{ r.status|replace('_', ' ') }}</span>
+        {% else %}<span class="pill draft">{{ r.status or 'planned' }}</span>{% endif %}
       </td>
       <td>
         {% if r.spec_id %}<a href="{{ url_for('production_spec_creation_detail', creation_id=r.spec_id) }}">{{ r.spec_title or ('Spec #' ~ r.spec_id) }}</a>

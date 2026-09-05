@@ -21,7 +21,7 @@ import argparse
 import json
 
 import llm_client
-from db_init import get_conn, PRODUCTION_SPEC_SHOTS_DIR
+from db_init import get_conn, PRODUCTION_SPEC_SHOTS_DIR, FORMAT_FRAMES_DIR
 
 MAX_FRAMES = 12          # enough to see the identity; small enough to stay well inside the payload cap
 MAX_TOKENS = 2000
@@ -41,6 +41,49 @@ Return ONLY a JSON object shaped exactly like this, no other text:
   "avoid": "what would immediately read as a DIFFERENT account",
   "image_prompt_template": "a reusable brief for generating one new panel in this style, with {subject} as the placeholder for what the panel should show"
 }"""
+
+
+def sample_format_frames(conn, channel_id, max_frames=MAX_FRAMES):
+    """Fallback source: the P+S frames.
+
+    Shot analysis is the richer source, but an account can be fully analysed
+    for P+S and never shot-analysed — which is the normal state for the
+    long-form accounts, whose videos arrive as 70-second segments sampled at
+    1s. Those frames are already stored and already paid for; refusing to
+    look at them and calling the account unanalysable wastes them and leaves
+    the renderer drawing generic panels.
+
+    Promotional segments are skipped: their pictures are pricing tables and
+    product shots, which is exactly not the look we are describing.
+    """
+    inputs = [r["format_input_id"] for r in conn.execute(
+        """SELECT i.format_input_id
+           FROM format_inputs i
+           JOIN format_profiles f ON f.format_profile_id = i.format_profile_id
+           WHERE f.channel_id = ? AND i.status = 'classified'
+             AND COALESCE(i.excluded, 0) = 0
+           ORDER BY i.ingested_at DESC""", (channel_id,))]
+    if not inputs:
+        return []
+    per_input = max(1, max_frames // max(1, min(len(inputs), max_frames)))
+    picked = []
+    for input_id in inputs:
+        frame_dir = FORMAT_FRAMES_DIR / str(input_id)
+        if not frame_dir.is_dir():
+            continue
+        rows = conn.execute(
+            "SELECT frame_id FROM format_input_frames WHERE format_input_id = ? AND captured = 1 "
+            "ORDER BY frame_number", (input_id,)).fetchall()
+        if not rows:
+            continue
+        step = max(1, len(rows) // (per_input + 1))
+        for r in rows[step::step][:per_input]:
+            f = frame_dir / f"frame_{r['frame_id']}.jpg"
+            if f.is_file():
+                picked.append(("image/jpeg", f.read_bytes()))
+            if len(picked) >= max_frames:
+                return picked
+    return picked
 
 
 def sample_frames(conn, channel_id, max_frames=MAX_FRAMES):
@@ -83,9 +126,15 @@ def analyse(channel_id, max_frames=MAX_FRAMES):
         conn.close()
         raise ValueError(f"no channel with id {channel_id}")
     images = sample_frames(conn, channel_id, max_frames)
+    source = "shot analysis"
+    if not images:
+        images = sample_format_frames(conn, channel_id, max_frames)
+        source = "P+S frames"
     if not images:
         conn.close()
-        raise ValueError(f"no captured frames for '{ch['channel_name']}' — shot-analyse some videos first")
+        raise ValueError(f"no captured frames for '{ch['channel_name']}' — "
+                         f"shot-analyse or P+S-analyse some videos first")
+    print(f"[analyse_visual_style] {ch['channel_name']}: {len(images)} frames from {source}")
 
     data = llm_client.generate_json_with_images(PROMPT, images, max_tokens=MAX_TOKENS)
     palette = data.get("palette") or []

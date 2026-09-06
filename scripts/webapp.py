@@ -8,6 +8,7 @@ Usage:
     (then open http://127.0.0.1:5050 )
 """
 import base64
+import html
 import json
 import math
 import os
@@ -2670,10 +2671,14 @@ def api_ingest_video():
 
 
 def _norm_handle(x):
-    """Account names for comparison only: case, @, spacing and punctuation
-    all ignored, so "@casuallyfinance", "casuallyfinance" and "Casually
-    Finance" are one account rather than three profiles."""
-    return re.sub(r"[^a-z0-9]", "", (x or "").lower())
+    """Loose match for an account name.
+
+    html.unescape FIRST: a channel name scraped from a page can arrive with its
+    entities intact, and "Barry&#39;s Economics" normalises to
+    barry39seconomics — which silently matches nothing and is invisible until
+    something that depends on the match quietly produces no result.
+    """
+    return re.sub(r"[^a-z0-9]", "", html.unescape(x or "").lower())
 
 
 def _next_format_profile_code(conn):

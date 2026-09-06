@@ -46,8 +46,14 @@ Return ONLY a JSON object shaped exactly like this, no other text:
 
 def _norm(x):
     """Same loose match get_or_create_format_profile uses, so an account
-    resolves here exactly as it does there."""
-    return re.sub(r"[^a-z0-9]", "", (x or "").lower())
+    resolves here exactly as it does there.
+
+    Unescape first: a name scraped from a page keeps its HTML entities, and
+    "Barry&#39;s Economics" normalises to barry39seconomics — matching nothing,
+    silently, which is how an account with 35 classified inputs came back with
+    no frames and no error."""
+    import html as _html
+    return re.sub(r"[^a-z0-9]", "", _html.unescape(x or "").lower())
 
 
 def sample_format_frames(conn, channel_id, max_frames=MAX_FRAMES):

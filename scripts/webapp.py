@@ -5206,6 +5206,38 @@ PACING TARGET — measured from {production_channel_name}'s real shot-by-shot an
 {feel_block}
 VOICE/STYLE TARGET: {style_channel_name}{style_overview_suffix}
 {format_block}
+VISUAL GRAMMAR — how these graphics actually work
+
+Reverse-engineered from published breakdowns of the reference creators, and true of every
+account in this system that illustrates a script rather than filming one.
+
+Movement carries meaning. It is not decoration, and it is not random:
+- Toward the camera = this matters more. Away = this matters less.
+- Stacking = growth, accumulation, power.
+- Moving RIGHT = forward in time. Moving LEFT = back in time.
+- A move should START or STOP on the important word of the line, so the picture reads as
+  thinking along with the narrator rather than running underneath them.
+State the intended movement in the illustration caption when it carries one of these meanings,
+naming the word it lands on.
+
+Every image earns its place. If a visual does not help the viewer understand the idea, it does
+not belong in the beat. Do not ask for atmosphere shots.
+
+Make abstractions physical. Power, money, borders, influence become objects that can be moved,
+stacked, broken or pushed around — that is what makes them understandable and memorable.
+
+Prefer real-world sources: drawings, paintings, letters, scrapbook pages, historical documents,
+photographed rather than rendered. Physical evidence reads as evidence.
+
+Rough beats polished. Uneven cut edges, visible paper texture and slight imperfection make the
+work read as handmade and trustworthy; over-polished graphics read as corporate and are trusted
+less. Ask for the rough version deliberately.
+
+Depth is shallow. Three planes — background, middle, foreground — sitting CLOSE together, with
+the camera drifting gently between them if at all. The parallax should be barely noticeable,
+"like looking through frosted glass". Obvious 3D movement pulls attention to the animation
+instead of the message.
+
 Return ONLY a JSON object shaped exactly like this, no other text:
 {{
   "title": "a punchy title for this recut, in the source's own vocabulary",
@@ -5247,6 +5279,39 @@ TARGET CREATOR — {handle} ({profile_code}). Everything about HOW this is writt
 
 Their format, read from {n_inputs} analysed video(s){preliminary_note}:
 {axis_lines}
+
+
+VISUAL GRAMMAR — how these graphics actually work
+
+Reverse-engineered from published breakdowns of the reference creators, and true of every
+account in this system that illustrates a script rather than filming one.
+
+Movement carries meaning. It is not decoration, and it is not random:
+- Toward the camera = this matters more. Away = this matters less.
+- Stacking = growth, accumulation, power.
+- Moving RIGHT = forward in time. Moving LEFT = back in time.
+- A move should START or STOP on the important word of the line, so the picture reads as
+  thinking along with the narrator rather than running underneath them.
+State the intended movement in the illustration caption when it carries one of these meanings,
+naming the word it lands on.
+
+Every image earns its place. If a visual does not help the viewer understand the idea, it does
+not belong in the beat. Do not ask for atmosphere shots.
+
+Make abstractions physical. Power, money, borders, influence become objects that can be moved,
+stacked, broken or pushed around — that is what makes them understandable and memorable.
+
+Prefer real-world sources: drawings, paintings, letters, scrapbook pages, historical documents,
+photographed rather than rendered. Physical evidence reads as evidence.
+
+Rough beats polished. Uneven cut edges, visible paper texture and slight imperfection make the
+work read as handmade and trustworthy; over-polished graphics read as corporate and are trusted
+less. Ask for the rough version deliberately.
+
+Depth is shallow. Three planes — background, middle, foreground — sitting CLOSE together, with
+the camera drifting gently between them if at all. The parallax should be barely noticeable,
+"like looking through frosted glass". Obvious 3D movement pulls attention to the animation
+instead of the message.
 
 What that means for the script you write:
 - Where the words live decides what you are writing. If they live on screen, write the on-screen text itself and write no narration. If they are spoken, write speakable lines. If the audio is borrowed, write nothing to be spoken — only what is shown and what is written over it.
@@ -5295,6 +5360,26 @@ Each beat's duration_sec is then its own lines' character count divided by 16, a
 durations must add up to your runtime_target_sec. Getting this wrong is the most visible defect in
 the finished video: the pictures are cut to your durations but the voice runs to its own length, so
 an overwritten spec stretches every shot and destroys the cut rhythm above.
+
+SHAPE — what the beats are FOR
+
+Published breakdowns of the reference documentary channels describe one recurring structure, and
+it is not "5-9 sections of roughly equal weight". Use it unless the account's own format
+obviously contradicts it:
+
+  1. HOOK — something concrete and relatable. Not a summary, not a title card.
+  2. THE QUESTION — the actual puzzle this piece promises to answer. Hook and question together
+     should land inside the first ~20% of the runtime: by then the viewer has seen the stakes,
+     glimpsed the puzzle, and heard the question. That is the promise.
+  3. THE SIMPLE ANSWER — stated plainly, early, in a form the viewer can hold in their head.
+     Do not save it for the end; the rest of the piece earns it.
+  4. CONTEXT — history, mechanism, the deeper explanation of how it actually works. This is
+     where extra runtime goes when the material justifies a longer piece.
+  5. WHY IT MATTERS NOW — the stakes for the viewer, today.
+  6. RECAP — one clear takeaway that distils what they just watched.
+
+Steps 4 can span several beats; the others are usually one each. This reads as a mystery being
+solved rather than a lecture being delivered, which is the whole point.
 
 Split the source into 5-9 beats — nearer 5 at the short end of the band, nearer 9 at the long end.
 Write script_lines for every beat — they are the point of this spec, not an extra.

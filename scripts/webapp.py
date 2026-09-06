@@ -24,7 +24,7 @@ from urllib.parse import quote
 from flask import Flask, render_template, request, redirect, url_for, flash, session, send_file, abort, jsonify
 
 from db_init import (get_conn, BOOK_PAGES_DIR, BOOK_FILES_DIR, VIDEO_VISUALS_DIR,
-                     PRODUCTION_SPEC_SHOTS_DIR, FORMAT_FRAMES_DIR)
+                     PRODUCTION_SPEC_SHOTS_DIR, FORMAT_FRAMES_DIR, RENDER_ASSETS_DIR)
 from feature_extraction import extract_auto_features, _sentences
 from profile_builder import build_profile
 from score_engine import rate_input, score_intrinsic, score_against_profiles, score_book_against_profiles, CROSS_MEDIA_SHARED_FIELDS
@@ -2886,6 +2886,7 @@ def api_health():
                  "free_gb": round(du.free / 1e9, 2)},
         "db_mb": round(DB_PATH.stat().st_size / 1e6, 1) if DB_PATH.exists() else None,
         "shot_frames": dir_size(PRODUCTION_SPEC_SHOTS_DIR), "format_frames": dir_size(FORMAT_FRAMES_DIR),
+        "render_assets": dir_size(RENDER_ASSETS_DIR),
         "book_pages": dir_size(BOOK_PAGES_DIR), "video_visuals": dir_size(VIDEO_VISUALS_DIR),
         "write_lock": lock, "classifiers_running": _classifier_slots_in_use(),
         "classifier_cap": MAX_CLASSIFIERS,
@@ -3410,6 +3411,110 @@ def api_format_input_status(input_id):
                     "done": row["status"] in ("classified", "needs_review"),
                     "classification_error": row["classification_error"],
                     "on_screen_text": row["on_screen_text"]})
+
+
+# --- assets for an external renderer ------------------------------------------
+# The Higgsfield sandbox is thrown away ~10 seconds after each call and reaches
+# the outside world only over HTTP, so handing it a panel meant a presigned-S3
+# round trip per file. These two routes replace that with a URL it can curl.
+#
+# Deliberately narrow: upload is key-authed, the key is one path segment with no
+# separators (so it cannot escape the directory), the extension decides the
+# content type from a fixed allow-list, and both a per-file and a whole-directory
+# cap are enforced. The directory cap is not paranoia — a 1 GB disk filled with
+# render frames took the whole site down once already, and this directory exists
+# to be filled with large files by an automated caller.
+RENDER_ASSET_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                      "mp4": "video/mp4", "mp3": "audio/mpeg", "m4a": "audio/mp4",
+                      "json": "application/json"}
+RENDER_ASSET_MAX_MB = 40
+RENDER_ASSET_DIR_MAX_MB = 1500
+
+
+def _render_asset_path(key):
+    """Resolve a key to a path inside RENDER_ASSETS_DIR, or None."""
+    if not key or "/" in key or "\\" in key or key.startswith("."):
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", key):
+        return None
+    ext = key.rsplit(".", 1)[-1].lower() if "." in key else ""
+    if ext not in RENDER_ASSET_TYPES:
+        return None
+    return RENDER_ASSETS_DIR / key
+
+
+def _render_assets_mb():
+    if not RENDER_ASSETS_DIR.is_dir():
+        return 0.0
+    return sum(f.stat().st_size for f in RENDER_ASSETS_DIR.glob("*") if f.is_file()) / 1e6
+
+
+@app.route("/api/assets/<key>", methods=["POST"])
+def api_put_render_asset(key):
+    """Store one asset for an external renderer. POST {"base64": "..."}."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    path = _render_asset_path(key)
+    if not path:
+        return jsonify({"ok": False, "error": f"bad key; allowed extensions: "
+                                              f"{sorted(RENDER_ASSET_TYPES)}"}), 400
+    data = request.get_json(silent=True) or {}
+    raw = data.get("base64") or ""
+    try:
+        blob = base64.b64decode(raw, validate=True)
+    except Exception:
+        return jsonify({"ok": False, "error": "'base64' must be valid base64"}), 400
+    if not blob:
+        return jsonify({"ok": False, "error": "empty body"}), 400
+    if len(blob) > RENDER_ASSET_MAX_MB * 1_000_000:
+        return jsonify({"ok": False, "error": f"over {RENDER_ASSET_MAX_MB} MB"}), 413
+    RENDER_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    existing = path.stat().st_size if path.exists() else 0
+    if _render_assets_mb() - existing / 1e6 + len(blob) / 1e6 > RENDER_ASSET_DIR_MAX_MB:
+        return jsonify({"ok": False, "error": f"render_assets is full "
+                                              f"({RENDER_ASSET_DIR_MAX_MB} MB cap) — "
+                                              f"DELETE what the renderer no longer needs"}), 507
+    path.write_bytes(blob)
+    return jsonify({"ok": True, "key": key, "bytes": len(blob),
+                    "url": url_for("render_asset", key=key, _external=True),
+                    "dir_mb": round(_render_assets_mb(), 1)})
+
+
+@app.route("/api/assets/<key>", methods=["DELETE"])
+def api_delete_render_asset(key):
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    path = _render_asset_path(key)
+    if not path:
+        return jsonify({"ok": False, "error": "bad key"}), 400
+    existed = path.exists()
+    if existed:
+        path.unlink()
+    return jsonify({"ok": True, "key": key, "deleted": existed,
+                    "dir_mb": round(_render_assets_mb(), 1)})
+
+
+@app.route("/api/assets")
+def api_list_render_assets():
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    RENDER_ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(RENDER_ASSETS_DIR.glob("*"))
+    return jsonify({"ok": True, "count": len(files),
+                    "dir_mb": round(_render_assets_mb(), 1),
+                    "cap_mb": RENDER_ASSET_DIR_MAX_MB,
+                    "assets": [{"key": f.name, "bytes": f.stat().st_size} for f in files
+                               if f.is_file()]})
+
+
+@app.route("/assets/<key>")
+def render_asset(key):
+    """Public read. These are our own generated panels and cuts, and the whole
+    point is that an external renderer can fetch them without credentials."""
+    path = _render_asset_path(key)
+    if not path or not path.is_file():
+        abort(404)
+    return send_file(path, mimetype=RENDER_ASSET_TYPES[key.rsplit(".", 1)[-1].lower()])
 
 
 @app.route("/api/format/inputs/<int:input_id>/exclude", methods=["POST"])

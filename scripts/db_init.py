@@ -37,6 +37,13 @@ PRODUCTION_SPEC_SHOTS_DIR = DB_PATH.parent / "production_spec_shots"
 # Layout: FORMAT_FRAMES_DIR/<format_input_id>/frame_<frame_id>.png
 FORMAT_FRAMES_DIR = DB_PATH.parent / "format_frames"
 
+# Panels and cuts handed to an EXTERNAL renderer. The Higgsfield sandbox is
+# discarded seconds after each call and can only reach the network, so every
+# asset it needs has to sit behind a plain URL it can curl. Kept separate from
+# the analysis frames above so it can be swept independently — this directory
+# is a courier, not a store.
+RENDER_ASSETS_DIR = DB_PATH.parent / "render_assets"
+
 
 def get_conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)

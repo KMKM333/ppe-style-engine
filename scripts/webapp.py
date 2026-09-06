@@ -4602,6 +4602,65 @@ def api_analyse_visual_style(channel_id):
                     "status": "analysing the account's visual style"})
 
 
+@app.route("/api/production-spec/channels/<int:channel_id>/visual-style/debug")
+def api_visual_style_debug(channel_id):
+    """Why a visual style produced nothing, without paying for a vision call.
+
+    The analysis runs in a detached subprocess, so when it finds no frames it
+    raises, exits, and leaves no trace anywhere a caller can see — which is
+    exactly what happened for an account with 35 classified P+S inputs. This
+    walks the same sampler and reports what it found at each step.
+    """
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    import analyse_visual_style as avs
+    conn = get_conn()
+    ch = conn.execute("SELECT channel_name FROM channels WHERE channel_id = ?",
+                      (channel_id,)).fetchone()
+    if not ch:
+        conn.close()
+        return jsonify({"ok": False, "error": "no such channel"}), 404
+    target = avs._norm(ch["channel_name"])
+    profiles = [dict(r) for r in conn.execute(
+        "SELECT format_profile_id, profile_code, channel_id, handle, display_name FROM format_profiles")]
+    matched = [p for p in profiles
+               if p["channel_id"] == channel_id
+               or (target and target in (avs._norm(p["handle"]), avs._norm(p["display_name"])))]
+    n_inputs = n_captured = 0
+    dirs_present = 0
+    if matched:
+        ph = ",".join("?" * len(matched))
+        ids = [p["format_profile_id"] for p in matched]
+        rows = [r["format_input_id"] for r in conn.execute(
+            f"""SELECT format_input_id FROM format_inputs
+                WHERE format_profile_id IN ({ph}) AND status = 'classified'
+                  AND COALESCE(excluded, 0) = 0""", ids)]
+        n_inputs = len(rows)
+        for iid in rows:
+            c = conn.execute("SELECT COUNT(*) FROM format_input_frames "
+                             "WHERE format_input_id = ? AND captured = 1", (iid,)).fetchone()[0]
+            n_captured += c
+            if (FORMAT_FRAMES_DIR / str(iid)).is_dir():
+                dirs_present += 1
+    shot_inputs = conn.execute(
+        "SELECT COUNT(*) FROM production_spec_inputs WHERE channel_id = ?", (channel_id,)).fetchone()[0]
+    sampled_shot = len(avs.sample_frames(conn, channel_id))
+    sampled_fmt = len(avs.sample_format_frames(conn, channel_id))
+    conn.close()
+    return jsonify({
+        "ok": True, "channel": ch["channel_name"], "normalised": target,
+        "shot_inputs": shot_inputs, "frames_from_shot_analysis": sampled_shot,
+        "format_profiles_matched": [{"code": p["profile_code"], "handle": p["handle"],
+                                     "channel_id": p["channel_id"]} for p in matched],
+        "classified_unexcluded_inputs": n_inputs,
+        "frames_marked_captured": n_captured,
+        "input_dirs_on_disk": dirs_present,
+        "frames_from_format_fallback": sampled_fmt,
+        "verdict": ("would work" if (sampled_shot or sampled_fmt)
+                    else "no frames — see which count above is zero"),
+    })
+
+
 @app.route("/api/production-spec/channels/<int:channel_id>/visual-style", methods=["GET"])
 def api_get_visual_style(channel_id):
     if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:

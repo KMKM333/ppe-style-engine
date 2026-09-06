@@ -3413,6 +3413,86 @@ def api_format_input_status(input_id):
                     "on_screen_text": row["on_screen_text"]})
 
 
+# --- render styles -----------------------------------------------------------
+# A named look the renderer can ask for. Distinct from visual_style_briefs,
+# which measure ONE account from its own frames: these are authored, and what
+# they carry that a measured brief kept losing is the MEDIUM. Two panels for
+# the same beat came back as a flat vector poster and as a photographic
+# collage; describing either in the abstract produced neither.
+@app.route("/api/render-styles", methods=["POST"])
+def api_put_render_style():
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    d = request.get_json(silent=True) or {}
+    slug = (d.get("slug") or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{1,40}", slug or ""):
+        return jsonify({"ok": False, "error": "slug must be lowercase a-z0-9_- (2-41 chars)"}), 400
+    if not (d.get("name") or "").strip() or not (d.get("prompt_prefix") or "").strip():
+        return jsonify({"ok": False, "error": "'name' and 'prompt_prefix' are required"}), 400
+    cap = (d.get("caption_mode") or "baked").strip().lower()
+    if cap not in ("baked", "overlay"):
+        return jsonify({"ok": False, "error": "caption_mode must be 'baked' or 'overlay'"}), 400
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO render_styles
+           (slug, name, medium, prompt_prefix, palette_json, avoid, caption_mode, notes, derived_from)
+           VALUES (?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(slug) DO UPDATE SET
+             name=excluded.name, medium=excluded.medium,
+             prompt_prefix=excluded.prompt_prefix, palette_json=excluded.palette_json,
+             avoid=excluded.avoid, caption_mode=excluded.caption_mode,
+             notes=excluded.notes, derived_from=excluded.derived_from""",
+        (slug, d.get("name").strip(), d.get("medium"), d.get("prompt_prefix").strip(),
+         json.dumps(d.get("palette") or []), d.get("avoid"), cap,
+         d.get("notes"), d.get("derived_from")),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "slug": slug,
+                    "url": url_for("render_styles_list", _external=True)})
+
+
+def _render_style_row(conn, slug):
+    r = conn.execute("SELECT * FROM render_styles WHERE slug = ?", (slug,)).fetchone()
+    if not r:
+        return None
+    d = dict(r)
+    try:
+        d["palette"] = json.loads(d.pop("palette_json") or "[]")
+    except json.JSONDecodeError:
+        d["palette"] = []
+    return d
+
+
+@app.route("/api/render-styles")
+def api_list_render_styles():
+    conn = get_conn()
+    rows = [r["slug"] for r in conn.execute("SELECT slug FROM render_styles ORDER BY slug")]
+    out = [_render_style_row(conn, sl) for sl in rows]
+    conn.close()
+    return jsonify({"ok": True, "count": len(out), "styles": out})
+
+
+@app.route("/api/render-styles/<slug>")
+def api_get_render_style(slug):
+    conn = get_conn()
+    d = _render_style_row(conn, slug)
+    conn.close()
+    if not d:
+        return jsonify({"ok": False, "error": f"no such style: {slug}"}), 404
+    return jsonify({"ok": True, "style": d})
+
+
+@app.route("/production/styles")
+def render_styles_list():
+    """The named looks, with the prompt text that actually produces each one."""
+    conn = get_conn()
+    slugs = [r["slug"] for r in conn.execute("SELECT slug FROM render_styles ORDER BY slug")]
+    styles = [_render_style_row(conn, sl) for sl in slugs]
+    conn.close()
+    return render_template("render_styles_list.html", active="production-styles", styles=styles)
+
+
 # --- assets for an external renderer ------------------------------------------
 # The Higgsfield sandbox is thrown away ~10 seconds after each call and reaches
 # the outside world only over HTTP, so handing it a panel meant a presigned-S3

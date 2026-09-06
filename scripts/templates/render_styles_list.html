@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Render Styles — PPE Engine{% endblock %}
+{% block content %}
+<h1>Render Styles</h1>
+<div class="sub">
+  Named looks the renderer can be asked for. Distinct from a PVS profile (how an account's words
+  and pictures relate) and from a visual style brief (what ONE account's frames look like): these
+  are authored recipes, and what they carry is the <em>medium</em> — the thing a description of a
+  look keeps losing. The same beat prompted two ways came back as a flat vector poster and as a
+  photographic collage.
+</div>
+
+<div class="card" style="margin-top:16px">
+  {% if styles %}
+  <table>
+    <tr><th style="width:190px">Style</th><th style="width:150px">Medium</th><th>Prompt prefix</th><th style="width:120px">Palette</th><th style="width:90px">Captions</th></tr>
+    {% for s in styles %}
+    <tr>
+      <td>
+        <strong>{{ s.name }}</strong>
+        <div class="muted" style="font-size:11.5px"><code>{{ s.slug }}</code></div>
+        {% if s.derived_from %}<div class="muted" style="font-size:11.5px;margin-top:4px">from {{ s.derived_from }}</div>{% endif %}
+      </td>
+      <td class="muted">{{ s.medium or '—' }}</td>
+      <td style="font-size:12.5px">
+        {{ s.prompt_prefix }}
+        {% if s.avoid %}<div class="muted" style="margin-top:6px"><strong>Avoid:</strong> {{ s.avoid }}</div>{% endif %}
+        {% if s.notes %}<div class="muted" style="margin-top:6px">{{ s.notes }}</div>{% endif %}
+      </td>
+      <td>
+        {% for c in s.palette %}
+        <span title="{{ c }}" style="display:inline-block;width:18px;height:18px;border-radius:4px;background:{{ c }};border:1px solid rgba(255,255,255,.15);margin:1px"></span>
+        {% endfor %}
+      </td>
+      {# Which caption mode a style wants is a property of the MATERIAL, not a preference:
+         integrated lettering belongs on an illustrated panel where it is part of the
+         composition; drawn type belongs over photographic material where there is no
+         composition to belong to. Getting that backwards is what made an earlier render worse. #}
+      <td><span class="pill">{{ s.caption_mode }}</span></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">No render styles saved yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

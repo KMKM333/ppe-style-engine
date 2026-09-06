@@ -144,4 +144,8 @@ python3 migrate_add_format_input_excluded.py || echo "WARNING: migrate_add_forma
 # that argued for 90s and then wrote 140 is visible rather than silent.
 python3 migrate_add_spec_runtime_rationale.py || echo "WARNING: migrate_add_spec_runtime_rationale.py failed — continuing so the site still serves; see /api/health"
 
+# A look you can name and reuse, authored rather than measured — the medium a
+# paraphrase of an account's brief keeps losing.
+python3 migrate_add_render_styles.py || echo "WARNING: migrate_add_render_styles.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

@@ -102,82 +102,42 @@ of hoping the reference carries it.
 Confidence is reported. Below ~70% treat the strings as unreliable; the geometry
 (box, height, position) stays usable even when the characters are wrong.
 
-## Which lever actually moves the output
+## REVERTED 2026-09-08 — the score is not the goal
 
-Measured, by scoring the renders we already had against the account each was
-imitating. Every render below differs from a sibling by one variable.
+A set of "improvements" was built on top of this loop and then **reverted at the
+user's instruction**, because the output got worse to look at while the score got
+better. Recorded here so nobody rebuilds them.
 
-| Lever | Effect on panels | Cost |
-|---|---|---|
-| **Best-of-3 selection** | **2.03 → 0.68 (−67%)** | 3× image credits |
-| **Reference frames from the style's own clip** | **2.03 → 0.83 (−59%)** | no extra |
-| **Saturation correction** | biggest single term when unselected | free |
-| **+ gentle palette lock** | small further gain | free |
-| Applying a measured style at all | 3.55 → 2.34 (−34%) | free |
-| Higgsfield instead of the free route | 2.34 → 2.17 (−7%) | 26–32.5 credits |
+Measured against @guijooorge's clips, panel scores went 2.03 → 0.83 with
+reference frames taken from the style's own clip, → 0.68 with best-of-3
+selection, and the finished render went 2.34 → 0.44. Every number said it was a
+large improvement. The user watched both and said the 2.34 version was clearly
+better.
 
-Stacked on the finished video, against @guijooorge: baseline **2.34**, reference
-frames **0.54**, best-of-3 **0.50**, plus correction **0.44** — the same score as
-a 4-credit Higgsfield probe, against the Higgsfield route's own 2.17. A real
-frame of his work scores 0.37.
+**The metric measured statistical similarity to an account, and that is not the
+same thing as looking right.** Flatness, saturation, dark area and palette
+distance can all converge on a creator's numbers while the picture loses whatever
+made it worth watching. Optimising against the measure is how that happens: the
+selection step literally chose panels for their closeness to those statistics.
 
-Panel scores are the clean evidence; panels are generated before treatment, so
-caption mode and grade cannot reach them. The finished-video figures carry a
-caption-mode difference against the baseline and should be read as the end
-result rather than as the attribution.
+What this does NOT invalidate:
 
-Three findings worth carrying:
+- **Measuring a reference to describe it.** The failures that started this — a
+  palette named from one sample, a brief whose words fitted two different media —
+  were real, and measurement fixed them.
+- **Scoring a probe to see what a render did.** Reporting that a ground colour
+  came out at 15% of frame where the account sits at 72% is useful information.
 
-**Saturation was the largest error term in every unselected render, and it
-pointed the wrong way.** Renders aimed at @johnnyharris, whose clips measure
-0.29, came out at 0.65–0.72; renders aimed at @guijooorge, whose clips measure
-0.70, came out at 0.30–0.39. The two accounts had each other's saturation.
+What it does invalidate:
 
-**Best-of-N largely subsumes the saturation fix.** Selecting on the composite
-picks panels that are already on-target, so a best-of-3 render arrived at 0.739
-against a target of 0.703 and the correction had almost nothing left to do
-(k=0.984). The levers are not additive; selection does most of the work.
+- **Using the score as an objective to optimise.** Report it; do not select on
+  it, and never conclude a render improved because a number fell. Put the two
+  videos side by side and ask.
 
-**What you feed the generator matters far more than which generator it is** —
-59% for pointing reference frames at the right clip, against 7% for switching
-to Higgsfield.
-
-## The correction tool
-
-`match_look.py`, beside this file. It writes a NEW file and never touches its
-input, so it runs on a free-route render, a Higgsfield output or a downloaded
-clip alike — and reverting it means not running it.
-
-```bash
-./venv/bin/python3 match_look.py --set-targets guijooorge-flat --from-channel guijooorge
-./venv/bin/python3 match_look.py in.mp4 out.mp4 --style guijooorge-flat --saturation
-./venv/bin/python3 match_look.py in.mp4 out.mp4 --style guijooorge-flat --saturation --palette-lock
-```
-
-Saturation is corrected by measuring, not by guessing a multiplier: ffmpeg's
-`eq=saturation` acts in YUV and the metric is area-weighted HSV, so the tool
-applies a first guess, re-measures, refines, and keeps whichever pass landed
-closest.
-
-Palette-lock defaults are **measured, not chosen**. At strength 0.8 / radius
-0.28 it made the render worse than saturation alone (1.13 against 1.07); at
-0.4 / 0.16 it improves on it (1.03). A lock has to nudge — snapping hard
-destroys the shading that makes flat fills read as deliberate.
-
-## Selection in the renderer
-
-`assemble_video.py --best-of N --style <slug>` generates N candidates per panel
-and keeps the one closest to the style's measured targets. **Default 1 = the old
-path**, and the filename carries `_bestN`, so reverting is passing nothing.
-
-It only runs against a style carrying measured targets — without them there is
-nothing to select on, and it says so rather than inventing a target.
-
-`--ref-source style` (default) takes reference frames from the applied style's
-own reference clip rather than the creation's account. Creation 13 is a Barry's
-Economics script rendered in @guijooorge's style, and the old path handed it
-Barry's frames — blending two accounts so neither came through. `--ref-source
-account` restores the old behaviour.
+The tools removed in the revert: `match_look.py` (saturation correction and
+palette lock), `--best-of N` selection, `--ref-source style` reference framing,
+and the `target_*` columns on render_styles. `measure_reference.py` stays,
+because describing and reporting are still worth having.
 
 ## The loop
 

@@ -16,3 +16,10 @@ db/production_spec_shots/
 *.pyc
 scripts/webapp.log
 .env.local
+
+# stray artefacts that must never be committed
+instagram_transcriber.zip
+db/.fuse_hidden*
+db/*.jsonl
+db/*.log
+.DS_Store

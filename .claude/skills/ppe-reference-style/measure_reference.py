@@ -231,13 +231,23 @@ def flatness(img):
 
 
 def linework(img):
-    """How much of the frame is dark, hard edge — i.e. thick black outlines."""
+    """How much of the frame is dark, hard edge — i.e. thick black outlines.
+
+    Darkness alone is not blackness. A deep saturated navy (#162e6d) has a mean
+    channel value around 60 and was being counted as near-black, so a probe that
+    was mostly navy ground reported 75% "black linework" against a reference's
+    35% and looked like a failure when the render was in fact correct. Black is
+    dark AND unsaturated; navy is dark and saturated.
+    """
     g = img.mean(axis=2)
     gx = np.abs(np.diff(g, axis=1))
     gy = np.abs(np.diff(g, axis=0))
     strong = ((gx > 60).sum() + (gy > 60).sum()) / (gx.size + gy.size)
-    dark = (g < 60).mean()
-    return {"edge_density": round(float(strong), 4), "dark_area": round(float(dark), 4)}
+    px = img.reshape(-1, 3).astype(np.float32)
+    mx = px.max(axis=1); mn = px.min(axis=1)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1), 0)
+    dark = float(((g.reshape(-1) < 60) & (sat < 0.35)).mean())
+    return {"edge_density": round(float(strong), 4), "dark_area": round(dark, 4)}
 
 
 def caption_band(img):
@@ -909,9 +919,14 @@ def compare(ref, out):
         verdict.append("output reached none of the reference's ground colours")
 
     rv, ov = ref["ground_verdict"].split(" ")[0], out["ground_verdict"].split(" ")[0]
-    rows.append(("colour system", rv, ov, "match" if rv == ov else "OFF"))
-    if rv != ov:
-        verdict.append("colour system: reference is %s, output is %s" % (rv, ov))
+    if out["scenes"] < 3:
+        rows.append(("colour system", rv, "%s (%d scenes)" % (ov, out["scenes"]), "n/a"))
+        print("\n  note: the output has %d scene(s). A per-scene colour system cannot be"
+              "\n  shown or refuted by one scene — that row is not scored." % out["scenes"])
+    else:
+        rows.append(("colour system", rv, ov, "match" if rv == ov else "OFF"))
+        if rv != ov:
+            verdict.append("colour system: reference is %s, output is %s" % (rv, ov))
 
     print("\n%-28s %-14s %-14s %s" % ("", "REFERENCE", "OUTPUT", ""))
     print("-" * 72)

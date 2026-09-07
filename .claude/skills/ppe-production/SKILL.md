@@ -130,3 +130,8 @@ account needs its links pasted once.
 
 `reference.md` in this directory lists every endpoint, its body and its
 response. Read it when you need an exact call.
+
+For anything about how a render LOOKS — building or refining a style, a palette,
+output that does not match an account — use the **`ppe-reference-style`** skill
+instead. It measures the account's real reference clips rather than describing
+them, which is what fixed the visual quality problem.

@@ -246,6 +246,30 @@ Record in `notes` what the reference supplied *for free* (things that appeared
 without being described) versus what the prompt had to carry. That distinction is
 the whole value of the style.
 
+## Traps when running an A/B on the renderer
+
+**A style with `caption_mode: baked` silently sets `--no-caption-overlay`.** So a
+render made with a baked style carries `_nocap` and one made before that rule did
+not — and comparing the two measures caption treatment as well as whatever you
+meant to test. This is the same confound that made the first reference-frame
+result untrustworthy. Check the output FILENAME suffixes match on everything
+except the variable under test before comparing anything.
+
+**Compare panels, not finished videos.** Panels are generated before treatment,
+so caption mode, grade and grain cannot reach the PNGs in the work directory.
+Scoring those with `score_image` is both cleaner and free, and it sidesteps the
+trap above entirely.
+
+**Each variant gets its own work directory**, named from the same suffix, so
+nothing is shared and TTS is re-billed per variant. Copy `beat_*.mp3` and
+`audio.txt` across first — but note the destination name must include every
+suffix the run will produce, `_nocap` included, or the seeding silently misses.
+
+**Re-check the cost estimate after adding any flag that multiplies calls.** The
+estimator quoted $0.46 for a best-of-3 run — it did not know the flag existed,
+so it under-quoted threefold and `--budget` guarded a meaningless number. That is
+the same class of error as the run once quoted at $1.95 that billed about $9.
+
 ## Rules that came from real failures
 
 1. **n ≥ 3 videos before stating any system.** One clip describes one clip.

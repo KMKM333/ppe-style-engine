@@ -83,6 +83,17 @@ def sample_times(path):
     return dur, cuts, times
 
 
+def frame_raw(path, t):
+    """The frame as delivered, bars and all — only for reporting the crop."""
+    p = _run(["ffmpeg", "-v", "error", "-ss", f"{t}", "-i", path, "-frames:v", "1",
+              "-vf", f"scale={W}:-2", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"])
+    if not p.stdout:
+        return None
+    h = len(p.stdout) // (W * 3)
+    return (np.frombuffer(p.stdout[:h * W * 3], np.uint8).reshape(h, W, 3)
+            if h else None)
+
+
 def frame(path, t):
     """One frame as an HxWx3 uint8 array, straight out of ffmpeg."""
     p = _run(["ffmpeg", "-v", "error", "-ss", f"{t}", "-i", path, "-frames:v", "1",
@@ -93,7 +104,9 @@ def frame(path, t):
     h = len(buf) // (W * 3)
     if h == 0:
         return None
-    return np.frombuffer(buf[:h * W * 3], np.uint8).reshape(h, W, 3)
+    img = np.frombuffer(buf[:h * W * 3], np.uint8).reshape(h, W, 3)
+    cropped, _ = letterbox(img)
+    return cropped
 
 
 def merge_near(items, tol=26.0):
@@ -115,6 +128,55 @@ def merge_near(items, tol=26.0):
             it = dict(it); it["_rgb"] = c; it["_n"] = 1
             out.append(it)
     return out
+
+
+def letterbox(img, max_frac=0.18):
+    """Crop uniform padding at the edges, whatever colour it is.
+
+    The first version looked for BLACK bars and found none, because the padding
+    on these reels is white: a uniform band across the bottom tenth carrying
+    burned-in auto-subtitles. Left in, it counted as design, and OCR read the
+    subtitle — a generic sans on a grey pill — and reported it as the account's
+    caption style. It is not; the account's typography is the display lettering
+    inside the artwork.
+
+    A band is only cropped when its colour actually DIFFERS from the artwork
+    behind it. On flat-colour material the top rows are legitimately a uniform
+    ground, and cropping those would quietly shrink the ground share that the
+    whole colour verdict rests on.
+    """
+    g = img.mean(axis=2)
+    h, w = g.shape
+    std = g.std(axis=1)
+    lim = int(h * max_frac)
+
+    def band(rows):
+        n = 0
+        for i in rows:
+            if std[i] < 12 and n < lim:
+                n += 1
+            else:
+                break
+        return n
+
+    t = band(range(h))
+    b = band(range(h - 1, -1, -1))
+    core = img[t:h - b] if (t + b) < h else img
+    if core.size == 0:
+        return img, None
+    core_mean = core.reshape(-1, 3).mean(axis=0)
+
+    def differs(sl):
+        return np.linalg.norm(sl.reshape(-1, 3).mean(axis=0) - core_mean) > 55
+
+    if t and not differs(img[:t]):
+        t = 0
+    if b and not differs(img[h - b:]):
+        b = 0
+    if not (t or b):
+        return img, None
+    return (np.ascontiguousarray(img[t:h - b]),
+            {"top": round(t / h, 3), "bottom": round(b / h, 3)})
 
 
 def hexof(c):
@@ -200,8 +262,267 @@ def caption_band(img):
             "strength": round(float(row[rows].mean()), 3)}
 
 
+# ---------------------------------------------------------------- OCR ----
+# The band detector below infers text from horizontal-frequency energy, which
+# cannot tell lettering from any other busy detail and cannot read a word. OCR
+# replaces the guess with the actual caption: its words, its casing, its box,
+# and the plate behind it — the plate being exactly the thing a reference clip
+# reproduced for free that no written brief had ever described.
+
+OCR_W = 720          # tesseract needs real pixels; 320 is too small to read
+OCR_CONF = 55.0
+# Where text SITS separates burned-in subtitles from an account's own display
+# lettering far better than how big it is. Measured: @guijooorge's subtitle words
+# all land at 90-95% frame height at 1.8-3.3% cap height, while @Barry's Economics
+# sets "SEARCH THE BURRY INSIDE" at 34-45% height in caps. A cap-height rule
+# called the second one a subtitle; a position rule does not.
+SUBTITLE_BAND = 0.85    # text centred below this is almost certainly a subtitle
+
+
+def _ppm(img, path):
+    """Write a frame where tesseract can read it, without adding PIL."""
+    h, w = img.shape[:2]
+    with open(path, "wb") as f:
+        f.write(b"P6\n%d %d\n255\n" % (w, h))
+        f.write(img.tobytes())
+
+
+def ocr_frame(path_video, t, tmpd):
+    """Words, boxes and confidence for one frame."""
+    p = _run(["ffmpeg", "-v", "error", "-ss", f"{t}", "-i", path_video, "-frames:v", "1",
+              "-vf", f"scale={OCR_W}:-2", "-pix_fmt", "rgb24", "-f", "rawvideo", "-"])
+    if not p.stdout:
+        return None
+    h = len(p.stdout) // (OCR_W * 3)
+    if h == 0:
+        return None
+    img = np.frombuffer(p.stdout[:h * OCR_W * 3], np.uint8).reshape(h, OCR_W, 3)
+    img, bars = letterbox(img)
+    img = np.ascontiguousarray(img)
+    ppm = os.path.join(tmpd, "f.ppm")
+    _ppm(img, ppm)
+    # psm 11 = sparse text: caption words sit alone on a flat ground, they are
+    # not paragraphs, and the page-layout modes mangle them.
+    r = _run(["tesseract", ppm, "stdout", "--psm", "11", "-l", "eng", "tsv"], text=True)
+    words = []
+    for line in r.stdout.splitlines()[1:]:
+        c = line.split("\t")
+        if len(c) < 12:
+            continue
+        txt = c[11].strip()
+        try:
+            conf = float(c[10])
+        except ValueError:
+            continue
+        if not txt or conf < OCR_CONF or len(txt) < 2:
+            continue
+        words.append({"text": txt, "conf": conf, "x": int(c[6]), "y": int(c[7]),
+                      "w": int(c[8]), "h": int(c[9])})
+    if not words:
+        return None
+    # Burned-in auto-subtitles and the account's display lettering are different
+    # objects and must not be averaged together. Cap height separates them
+    # cleanly: the subtitle on these reels measures ~4.7% of frame height, the
+    # display type many times that. Only display type describes a style.
+    H = img.shape[0]
+    disp = [w for w in words if (w["y"] + w["h"] / 2) / H < SUBTITLE_BAND]
+    subs = [w for w in words if (w["y"] + w["h"] / 2) / H >= SUBTITLE_BAND]
+    return {"img": img, "words": words, "display": disp, "subtitle": subs, "bars": bars}
+
+
+def read_captions(path_video, times, tmpd):
+    """Aggregate what the lettering actually is, across sampled frames."""
+    frames, subs_only, H, W = [], [], None, None
+    for t in times:
+        o = ocr_frame(path_video, t, tmpd)
+        if not o:
+            continue
+        img = o["img"]
+        if o["subtitle"]:
+            subs_only.append(" ".join(x["text"] for x in o["subtitle"]))
+        words = o["display"]
+        if not words:
+            continue
+        H, W = img.shape[0], img.shape[1]
+        x0 = min(w["x"] for w in words); x1 = max(w["x"] + w["w"] for w in words)
+        y0 = min(w["y"] for w in words); y1 = max(w["y"] + w["h"] for w in words)
+        txt = " ".join(w["text"] for w in words)
+        letters = [ch for ch in txt if ch.isalpha()]
+        caps = sum(1 for ch in letters if ch.isupper()) / max(len(letters), 1)
+
+        # Plate: the pixels inside the text box that are NOT glyph. If they sit
+        # on one tight colour, the type is on a solid plate; if they scatter, it
+        # is set straight onto the artwork.
+        box = img[max(y0 - 4, 0):min(y1 + 4, H), max(x0 - 6, 0):min(x1 + 6, W)]
+        plate = glyph = None
+        if box.size:
+            g = box.mean(axis=2)
+            lo, hi = np.percentile(g, [25, 75])
+            bg = box[g >= hi] if (g >= hi).sum() > (g <= lo).sum() else box[g <= lo]
+            fg = box[g <= lo] if (g >= hi).sum() > (g <= lo).sum() else box[g >= hi]
+            if len(bg) > 20:
+                plate = {"hex": hexof(bg.mean(axis=0)),
+                         "uniform": round(float(1.0 - min(bg.std(axis=0).mean() / 60.0, 1.0)), 3)}
+            if len(fg) > 20:
+                glyph = hexof(fg.mean(axis=0))
+            # stroke weight: glyph pixels as a share of the text box
+            weight = round(float(min((g <= lo).mean(), (g >= hi).mean()) * 2), 3)
+        else:
+            weight = None
+
+        frames.append({
+            "t": round(float(t), 2), "text": txt, "words": len(words),
+            "conf": round(float(np.mean([w["conf"] for w in words])), 1),
+            "caps_ratio": round(caps, 2),
+            "box": {"top": round(y0 / H, 3), "bottom": round(y1 / H, 3),
+                    "left": round(x0 / W, 3), "right": round(x1 / W, 3),
+                    "height": round((y1 - y0) / H, 3), "width": round((x1 - x0) / W, 3)},
+            "cap_height": round(float(np.median([w["h"] for w in words]) / H), 3),
+            "plate": plate, "glyph": glyph, "stroke": weight,
+        })
+    return frames, subs_only
+
+
+def summarise_ocr(frames, dur):
+    if not frames:
+        return None
+    caps = float(np.mean([f["caps_ratio"] for f in frames]))
+    centres = [(f["box"]["top"] + f["box"]["bottom"]) / 2 for f in frames]
+    lefts = [f["box"]["left"] for f in frames]
+    rights = [f["box"]["right"] for f in frames]
+    plates = [f["plate"] for f in frames if f["plate"]]
+    uniform = float(np.mean([p["uniform"] for p in plates])) if plates else 0.0
+    # centred if the margins match on both sides
+    margin_gap = float(np.mean([abs(l - (1 - r)) for l, r in zip(lefts, rights)]))
+    align = ("centred" if margin_gap < 0.06 else
+             "left-set" if np.mean(lefts) < 0.15 else "varies")
+    texts = [f["text"] for f in frames]
+    return {
+        "frames_with_text": len(frames),
+        "mean_confidence": round(float(np.mean([f["conf"] for f in frames])), 1),
+        "casing": ("ALL CAPS" if caps > 0.9 else "mostly caps" if caps > 0.6
+                   else "sentence case"),
+        "caps_ratio": round(caps, 2),
+        "words_on_screen": round(float(np.mean([f["words"] for f in frames])), 1),
+        "centre_height": round(float(np.mean(centres)), 3),
+        "band": "lower third" if np.mean(centres) > 0.62 else
+                "upper third" if np.mean(centres) < 0.38 else "centre band",
+        "position_stable": round(float(np.std(centres)), 3) < 0.08,
+        "alignment": align,
+        "cap_height_pct": round(float(np.mean([f["cap_height"] for f in frames])) * 100, 1),
+        "line_width_pct": round(float(np.mean([f["box"]["width"] for f in frames])) * 100, 1),
+        "plate": ({"hex": plates[0]["hex"], "uniformity": round(uniform, 2)}
+                  if plates and uniform > 0.55 else None),
+        "glyph_colour": frames[0]["glyph"],
+        "stroke_weight": round(float(np.mean([f["stroke"] for f in frames
+                                              if f["stroke"] is not None])), 3)
+                          if any(f["stroke"] is not None for f in frames) else None,
+        "changes_per_min": (round(len(set(texts)) / dur * 60, 1) if dur else None),
+        "samples": texts[:6],
+    }
+
+
+def visual_attributes(img):
+    """Texture, depth, shape and colour structure — beyond palette and letters.
+
+    OCR localises the type; these describe the SURFACE the type sits on. Each is
+    a measurement with a stated proxy, not an adjective: the point is that
+    "textured", "flat", "geometric" and "soft" stop being words that fit any
+    material and become numbers that separate one from another.
+    """
+    g = img.mean(axis=2).astype(np.float32)
+    h, w = g.shape
+    a = {}
+
+    # TEXTURE — high-frequency residual after a 3x3 box blur. Grain and paper
+    # tooth survive it; clean vector fills do not.
+    k = np.ones((3, 3), np.float32) / 9.0
+    pad = np.pad(g, 1, mode="edge")
+    blur = sum(pad[i:i + h, j:j + w] * k[i, j] for i in range(3) for j in range(3))
+    resid = np.abs(g - blur)
+    edges = resid > 18                      # real edges, not grain
+    grain = float(resid[~edges].mean()) if (~edges).any() else 0.0
+    a["grain"] = round(grain, 2)
+    a["grain_class"] = ("clean — no texture" if grain < 1.2 else
+                        "light grain" if grain < 3.0 else
+                        "visible grain or paper tooth" if grain < 6.0 else
+                        "heavy texture / photographic detail")
+
+    # DEPTH 1 — gradients. A flat fill has a constant interior; a ramped fill
+    # drifts steadily without ever crossing an edge.
+    inner = ~edges
+    gx = np.abs(np.diff(g, axis=1))[:, :w - 1]
+    slow = (gx > 0.8) & (gx < 6) & inner[:, :w - 1]
+    a["gradient_area"] = round(float(slow.mean()), 4)
+    a["fills"] = ("flat, constant colour" if slow.mean() < 0.06 else
+                  "some ramping" if slow.mean() < 0.16 else "gradient-filled")
+
+    # DEPTH 2 — drop shadows: a dark band sitting just below a bright edge.
+    dy = np.diff(g, axis=0)
+    down_dark = (dy < -25)[:h - 3]
+    below = g[2:h - 1] < g[1:h - 2]
+    a["shadow_score"] = round(float((down_dark & below[:len(down_dark)]).mean()), 4)
+    a["depth"] = ("no shadowing — single flat plane" if a["shadow_score"] < 0.012 else
+                  "light offset shadowing" if a["shadow_score"] < 0.03 else
+                  "layered with visible shadows")
+
+    # SHAPE — orientation of edges. Geometric artwork piles onto horizontal and
+    # vertical; organic drawing spreads across the diagonals.
+    ex = np.diff(g, axis=1)[:h - 1, :]
+    ey = np.diff(g, axis=0)[:, :w - 1]
+    mag = np.hypot(ex, ey)
+    m = mag > 20
+    if m.sum() > 50:
+        ang = (np.degrees(np.arctan2(ey[m], ex[m])) + 180) % 180
+        near_axis = float((((ang < 12) | (ang > 168)) | ((ang > 78) & (ang < 102))).mean())
+        a["axis_aligned"] = round(near_axis, 3)
+        a["shape_language"] = ("strictly geometric — horizontals and verticals"
+                               if near_axis > 0.55 else
+                               "geometric with curves" if near_axis > 0.35 else
+                               "organic, freely angled")
+        a["edge_sharpness"] = round(float(mag[m].mean()), 1)
+    else:
+        a["axis_aligned"] = None; a["shape_language"] = "too few edges to judge"
+        a["edge_sharpness"] = None
+
+    # COLOUR STRUCTURE — hue families and temperature.
+    px = img.reshape(-1, 3).astype(np.float32)
+    mx = px.max(axis=1); mn = px.min(axis=1)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1), 0)
+    col = px[sat > 0.25]
+    if len(col) > 100:
+        r, gg, b = col[:, 0], col[:, 1], col[:, 2]
+        mxc = col.max(axis=1); mnc = col.min(axis=1); d = np.maximum(mxc - mnc, 1)
+        hue = np.where(mxc == r, (gg - b) / d % 6,
+                       np.where(mxc == gg, (b - r) / d + 2, (r - gg) / d + 4)) * 60
+        hist, _ = np.histogram(hue % 360, bins=12, range=(0, 360))
+        a["hue_families"] = int((hist > len(col) * 0.06).sum())
+        warm = float(((hue < 90) | (hue > 300)).mean())
+        a["warm_ratio"] = round(warm, 3)
+        a["temperature"] = ("warm" if warm > 0.65 else "cool" if warm < 0.35 else "split")
+    else:
+        a["hue_families"] = 0; a["warm_ratio"] = None; a["temperature"] = "near-neutral"
+    return a
+
+
+def _mean_attrs(rows):
+    """Average the numbers; take the majority verdict on the words."""
+    out = {}
+    for k in rows[0]:
+        vals = [r[k] for r in rows if r.get(k) is not None]
+        if not vals:
+            out[k] = None
+        elif isinstance(vals[0], str):
+            out[k] = max(set(vals), key=vals.count)
+        else:
+            out[k] = round(float(np.mean(vals)), 4)
+    return out
+
+
 def measure(path):
     dur, cuts, times = sample_times(path)
+    raw = frame_raw(path, (times[0] if times else 1.0))
+    bars = letterbox(raw)[1] if raw is not None else None
     frames = []
     for t in times:
         img = frame(path, t)
@@ -209,9 +530,25 @@ def measure(path):
             continue
         frames.append({"t": round(float(t), 2), "clusters": clusters(img),
                        "flatness": flatness(img), "linework": linework(img),
-                       "caption": caption_band(img)})
+                       "caption": caption_band(img), "attrs": visual_attributes(img)})
     if not frames:
         return {"error": "no frames decoded", "file": path}
+
+    with tempfile.TemporaryDirectory() as _td:
+        _disp, _subs = read_captions(path, times, _td)
+        ocr = summarise_ocr(_disp, dur) or {}
+        subs = [t for t in _subs if t]
+        # Reported, never silently dropped: on an account that genuinely sets its
+        # captions low, this band IS the caption style, and the operator needs to
+        # see it to make that call.
+        ocr["bottom_band_text"] = ({"samples": subs[:3], "frames": len(subs),
+                                    "reading": "below %d%% frame height — burned-in "
+                                    "subtitle unless this account sets captions low"
+                                    % int(SUBTITLE_BAND * 100)} if subs else None)
+        if not _disp:
+            ocr["display_type"] = None
+            ocr["note"] = ("No display lettering found above the subtitle band."
+                           if subs else "No text found at all.")
 
     grounds = [f["clusters"][0] for f in frames if f["clusters"]]
     gh = [g["hex"] for g in grounds]
@@ -252,6 +589,7 @@ def measure(path):
 
     return {
         "file": os.path.basename(path), "duration": round(dur, 2),
+        "letterbox": bars,
         "scenes_detected": len(cuts) + 1, "frames_measured": len(frames),
         "cuts_per_min": round(len(cuts) / dur * 60, 1) if dur else None,
         "ground_verdict": verdict,
@@ -265,6 +603,8 @@ def measure(path):
         "mean_saturation": round(float(np.mean(
             [sum(c["sat"] * c["share"] for c in f["clusters"]) for f in frames])), 3),
         "caption": cap,
+        "attrs": _mean_attrs([f["attrs"] for f in frames]),
+        "ocr": ocr,
         "frames": frames,
     }
 
@@ -348,10 +688,94 @@ def write_brief(agg):
                  "(centre at %.0f%% height%s)."
                  % (cap["present_in"], pos, cap["centre_height"] * 100,
                     ", consistent" if cap["spread"] < 0.08 else ", position varies"))
+    a = agg.get("attrs") or {}
+    if a:
+        L.append("")
+        mat = ["SURFACE: %s" % a.get("grain_class", "?"),
+               "fills are %s" % a.get("fills", "?"),
+               a.get("depth", "?"),
+               a.get("shape_language", "?")]
+        L.append("; ".join(mat) + ".")
+        if a.get("hue_families"):
+            L.append("Colour is %s, built from about %d hue famil%s — do not widen it."
+                     % (a.get("temperature", "?"), round(a["hue_families"]),
+                        "y" if round(a["hue_families"]) == 1 else "ies"))
+        if a.get("edge_sharpness"):
+            L.append("Edges are hard and clean [contrast %.0f across an edge]."
+                     % a["edge_sharpness"] if a["edge_sharpness"] > 45 else
+                     "Edges are soft [contrast %.0f across an edge]." % a["edge_sharpness"])
+
+    t = agg.get("type") or {}
+    if t.get("casing"):
+        L.append("")
+        bits = ["TYPOGRAPHY: display lettering is %s" % t["casing"].lower(),
+                "set in the %s" % t.get("band", "?"),
+                "%s" % t.get("alignment", "?"),
+                "cap height about %.0f%% of frame height" % (t.get("cap_height_pct") or 0),
+                "around %.0f words on screen at once" % (t.get("words_on_screen") or 0)]
+        L.append(", ".join(bits) + ".")
+        if t.get("plate"):
+            L.append("Type sits on a SOLID PLATE %s [uniformity %.2f], glyphs %s. "
+                     "The plate is part of the design — reproduce it."
+                     % (t["plate"]["hex"], t["plate"]["uniformity"],
+                        t.get("glyph_colour") or "?"))
+        else:
+            L.append("Type is set straight onto the artwork with no plate behind it.")
+        if t.get("stroke_weight") and t["stroke_weight"] > 0.45:
+            L.append("Letterforms are heavy — glyph strokes fill %.0f%% of the type box."
+                     % (t["stroke_weight"] * 100))
+        L.append("Read from the clips: %s [OCR confidence %.0f%%]."
+                 % ("; ".join(repr(x) for x in (t.get("samples") or [])[:3]),
+                    t.get("mean_confidence") or 0))
+    elif t.get("bottom_band"):
+        L.append("")
+        L.append("TYPOGRAPHY: no display lettering found. The only text is in the "
+                 "bottom band (%s) and reads as burned-in subtitles, NOT the "
+                 "account's own captions — do not copy it into the style."
+                 % t["bottom_band"]["in_clips"])
+
     if agg.get("cuts_per_min"):
+        L.append("")
         L.append("PACING: %.0f cuts per minute measured across the reference clips."
                  % agg["cuts_per_min"])
     return "\n".join(L)
+
+
+def _merge_ocr(rows):
+    """Combine typography across clips, keeping display type and the bottom band
+    apart — they are different objects and averaging them describes neither."""
+    rows = [r for r in rows if r]
+    disp = [r for r in rows if r.get("display_type", "x") is not None and r.get("casing")]
+    bottom = [r["bottom_band_text"] for r in rows if r.get("bottom_band_text")]
+    out = {"clips_with_display_type": "%d/%d" % (len(disp), len(rows))}
+    if disp:
+        caps = [r["caps_ratio"] for r in disp]
+        plates = [r["plate"] for r in disp if r.get("plate")]
+        out.update({
+            "casing": max(set(r["casing"] for r in disp),
+                          key=[r["casing"] for r in disp].count),
+            "caps_ratio": round(float(np.mean(caps)), 2),
+            "cap_height_pct": round(float(np.mean([r["cap_height_pct"] for r in disp])), 1),
+            "line_width_pct": round(float(np.mean([r["line_width_pct"] for r in disp])), 1),
+            "band": max(set(r["band"] for r in disp), key=[r["band"] for r in disp].count),
+            "alignment": max(set(r["alignment"] for r in disp),
+                             key=[r["alignment"] for r in disp].count),
+            "words_on_screen": round(float(np.mean([r["words_on_screen"] for r in disp])), 1),
+            "stroke_weight": round(float(np.mean([r["stroke_weight"] for r in disp
+                                                  if r.get("stroke_weight")])), 3)
+                              if any(r.get("stroke_weight") for r in disp) else None,
+            "plate": ({"hex": plates[0]["hex"],
+                       "uniformity": round(float(np.mean([p["uniformity"] for p in plates])), 2)}
+                      if plates else None),
+            "glyph_colour": next((r.get("glyph_colour") for r in disp if r.get("glyph_colour")), None),
+            "mean_confidence": round(float(np.mean([r["mean_confidence"] for r in disp])), 1),
+            "samples": [t for r in disp for t in (r.get("samples") or [])][:6],
+        })
+    if bottom:
+        out["bottom_band"] = {"in_clips": "%d/%d" % (len(bottom), len(rows)),
+                              "samples": [t for b in bottom for t in b["samples"]][:4],
+                              "reading": bottom[0]["reading"]}
+    return out
 
 
 def aggregate(results):
@@ -439,6 +863,10 @@ def aggregate(results):
                      "centre_height": round(float(np.mean([c["centre_height"] for c in caps])), 3),
                      "spread": round(float(np.mean([c["spread"] for c in caps])), 3)}
                     if caps else None),
+        "attrs": _mean_attrs([r["attrs"] for r in good if r.get("attrs")])
+                 if any(r.get("attrs") for r in good) else None,
+        "type": _merge_ocr([r.get("ocr") for r in good]),
+        "letterbox": next((r.get("letterbox") for r in good if r.get("letterbox")), None),
         "per_clip": [{k: r[k] for k in ("file", "ground_verdict", "grounds",
                                         "frames_measured")} for r in good],
     }

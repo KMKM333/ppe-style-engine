@@ -40,8 +40,9 @@ scp .claude/skills/ppe-reference-style/measure_reference.py \
     root@95.217.16.211:/root/bulk-transcriber/
 ```
 
-It reads pixels, not impressions, and everything it does is **free** — ffmpeg
-and numpy, no API calls.
+It reads pixels, not impressions, and everything it does is **free** — ffmpeg,
+numpy and tesseract, no API calls. `tesseract-ocr` is installed on the box; if a
+rebuild loses it, `apt-get install -y tesseract-ocr` brings it back.
 
 ```bash
 cd /root/bulk-transcriber && eval "$(grep '^export ' run.sh)"
@@ -58,13 +59,48 @@ What it reports, and why each one is there:
 | `flatness` top3 / top8 | Separates flat vector from photographic **by number**. ≥75% = flat vector. ~54% = textured or archival. Adjectives cannot do this. |
 | `linework` | Edge density and near-black area — thick outlines vs none. |
 | `mean_saturation` | The user has rejected renders for over-saturation; this is the dial. |
-| `caption` band | Where type sits, and whether the position is consistent. |
+| `caption` band | Where type sits — a frequency heuristic, superseded by the OCR block below. |
 | `cuts_per_min` | Pacing, from the clip itself. |
+| `letterbox` | Uniform padding cropped before anything is measured — see the trap below. |
+| `attrs` | Surface and structure: grain, whether fills are flat or ramped, shadowing and depth, shape language, edge sharpness, hue-family count, temperature. |
+| `type` | Read by OCR: casing, cap height as % of frame, alignment, band, words on screen, stroke weight, glyph colour, and **the plate behind the type** with a uniformity score. |
 | `brief` | A paste-ready block written **from the measurements**, in the shape that worked. |
 
 The verdict logic asks *"does one ground dominate?"*, not *"how many distinct
 grounds are there"* — the second answer moves with the merge tolerance, the
 first does not.
+
+### Two traps the tool now handles, and you must not undo
+
+**Padding is not design.** These clips carry a uniform band at top and bottom.
+Left in, it counted as design: near-black "linework" for an account whose
+linework is thin, and it dragged every ground share down. The bars are cropped
+before anything is measured — but only when the band's colour actually differs
+from the artwork, because on flat-colour material the top rows are legitimately
+a uniform ground and cropping those would shrink the very ground share the
+colour verdict rests on.
+
+**A burned-in subtitle is not the account's caption style.** The first OCR pass
+read `"And they're getting richer and richer."` in a generic sans off a grey
+pill and reported it as @guijooorge's caption treatment. It is an auto-caption.
+Position separates them, not size: his subtitle words all sit at 90–95% frame
+height, while @Barry's Economics sets `SEARCH THE BURRY INSIDE` at 34–45% in
+caps. Text below 85% height is reported as `bottom_band` and kept **out** of the
+type analysis — but it is reported, never dropped, because an account that
+genuinely sets its captions low needs that call made by a person.
+
+### What OCR is for
+
+Not reading words — **localising the type so its material can be measured**. Once
+the glyph boxes are known, the tool measures stroke weight, cap height as a share
+of frame, alignment, glyph colour, and whether the type sits on a solid plate or
+straight on the artwork. The plate is the point: passing a reference clip
+reproduced @guijooorge's caption plate when the prompt had never mentioned one.
+Now it can be stated — `plate #cec1b6, uniformity 0.81, glyphs #7f7267` — instead
+of hoping the reference carries it.
+
+Confidence is reported. Below ~70% treat the strings as unreliable; the geometry
+(box, height, position) stays usable even when the characters are wrong.
 
 ## The loop
 
@@ -148,7 +184,7 @@ the whole value of the style.
    as a rule. Naming a hex value freezes one sample as the truth.
 3. **Never describe with words that fit two media.** If a sentence would suit
    both a vector illustration and a photographic collage, it is not doing any
-   work. Use the flatness number.
+   work. Use the flatness number, the grain figure and the axis-alignment score.
 4. **The clip beats the brief.** Do not spend prompt length re-describing what
    the reference already shows; spend it on what the reference cannot show.
 5. **Match caption mode to the MATERIAL, not the account.** Illustrated →

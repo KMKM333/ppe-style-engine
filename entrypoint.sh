@@ -156,4 +156,8 @@ python3 migrate_add_render_style_aspect.py || echo "WARNING: migrate_add_render_
 # so the clip that produced the good result belongs with the style.
 python3 migrate_add_render_style_reference.py || echo "WARNING: migrate_add_render_style_reference.py failed — continuing so the site still serves; see /api/health"
 
+# The canonical reference clip is OURS, not a pointer into a provider's store:
+# a style whose reference cannot be fetched is a style that cannot be reproduced.
+python3 migrate_add_render_style_ref_source.py || echo "WARNING: migrate_add_render_style_ref_source.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

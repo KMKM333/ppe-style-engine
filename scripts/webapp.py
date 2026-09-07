@@ -3441,8 +3441,9 @@ def api_put_render_style():
     conn.execute(
         """INSERT INTO render_styles
            (slug, name, medium, prompt_prefix, palette_json, avoid, caption_mode, notes,
-            derived_from, aspect, reference_media_id, reference_note)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+            derived_from, aspect, reference_media_id, reference_note,
+            reference_url, reference_source, reference_start_sec, reference_end_sec)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(slug) DO UPDATE SET
              name=excluded.name, medium=excluded.medium,
              prompt_prefix=excluded.prompt_prefix, palette_json=excluded.palette_json,
@@ -3450,11 +3451,18 @@ def api_put_render_style():
              notes=excluded.notes, derived_from=excluded.derived_from,
              aspect=excluded.aspect,
              reference_media_id=excluded.reference_media_id,
-             reference_note=excluded.reference_note""",
+             reference_note=excluded.reference_note,
+             reference_url=excluded.reference_url,
+             reference_source=excluded.reference_source,
+             reference_start_sec=excluded.reference_start_sec,
+             reference_end_sec=excluded.reference_end_sec""",
         (slug, d.get("name").strip(), d.get("medium"), d.get("prompt_prefix").strip(),
          json.dumps(d.get("palette") or []), d.get("avoid"), cap,
          d.get("notes"), d.get("derived_from"), (d.get("aspect") or "").strip() or None,
-         (d.get("reference_media_id") or "").strip() or None, d.get("reference_note")),
+         (d.get("reference_media_id") or "").strip() or None, d.get("reference_note"),
+         (d.get("reference_url") or "").strip() or None,
+         (d.get("reference_source") or "").strip() or None,
+         d.get("reference_start_sec"), d.get("reference_end_sec")),
     )
     conn.commit()
     conn.close()

@@ -16,11 +16,16 @@
   {% if want %} · <a href="{{ url_for('reference_clips_list') }}">show all</a>{% endif %}
 </div>
 
+{# One form around the whole page: pick a clip with a radio, pick a style in the
+   bar, submit. That keeps a single <select> on the page instead of one per card,
+   which at several hundred clips is the difference between a light page and a
+   very heavy one — and it needs no JavaScript. #}
+<form method="post" action="{{ url_for('reference_clip_attach') }}">
 {% for name, clips in groups %}
 <h2 style="margin-top:26px">{{ name }} <span class="muted" style="font-size:14px">· {{ clips|length }} clips</span></h2>
 <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
   {% for c in clips %}
-  <div class="card" style="padding:10px">
+  <div class="card" style="padding:10px{% if c.used_by %};border-color:#3b82f6{% endif %}">
     {# preload="none" matters: several hundred players on one page would
        otherwise pull the whole library just to render it. #}
     <video src="{{ c.url }}" controls preload="none" playsinline
@@ -38,10 +43,37 @@
     {% elif c.source_file %}
     <div class="muted" style="font-size:11.5px">{{ c.source_file }}</div>
     {% endif %}
+    {% if styles %}
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-top:7px;cursor:pointer">
+      <input type="radio" name="clip_id" value="{{ c.clip_id }}">
+      <span>{% if c.used_by %}reference for <strong>{{ c.used_by }}</strong>{% else %}use as reference{% endif %}</span>
+    </label>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
 {% else %}
 <p class="muted">No reference clips registered yet.</p>
 {% endfor %}
+
+{% if styles and n_clips %}
+<div class="card" style="position:sticky;bottom:12px;margin-top:22px;display:flex;
+     flex-wrap:wrap;align-items:center;gap:10px">
+  <span style="font-size:13px">Attach the selected clip to</span>
+  <select name="slug" style="font-size:13px;padding:5px 8px">
+    {% for st in styles %}<option value="{{ st.slug }}">{{ st.name }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="btn">Set as reference</button>
+  <span class="muted" style="font-size:11.5px">
+    Replaces whatever that style points at now, and clears the cached upload so the
+    next render sends the new clip.
+  </span>
+</div>
+{% elif n_clips %}
+<p class="muted" style="margin-top:20px">
+  No render styles yet — <a href="{{ url_for('render_styles_list') }}">create one</a> and a clip
+  can be attached to it.
+</p>
+{% endif %}
+</form>
 {% endblock %}

@@ -3471,6 +3471,50 @@ def api_list_reference_clips():
     return jsonify({"ok": True, "count": len(rows), "clips": rows})
 
 
+@app.route("/production/reference-clips/attach", methods=["POST"])
+def reference_clip_attach():
+    """Make one clip the reference for a render style.
+
+    The subtle part is reference_media_id. It caches where THIS style's clip
+    was already uploaded to a generation provider — so the moment the clip
+    changes, that id points at the previous clip. Leaving it would mean the
+    style shows the new reference on screen and quietly generates from the old
+    one, which is worse than having no cache at all. It is cleared here, and
+    the next render re-uploads from our own copy.
+    """
+    clip_id = request.form.get("clip_id", type=int)
+    slug = (request.form.get("slug") or "").strip().lower()
+    conn = get_conn()
+    clip = conn.execute("SELECT * FROM reference_clips WHERE clip_id = ?", (clip_id,)).fetchone()
+    style = conn.execute("SELECT slug, name, reference_url FROM render_styles WHERE slug = ?",
+                         (slug,)).fetchone()
+    if not clip or not style:
+        conn.close()
+        flash("Pick a clip and a style." if not clip else f"No such style: {slug}")
+        return redirect(url_for("reference_clips_list"))
+    if style["reference_url"] == clip["url"]:
+        conn.close()
+        flash(f"{style['name']} already uses that clip.")
+        return redirect(url_for("reference_clips_list"))
+
+    start = clip["start_sec"]
+    end = (start + clip["duration_sec"]) if (start is not None and clip["duration_sec"]) else None
+    source = clip["source_url"] or clip["source_file"] or ""
+    conn.execute(
+        """UPDATE render_styles SET
+             reference_url = ?, reference_source = ?, reference_start_sec = ?,
+             reference_end_sec = ?, reference_media_id = NULL
+           WHERE slug = ?""",
+        (clip["url"], source, start, end, slug),
+    )
+    conn.commit()
+    conn.close()
+    flash(f"{style['name']} now references {clip['asset_key']}"
+          + (" — provider upload cache cleared, it will re-upload on the next render."
+             if True else ""))
+    return redirect(url_for("reference_clips_list", channel=clip["channel_name"] or ""))
+
+
 @app.route("/production/reference-clips")
 def reference_clips_list():
     """The clips, grouped by the account they were cut from and playable here.
@@ -3484,8 +3528,16 @@ def reference_clips_list():
     rows = [dict(r) for r in conn.execute(
         "SELECT * FROM reference_clips ORDER BY channel_name, source_file, start_sec")]
     conn.close()
+    conn2 = get_conn()
+    styles = [dict(r) for r in conn2.execute(
+        "SELECT slug, name, reference_url FROM render_styles ORDER BY name")]
+    conn2.close()
+    # Which style, if any, already points at each clip — so the page shows what
+    # is in use rather than offering to re-attach something already attached.
+    in_use = {st["reference_url"]: st["name"] for st in styles if st["reference_url"]}
     groups = {}
     for r in rows:
+        r["used_by"] = in_use.get(r["url"])
         groups.setdefault(r["channel_name"] or "Unattributed", []).append(r)
     ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0].lower()))
     if want:
@@ -3493,7 +3545,7 @@ def reference_clips_list():
     total_mb = sum((r["bytes"] or 0) for r in rows) / 1e6
     return render_template("reference_clips_list.html", active="production-reference-clips",
                            groups=ordered, n_clips=len(rows), total_mb=round(total_mb, 1),
-                           want=want)
+                           want=want, styles=styles)
 
 
 # --- render styles -----------------------------------------------------------

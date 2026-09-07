@@ -20,6 +20,13 @@
         <strong>{{ s.name }}</strong>
         <div class="muted" style="font-size:11.5px"><code>{{ s.slug }}</code></div>
         {% if s.derived_from %}<div class="muted" style="font-size:11.5px;margin-top:4px">from {{ s.derived_from }}</div>{% endif %}
+        {% if s.reference_media_id %}
+        {# A style whose reference clip cannot be found again cannot be reproduced. #}
+        <div class="muted" style="font-size:11.5px;margin-top:4px">
+          <span class="pill">ref clip</span> <code>{{ s.reference_media_id[:8] }}…</code>
+          {% if s.reference_note %}<div>{{ s.reference_note }}</div>{% endif %}
+        </div>
+        {% endif %}
       </td>
       <td class="muted">{{ s.medium or '—' }}{% if s.aspect %}<div class="muted" style="font-size:11.5px;margin-top:4px">{{ s.aspect }}</div>{% endif %}</td>
       <td style="font-size:12.5px">

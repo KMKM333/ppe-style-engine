@@ -3441,17 +3441,20 @@ def api_put_render_style():
     conn.execute(
         """INSERT INTO render_styles
            (slug, name, medium, prompt_prefix, palette_json, avoid, caption_mode, notes,
-            derived_from, aspect)
-           VALUES (?,?,?,?,?,?,?,?,?,?)
+            derived_from, aspect, reference_media_id, reference_note)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(slug) DO UPDATE SET
              name=excluded.name, medium=excluded.medium,
              prompt_prefix=excluded.prompt_prefix, palette_json=excluded.palette_json,
              avoid=excluded.avoid, caption_mode=excluded.caption_mode,
              notes=excluded.notes, derived_from=excluded.derived_from,
-             aspect=excluded.aspect""",
+             aspect=excluded.aspect,
+             reference_media_id=excluded.reference_media_id,
+             reference_note=excluded.reference_note""",
         (slug, d.get("name").strip(), d.get("medium"), d.get("prompt_prefix").strip(),
          json.dumps(d.get("palette") or []), d.get("avoid"), cap,
-         d.get("notes"), d.get("derived_from"), (d.get("aspect") or "").strip() or None),
+         d.get("notes"), d.get("derived_from"), (d.get("aspect") or "").strip() or None,
+         (d.get("reference_media_id") or "").strip() or None, d.get("reference_note")),
     )
     conn.commit()
     conn.close()

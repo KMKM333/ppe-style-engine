@@ -152,4 +152,8 @@ python3 migrate_add_render_styles.py || echo "WARNING: migrate_add_render_styles
 # vertical, and rendering it into 9:16 keeps the palette and loses the framing.
 python3 migrate_add_render_style_aspect.py || echo "WARNING: migrate_add_render_style_aspect.py failed — continuing so the site still serves; see /api/health"
 
+# Ten seconds of the creator's real work beat every written description of it,
+# so the clip that produced the good result belongs with the style.
+python3 migrate_add_render_style_reference.py || echo "WARNING: migrate_add_render_style_reference.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

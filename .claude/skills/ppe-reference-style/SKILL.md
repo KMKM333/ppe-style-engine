@@ -102,6 +102,75 @@ of hoping the reference carries it.
 Confidence is reported. Below ~70% treat the strings as unreliable; the geometry
 (box, height, position) stays usable even when the characters are wrong.
 
+## Which lever actually moves the output
+
+Measured, by scoring the renders we already had against the account each was
+imitating. Every render below differs from a sibling by one variable.
+
+| Lever | Effect | Cost |
+|---|---|---|
+| **Saturation correction** | **2.34 → 1.07** (−54%) | free |
+| **+ gentle palette lock** | 1.07 → **1.03** | free |
+| **Best-of-N selection** | headroom up to **1.38** — one render's best scene scored 1.09 against its own mean of 2.34 | N× image credits |
+| Applying a measured style at all | 3.55 → 2.34 (−34%) | free |
+| Higgsfield instead of the free route | 2.34 → 2.17 (−7%) | 26–32.5 credits |
+| Reference frames | **inconclusive** — see below | image credits |
+
+Two findings worth carrying:
+
+**Saturation was the largest error term in every render, and it pointed the
+wrong way.** Renders aimed at @johnnyharris, whose clips measure 0.29, came out
+at 0.65–0.72; renders aimed at @guijooorge, whose clips measure 0.70, came out
+at 0.30–0.39. The two accounts had each other's saturation. Correcting it alone
+takes a free-route render past the Higgsfield cut of the same material, for
+nothing.
+
+**What you feed the generator matters about five times more than which
+generator it is** — 34% for applying a measured style against 7% for switching
+to Higgsfield.
+
+**The reference-frame result is not yet trustworthy.** The one A/B we have
+scored 2.66 with frames against 2.12 without, but that pair also differs in
+caption treatment, so the regression cannot be attributed. It needs a clean
+single-variable run before it earns any spend.
+
+## The correction tool
+
+`match_look.py`, beside this file. It writes a NEW file and never touches its
+input, so it runs on a free-route render, a Higgsfield output or a downloaded
+clip alike — and reverting it means not running it.
+
+```bash
+./venv/bin/python3 match_look.py --set-targets guijooorge-flat --from-channel guijooorge
+./venv/bin/python3 match_look.py in.mp4 out.mp4 --style guijooorge-flat --saturation
+./venv/bin/python3 match_look.py in.mp4 out.mp4 --style guijooorge-flat --saturation --palette-lock
+```
+
+Saturation is corrected by measuring, not by guessing a multiplier: ffmpeg's
+`eq=saturation` acts in YUV and the metric is area-weighted HSV, so the tool
+applies a first guess, re-measures, refines, and keeps whichever pass landed
+closest.
+
+Palette-lock defaults are **measured, not chosen**. At strength 0.8 / radius
+0.28 it made the render worse than saturation alone (1.13 against 1.07); at
+0.4 / 0.16 it improves on it (1.03). A lock has to nudge — snapping hard
+destroys the shading that makes flat fills read as deliberate.
+
+## Selection in the renderer
+
+`assemble_video.py --best-of N --style <slug>` generates N candidates per panel
+and keeps the one closest to the style's measured targets. **Default 1 = the old
+path**, and the filename carries `_bestN`, so reverting is passing nothing.
+
+It only runs against a style carrying measured targets — without them there is
+nothing to select on, and it says so rather than inventing a target.
+
+`--ref-source style` (default) takes reference frames from the applied style's
+own reference clip rather than the creation's account. Creation 13 is a Barry's
+Economics script rendered in @guijooorge's style, and the old path handed it
+Barry's frames — blending two accounts so neither came through. `--ref-source
+account` restores the old behaviour.
+
 ## The loop
 
 **Steps 1, 2, 5 and 6 are free. Step 4 costs credits and must be agreed first.**

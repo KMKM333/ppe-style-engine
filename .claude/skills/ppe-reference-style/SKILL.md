@@ -107,32 +107,40 @@ Confidence is reported. Below ~70% treat the strings as unreliable; the geometry
 Measured, by scoring the renders we already had against the account each was
 imitating. Every render below differs from a sibling by one variable.
 
-| Lever | Effect | Cost |
+| Lever | Effect on panels | Cost |
 |---|---|---|
-| **Saturation correction** | **2.34 → 1.07** (−54%) | free |
-| **+ gentle palette lock** | 1.07 → **1.03** | free |
-| **Best-of-N selection** | headroom up to **1.38** — one render's best scene scored 1.09 against its own mean of 2.34 | N× image credits |
+| **Best-of-3 selection** | **2.03 → 0.68 (−67%)** | 3× image credits |
+| **Reference frames from the style's own clip** | **2.03 → 0.83 (−59%)** | no extra |
+| **Saturation correction** | biggest single term when unselected | free |
+| **+ gentle palette lock** | small further gain | free |
 | Applying a measured style at all | 3.55 → 2.34 (−34%) | free |
 | Higgsfield instead of the free route | 2.34 → 2.17 (−7%) | 26–32.5 credits |
-| Reference frames | **inconclusive** — see below | image credits |
 
-Two findings worth carrying:
+Stacked on the finished video, against @guijooorge: baseline **2.34**, reference
+frames **0.54**, best-of-3 **0.50**, plus correction **0.44** — the same score as
+a 4-credit Higgsfield probe, against the Higgsfield route's own 2.17. A real
+frame of his work scores 0.37.
 
-**Saturation was the largest error term in every render, and it pointed the
-wrong way.** Renders aimed at @johnnyharris, whose clips measure 0.29, came out
-at 0.65–0.72; renders aimed at @guijooorge, whose clips measure 0.70, came out
-at 0.30–0.39. The two accounts had each other's saturation. Correcting it alone
-takes a free-route render past the Higgsfield cut of the same material, for
-nothing.
+Panel scores are the clean evidence; panels are generated before treatment, so
+caption mode and grade cannot reach them. The finished-video figures carry a
+caption-mode difference against the baseline and should be read as the end
+result rather than as the attribution.
 
-**What you feed the generator matters about five times more than which
-generator it is** — 34% for applying a measured style against 7% for switching
+Three findings worth carrying:
+
+**Saturation was the largest error term in every unselected render, and it
+pointed the wrong way.** Renders aimed at @johnnyharris, whose clips measure
+0.29, came out at 0.65–0.72; renders aimed at @guijooorge, whose clips measure
+0.70, came out at 0.30–0.39. The two accounts had each other's saturation.
+
+**Best-of-N largely subsumes the saturation fix.** Selecting on the composite
+picks panels that are already on-target, so a best-of-3 render arrived at 0.739
+against a target of 0.703 and the correction had almost nothing left to do
+(k=0.984). The levers are not additive; selection does most of the work.
+
+**What you feed the generator matters far more than which generator it is** —
+59% for pointing reference frames at the right clip, against 7% for switching
 to Higgsfield.
-
-**The reference-frame result is not yet trustworthy.** The one A/B we have
-scored 2.66 with frames against 2.12 without, but that pair also differs in
-caption treatment, so the regression cannot be attributed. It needs a clean
-single-variable run before it earns any spend.
 
 ## The correction tool
 

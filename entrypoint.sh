@@ -160,4 +160,8 @@ python3 migrate_add_render_style_reference.py || echo "WARNING: migrate_add_rend
 # a style whose reference cannot be fetched is a style that cannot be reproduced.
 python3 migrate_add_render_style_ref_source.py || echo "WARNING: migrate_add_render_style_ref_source.py failed — continuing so the site still serves; see /api/health"
 
+# 441 clips named by content hash belonged to nobody. Filed under the account
+# they were cut from, they can be found, watched and attached to a style.
+python3 migrate_add_reference_clips.py || echo "WARNING: migrate_add_reference_clips.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

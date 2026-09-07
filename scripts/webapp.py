@@ -3418,6 +3418,84 @@ def api_format_input_status(input_id):
                     "on_screen_text": row["on_screen_text"]})
 
 
+# --- reference clips ---------------------------------------------------------
+# Short cuts of a creator's real work, filed under the account they came from.
+# These are the strongest input a render style has — given the clip, a
+# generation reproduced the account's palette, figure construction and caption
+# plate, and ignored the written brief entirely — so they need to be findable
+# and watchable rather than living as hashed filenames on one server.
+@app.route("/api/reference-clips", methods=["POST"])
+def api_put_reference_clip():
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    d = request.get_json(silent=True) or {}
+    key = (d.get("asset_key") or "").strip()
+    if not key:
+        return jsonify({"ok": False, "error": "'asset_key' is required"}), 400
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO reference_clips
+           (asset_key, url, channel_id, channel_name, source_video_id, source_url,
+            source_file, start_sec, duration_sec, width, height, bytes)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(asset_key) DO UPDATE SET
+             url=excluded.url, channel_id=excluded.channel_id,
+             channel_name=excluded.channel_name, source_video_id=excluded.source_video_id,
+             source_url=excluded.source_url, source_file=excluded.source_file,
+             start_sec=excluded.start_sec, duration_sec=excluded.duration_sec,
+             width=excluded.width, height=excluded.height, bytes=excluded.bytes""",
+        (key, d.get("url"), d.get("channel_id"), d.get("channel_name"),
+         d.get("source_video_id"), d.get("source_url"), d.get("source_file"),
+         d.get("start_sec"), d.get("duration_sec"), d.get("width"), d.get("height"),
+         d.get("bytes")),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True, "asset_key": key})
+
+
+@app.route("/api/reference-clips")
+def api_list_reference_clips():
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    ch = request.args.get("channel", "").strip()
+    conn = get_conn()
+    q = "SELECT * FROM reference_clips"
+    args = []
+    if ch:
+        q += " WHERE LOWER(channel_name) = LOWER(?)"
+        args.append(ch)
+    q += " ORDER BY channel_name, source_file, start_sec"
+    rows = [dict(r) for r in conn.execute(q, args)]
+    conn.close()
+    return jsonify({"ok": True, "count": len(rows), "clips": rows})
+
+
+@app.route("/production/reference-clips")
+def reference_clips_list():
+    """The clips, grouped by the account they were cut from and playable here.
+
+    Judging a reference is a visual act — you watch it and decide whether it
+    is the stretch you want a model to imitate — so a list of filenames would
+    have been useless. Players are preload="none": 441 clips on one page must
+    not pull 188 MB to open it."""
+    want = request.args.get("channel", "").strip()
+    conn = get_conn()
+    rows = [dict(r) for r in conn.execute(
+        "SELECT * FROM reference_clips ORDER BY channel_name, source_file, start_sec")]
+    conn.close()
+    groups = {}
+    for r in rows:
+        groups.setdefault(r["channel_name"] or "Unattributed", []).append(r)
+    ordered = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0].lower()))
+    if want:
+        ordered = [(k, v) for k, v in ordered if k.lower() == want.lower()]
+    total_mb = sum((r["bytes"] or 0) for r in rows) / 1e6
+    return render_template("reference_clips_list.html", active="production-reference-clips",
+                           groups=ordered, n_clips=len(rows), total_mb=round(total_mb, 1),
+                           want=want)
+
+
 # --- render styles -----------------------------------------------------------
 # A named look the renderer can ask for. Distinct from visual_style_briefs,
 # which measure ONE account from its own frames: these are authored, and what

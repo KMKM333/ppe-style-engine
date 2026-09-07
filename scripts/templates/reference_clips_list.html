@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Reference Clips — PPE Engine{% endblock %}
+{% block content %}
+<h1>Reference Clips</h1>
+<div class="sub">
+  Short cuts of each account's real work, handed to a generator as a visual reference. These are
+  the strongest input a render style has: given the clip, a generation reproduced an account's
+  palette, its figure construction and its caption plate — and ignored the written brief entirely.
+  Cut at 20s because that is the measured ceiling a reference is accepted at, and away from the
+  opening and closing seconds, which are the least representative in any video.
+</div>
+
+<div class="card" style="margin-top:14px">
+  <strong>{{ n_clips }}</strong> clips · <strong>{{ total_mb }} MB</strong> ·
+  {{ groups|length }} account{{ '' if groups|length == 1 else 's' }}
+  {% if want %} · <a href="{{ url_for('reference_clips_list') }}">show all</a>{% endif %}
+</div>
+
+{% for name, clips in groups %}
+<h2 style="margin-top:26px">{{ name }} <span class="muted" style="font-size:14px">· {{ clips|length }} clips</span></h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
+  {% for c in clips %}
+  <div class="card" style="padding:10px">
+    {# preload="none" matters: several hundred players on one page would
+       otherwise pull the whole library just to render it. #}
+    <video src="{{ c.url }}" controls preload="none" playsinline
+           style="width:100%;border-radius:8px;background:#111"></video>
+    <div class="muted" style="font-size:11.5px;margin-top:6px">
+      {% if c.start_sec is not none %}@ {{ c.start_sec|round(1) }}s{% endif %}
+      {% if c.duration_sec %} · {{ c.duration_sec|round(0)|int }}s{% endif %}
+      {% if c.width %} · {{ c.width }}×{{ c.height }}{% endif %}
+      {% if c.bytes %} · {{ (c.bytes / 1000000)|round(2) }} MB{% endif %}
+    </div>
+    {% if c.source_video_id %}
+    <div class="muted" style="font-size:11.5px">
+      <a href="{{ url_for('input_detail', video_id=c.source_video_id) }}">source input #{{ c.source_video_id }}</a>
+    </div>
+    {% elif c.source_file %}
+    <div class="muted" style="font-size:11.5px">{{ c.source_file }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="muted">No reference clips registered yet.</p>
+{% endfor %}
+{% endblock %}

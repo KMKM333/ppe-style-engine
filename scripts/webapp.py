@@ -3572,8 +3572,9 @@ def api_put_render_style():
         """INSERT INTO render_styles
            (slug, name, medium, prompt_prefix, palette_json, avoid, caption_mode, notes,
             derived_from, aspect, reference_media_id, reference_note,
-            reference_url, reference_source, reference_start_sec, reference_end_sec)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            reference_url, reference_source, reference_start_sec, reference_end_sec,
+            target_saturation, target_flatness, target_dark_area, targets_measured_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(slug) DO UPDATE SET
              name=excluded.name, medium=excluded.medium,
              prompt_prefix=excluded.prompt_prefix, palette_json=excluded.palette_json,
@@ -3585,14 +3586,27 @@ def api_put_render_style():
              reference_url=excluded.reference_url,
              reference_source=excluded.reference_source,
              reference_start_sec=excluded.reference_start_sec,
-             reference_end_sec=excluded.reference_end_sec""",
+             reference_end_sec=excluded.reference_end_sec,
+             -- COALESCE, not a plain assignment: these are written by the
+             -- measurement loop, and an ordinary style edit that omits them
+             -- must not silently erase the targets a render is scored against.
+             target_saturation=COALESCE(excluded.target_saturation,
+                                        render_styles.target_saturation),
+             target_flatness=COALESCE(excluded.target_flatness,
+                                      render_styles.target_flatness),
+             target_dark_area=COALESCE(excluded.target_dark_area,
+                                       render_styles.target_dark_area),
+             targets_measured_at=COALESCE(excluded.targets_measured_at,
+                                          render_styles.targets_measured_at)""",
         (slug, d.get("name").strip(), d.get("medium"), d.get("prompt_prefix").strip(),
          json.dumps(d.get("palette") or []), d.get("avoid"), cap,
          d.get("notes"), d.get("derived_from"), (d.get("aspect") or "").strip() or None,
          (d.get("reference_media_id") or "").strip() or None, d.get("reference_note"),
          (d.get("reference_url") or "").strip() or None,
          (d.get("reference_source") or "").strip() or None,
-         d.get("reference_start_sec"), d.get("reference_end_sec")),
+         d.get("reference_start_sec"), d.get("reference_end_sec"),
+         d.get("target_saturation"), d.get("target_flatness"),
+         d.get("target_dark_area"), d.get("targets_measured_at")),
     )
     conn.commit()
     conn.close()

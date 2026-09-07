@@ -884,6 +884,63 @@ def aggregate(results):
     return agg
 
 
+def measure_image(path):
+    """The same measures, on a single still.
+
+    Best-of-N needs to judge a panel the moment it is generated, before it is
+    ever part of a video, so the scoring has to work on one PNG.
+    """
+    p = _run(["ffmpeg", "-v", "error", "-i", str(path), "-vf", f"scale={W}:-2",
+              "-pix_fmt", "rgb24", "-f", "rawvideo", "-"])
+    if not p.stdout:
+        return None
+    h = len(p.stdout) // (W * 3)
+    if h == 0:
+        return None
+    img = np.frombuffer(p.stdout[:h * W * 3], np.uint8).reshape(h, W, 3)
+    img, _ = letterbox(img)
+    img = np.ascontiguousarray(img)
+    cl = clusters(img)
+    return {"flatness": flatness(img), "linework": linework(img), "clusters": cl,
+            "mean_saturation": float(sum(c["sat"] * c["share"] for c in cl)),
+            "ground": cl[0] if cl else None}
+
+
+def score_image(path, target):
+    """Distance from a style's measured targets. Lower is closer.
+
+    Same shape as the composite the loop scores probes with, so a panel picked
+    here and a render scored later are judged on one scale rather than two.
+    """
+    m = measure_image(path)
+    if not m:
+        return None
+    d = 0.0
+    parts = {}
+    for key, tkey, div in (("flatness", "target_flatness", 0.30),
+                           ("saturation", "target_saturation", 0.30),
+                           ("dark", "target_dark_area", 0.30)):
+        t = target.get(tkey)
+        if t is None:
+            continue
+        got = (m["flatness"]["top3"] if key == "flatness" else
+               m["mean_saturation"] if key == "saturation" else
+               m["linework"]["dark_area"])
+        parts[key] = round(abs(got - t), 3)
+        d += abs(got - t) / div
+    pal = target.get("palette") or []
+    if pal and m["clusters"]:
+        pv = [np.array([int(hx[i:i + 2], 16) for i in (1, 3, 5)], float) for hx in pal]
+        mine = [np.array(c["rgb"], float) for c in m["clusters"][:5]]
+        col = float(np.mean([min(np.linalg.norm(x - y) for y in pv) for x in mine])) / 150.0
+        parts["colour"] = round(col, 3)
+        d += col
+    parts["TOTAL"] = round(d, 3)
+    parts["_saturation"] = round(m["mean_saturation"], 3)
+    parts["_ground"] = m["ground"]["hex"] if m["ground"] else None
+    return parts
+
+
 def compare(ref, out):
     """Did the generated video actually land on the reference?
 

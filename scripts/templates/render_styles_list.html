@@ -21,7 +21,7 @@
         <div class="muted" style="font-size:11.5px"><code>{{ s.slug }}</code></div>
         {% if s.derived_from %}<div class="muted" style="font-size:11.5px;margin-top:4px">from {{ s.derived_from }}</div>{% endif %}
       </td>
-      <td class="muted">{{ s.medium or '—' }}</td>
+      <td class="muted">{{ s.medium or '—' }}{% if s.aspect %}<div class="muted" style="font-size:11.5px;margin-top:4px">{{ s.aspect }}</div>{% endif %}</td>
       <td style="font-size:12.5px">
         {{ s.prompt_prefix }}
         {% if s.avoid %}<div class="muted" style="margin-top:6px"><strong>Avoid:</strong> {{ s.avoid }}</div>{% endif %}

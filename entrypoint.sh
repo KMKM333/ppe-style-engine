@@ -148,4 +148,8 @@ python3 migrate_add_spec_runtime_rationale.py || echo "WARNING: migrate_add_spec
 # paraphrase of an account's brief keeps losing.
 python3 migrate_add_render_styles.py || echo "WARNING: migrate_add_render_styles.py failed — continuing so the site still serves; see /api/health"
 
+# The frame is part of the look: one style is 16:9 landscape while the rest are
+# vertical, and rendering it into 9:16 keeps the palette and loses the framing.
+python3 migrate_add_render_style_aspect.py || echo "WARNING: migrate_add_render_style_aspect.py failed — continuing so the site still serves; see /api/health"
+
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

@@ -164,5 +164,6 @@ python3 migrate_add_render_style_ref_source.py || echo "WARNING: migrate_add_ren
 # they were cut from, they can be found, watched and attached to a style.
 python3 migrate_add_reference_clips.py || echo "WARNING: migrate_add_reference_clips.py failed — continuing so the site still serves; see /api/health"
 python3 migrate_add_style_reference_images.py || echo "WARNING: migrate_add_style_reference_images.py failed — continuing so the site still serves; see /api/health"
+python3 migrate_add_style_shot_types.py || echo "WARNING: migrate_add_style_shot_types.py failed — continuing so the site still serves; see /api/health"
 
 exec gunicorn --bind "0.0.0.0:${PORT:-8080}" --worker-class gthread --workers 2 --threads 4 --timeout 120 webapp:app

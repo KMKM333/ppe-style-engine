@@ -3573,8 +3573,8 @@ def api_put_render_style():
            (slug, name, medium, prompt_prefix, palette_json, avoid, caption_mode, notes,
             derived_from, aspect, reference_media_id, reference_note,
             reference_url, reference_source, reference_start_sec, reference_end_sec,
-            reference_images_json)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            reference_images_json, shot_types_json)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(slug) DO UPDATE SET
              name=excluded.name, medium=excluded.medium,
              prompt_prefix=excluded.prompt_prefix, palette_json=excluded.palette_json,
@@ -3587,7 +3587,8 @@ def api_put_render_style():
              reference_source=excluded.reference_source,
              reference_start_sec=excluded.reference_start_sec,
              reference_end_sec=excluded.reference_end_sec,
-             reference_images_json=excluded.reference_images_json""",
+             reference_images_json=excluded.reference_images_json,
+             shot_types_json=excluded.shot_types_json""",
         (slug, d.get("name").strip(), d.get("medium"), d.get("prompt_prefix").strip(),
          json.dumps(d.get("palette") or []), d.get("avoid"), cap,
          d.get("notes"), d.get("derived_from"), (d.get("aspect") or "").strip() or None,
@@ -3595,7 +3596,8 @@ def api_put_render_style():
          (d.get("reference_url") or "").strip() or None,
          (d.get("reference_source") or "").strip() or None,
          d.get("reference_start_sec"), d.get("reference_end_sec"),
-         json.dumps(d.get("reference_images") or [])),
+         json.dumps(d.get("reference_images") or []),
+         json.dumps(d.get("shot_types") or [])),
     )
     conn.commit()
     conn.close()
@@ -3608,6 +3610,10 @@ def _render_style_row(conn, slug):
     if not r:
         return None
     d = dict(r)
+    try:
+        d["shot_types"] = json.loads(d.pop("shot_types_json", None) or "[]")
+    except json.JSONDecodeError:
+        d["shot_types"] = []
     try:
         d["reference_images"] = json.loads(d.pop("reference_images_json", None) or "[]")
     except json.JSONDecodeError:

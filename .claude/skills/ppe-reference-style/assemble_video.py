@@ -602,13 +602,18 @@ def assign_shot_types(shots, style, cache_path=None):
     default_key = ((style or {}).get("default_shot_type")
                    or next((t["key"] for t in types if t.get("default")), types[0]["key"]))
 
-    data = None
+    data, previous = None, {}
     if cache_path and Path(cache_path).exists():
         try:
             data = json.loads(Path(cache_path).read_text())
             print("  shot types: from cache", flush=True)
         except Exception:
             data = None
+    if cache_path and Path(str(cache_path) + ".prev").exists():
+        try:
+            previous = {int(r["shot"]): r for r in json.loads(Path(str(cache_path) + ".prev").read_text()).get("shots", [])}
+        except Exception:
+            previous = {}
     if data is None:
         menu = "\n".join(f"- {t['key']}: {t.get('when') or t.get('label') or ''}" for t in types)
         lines = "\n".join(
@@ -629,7 +634,11 @@ def assign_shot_types(shots, style, cache_path=None):
             "highlighted line is about; for desk evidence, which physical object is "
             "photographed and what is circled; for a cutout, who or what is cut out; for a "
             "flowchart, what the nodes and arrows represent; for a screen capture, which "
-            "kind of page. Keep the story coherent shot to shot. Return JSON only: "
+            "kind of page. NEVER make a person's face or portrait the subject: this account "
+            "shows people only as small cutouts, at a distance, or in archival footage. If "
+            "the script says the presenter addresses the camera, picture the OBJECT under "
+            "discussion instead, or choose title-card for the line. Keep the story coherent "
+            "shot to shot. Return JSON only: "
             "{\"shots\": [{\"shot\": n, \"type\": key, \"subject\": str, \"why\": str}]}")
         user = f"ACCOUNT: {(style or {}).get('name') or ''}\nDEFAULT TYPE: {default_key}\n\nTYPES:\n{menu}\n\nSHOTS:\n{lines}"
         try:
@@ -643,6 +652,13 @@ def assign_shot_types(shots, style, cache_path=None):
             elif isinstance(raw, str):
                 raw = json.loads(raw)
             data = json.loads(raw["choices"][0]["message"]["content"])
+            # Stability: a re-classification rephrases every subject, and a
+            # rephrased subject regenerated every panel once ($0.62 for one
+            # shot's fix). If a shot's TYPE is unchanged, keep its old subject.
+            for r in data.get("shots", []) or []:
+                o = previous.get(int(r.get("shot", -1)))
+                if o and o.get("type") == r.get("type") and o.get("subject"):
+                    r["subject"] = o["subject"]
             if cache_path:
                 Path(cache_path).write_text(json.dumps(data, indent=1))
         except Exception as e:
@@ -650,6 +666,25 @@ def assign_shot_types(shots, style, cache_path=None):
                   f"every shot takes the default type '{default_key}'", flush=True)
             data = {"shots": []}
 
+    # Face guard, in code: the model kept "a subject looking straight at the
+    # camera" as a subject after being told not to, and painted a portrait.
+    # A to-camera or face subject that has a caption becomes a title card —
+    # a line that stands alone is what he does with a direct address — and a
+    # card is drawn, so it costs nothing.
+    import re as _re
+    _face = _re.compile(r"looking (straight )?(at|into|to) (the )?camera|to camera|direct address|"
+                        r"\bportrait\b|\bface\b|\bheadshot\b|the subject looking|presenter", _re.I)
+    _caps = {int(x["shot"]): (x.get("caption") or "").strip() for x in shots}
+    if "title-card" in by_key:
+        for r in (data.get("shots") or []):
+            if not isinstance(r, dict):
+                continue
+            sh = int(r.get("shot", -1))
+            if r.get("type") != "title-card" and _face.search(str(r.get("subject") or "")) and _caps.get(sh):
+                r["type"], r["subject"] = "title-card", _caps[sh]
+                r["why"] = "face guard: to-camera subject with a caption -> title card"
+        if cache_path:
+            Path(cache_path).write_text(json.dumps(data, indent=1))
     by_shot = {int(r.get("shot", -1)): r for r in (data.get("shots") or []) if isinstance(r, dict)}
     type_for, counts = {}, {t["key"]: 0 for t in types}
     for s_ in shots:
@@ -974,8 +1009,16 @@ def main():
                 if _t:
                     # this shot's look: its own prompt and its own pictures
                     body = (s.get("subject") or "").strip() or prompt
-                    prompt = ((_t.get("prompt") or style.get("prompt_prefix") or "").strip()
-                              + "\n\nSubject: " + body)
+                    # Subject FIRST, then the medium, then an explicit decoupling.
+                    # With five reference images of one elbow, a shot about ledgers
+                    # came back as the elbow: the references were defining the
+                    # subject as well as the medium. They must only define the medium.
+                    prompt = ("THE PICTURE SHOWS: " + body + "\n\n"
+                              + (_t.get("prompt") or style.get("prompt_prefix") or "").strip()
+                              + "\n\nThe reference images define the MEDIUM ONLY — the paper, print, "
+                                "pin, marker, grade and framing. They do NOT define what is pictured. "
+                                "Picture exactly the subject stated at the top, and nothing that "
+                                "appears in the reference images unless the subject itself says so.")
                     if style.get("avoid"):
                         prompt += "\n\nAVOID: " + style["avoid"]
                     if args.reference_frames:

@@ -377,3 +377,33 @@ one type.
 - **Panels are cached per work dir; treatment is free to redo.** Every
   caption/wipe fix above was a £0 rerun. Delete `treated_*.mp4` first or the
   broken segments are reused.
+
+### Round three (2026-09-09): references define the medium, not the subject
+
+The user's read of the meaning-based cut: *"logic on the left better, visuals
+on the right better."* The type and medium were right; the panel for "mental
+ledgers" showed the elbow again. Cause: the desk type's five reference images
+were five frames of one elbow, so the model reproduced the elbow whatever the
+subject said. Every type has the same exposure — the parchment maps are all
+Iran, the route maps all China.
+
+Fixes, all in the renderer:
+
+- **Subject first, then medium, then decoupling.** The per-type prompt now
+  opens `THE PICTURE SHOWS: <subject>` and closes with "the reference images
+  define the MEDIUM ONLY … not what is pictured". The ledger appeared.
+- **Diversified desk references.** Two Arena frames plus three of our own
+  on-medium panels with different subjects (torn dollar, cork, pen nib). A
+  type's references must vary in subject or they *are* the subject.
+- **Face guard, in code.** Told not to make a face the subject, the model kept
+  "a subject looking straight at the camera" from the spec and painted a
+  portrait — twice. A to-camera/face subject with a caption now becomes a
+  **title card** deterministically (`_face` regex in `assign_shot_types`,
+  applied to cached and fresh assignments alike). Cards are drawn, so £0.
+- **Stability on re-classify.** Re-running the classifier rephrased every
+  subject, my exact-string diff flagged all twelve, and $0.62 regenerated a
+  video that needed one panel. Now: if a shot's type is unchanged, its previous
+  subject is kept (`shot_types.json.prev`). Regenerate only what changed.
+
+Final tennis cut: nine desk shots, one cutout on black (Thaler), two title
+cards closing (the question, then LET IT GO). Style spend today ≈ $2.50.

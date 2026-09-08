@@ -259,3 +259,69 @@ the same class of error as the run once quoted at $1.95 that billed about $9.
 - `ppe-production` — the pipeline this feeds: script → spec → video.
 - `/production/styles` — the styles themselves.
 - `/production/reference-clips` — the clips, grouped by account.
+
+
+## The johnny-harris style: six looks, cut between (2026-09-08)
+
+The desk-only render reproduced the right idiom for every shot; the user's
+verdict was that the desk look belongs at about a sixth. The `johnny-harris`
+render style carries **six shot types** in `shot_types`, each with its own
+physical-scene prompt, its own reference frames pulled from his videos, cue
+words, beat preferences and a motion hint:
+
+| type | motion | refs |
+|---|---|---|
+| evidence-on-desk | in | 5 Arena frames |
+| parchment-map | in | 4 |
+| dark-map-route | **wipe** | 4 |
+| scanned-document | in | 2 |
+| archival-footage | out | 5 |
+| chart-on-paper | **wipe** | 1 (prompt carries it) |
+
+The renderer (`assemble_video.py`, snapshotted beside this file — it is not in
+git on the box) picks a type per shot in `assign_shot_types`: cue words in the
+shot's own text first, then the beat, then whichever type is furthest below
+its share. Run with:
+
+```bash
+./venv/bin/python3 assemble_video.py --creation_id N --style johnny-harris \
+    --reference-frames 8 --input-fidelity low --caption-look serif-highlight
+```
+
+A dry run prints the per-shot assignment and the mix. **Do not launch a mixed
+render without reading that mix** — the first one sent all twelve shots to
+one type.
+
+### What this build cost to learn
+
+- **Cue words must match whole words, and never search `image_prompt`.** The
+  chart cue `rate` fired on every shot because the engine's `image_prompt`
+  says "illust**rate** that sentence" on all of them, and `image_prompt` is the
+  same account-wide survey on every shot — it mentions maps and archival
+  footage itself. Search only the shot's own `subject`, `voiceover`, `caption`.
+- **`court` in a tennis script is a tennis court.** Cues that are ambiguous
+  outside their domain need a qualifier (`supreme court`, `in court`).
+- **A type uses only its own references.** Topping up from blind-sampled
+  account frames hands a chart panel seven 480p talking heads.
+- **Reference frames must be verified by eye before use.** The `fps` sampler
+  does not land where you assume; a third of the first picks were Johnny at
+  his desk or zoom guests. Exact `-ss` seeks around a scene that worked, then a
+  contact sheet, then upload.
+- **A left-to-right reveal cannot be done with `crop` or `drawbox`** — neither
+  re-evaluates size/position per frame in a way that survived testing. What
+  works: `split`, paint one copy paper with `drawbox`, slide it off with
+  `overlay=x='W*min(1,0.08+t/1.3)'`. Done as a second pass (`wipe_pass`) on the
+  treated segment. Test on a **dark** panel — a white chart against paper gives
+  a brightness test nothing to see.
+- **Draw the caption after the reveal on wipe shots**, or the paper covers the
+  words too. `_caption_filters` is shared by the chain and the wipe pass.
+- **The highlighter box must be fully opaque**, or dark panels ghost the
+  glyphs through it. Offset 0.42 of the font size tucks it under the baseline;
+  0.62 floats. Wrap past 18 characters.
+- **`scp` drops the executable bit.** A relaunch died on `Permission denied`
+  because the re-copied script had lost `+x` and that branch didn't re-`chmod`.
+- **The cost estimator must count reference-image tokens.** It quoted $0.25
+  for a run that cost about $1 before it did.
+- **Panels are cached per work dir; treatment is free to redo.** Every
+  caption/wipe fix above was a £0 rerun. Delete `treated_*.mp4` first or the
+  broken segments are reused.

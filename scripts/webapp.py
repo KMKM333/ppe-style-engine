@@ -3572,8 +3572,9 @@ def api_put_render_style():
         """INSERT INTO render_styles
            (slug, name, medium, prompt_prefix, palette_json, avoid, caption_mode, notes,
             derived_from, aspect, reference_media_id, reference_note,
-            reference_url, reference_source, reference_start_sec, reference_end_sec)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            reference_url, reference_source, reference_start_sec, reference_end_sec,
+            reference_images_json)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(slug) DO UPDATE SET
              name=excluded.name, medium=excluded.medium,
              prompt_prefix=excluded.prompt_prefix, palette_json=excluded.palette_json,
@@ -3585,14 +3586,16 @@ def api_put_render_style():
              reference_url=excluded.reference_url,
              reference_source=excluded.reference_source,
              reference_start_sec=excluded.reference_start_sec,
-             reference_end_sec=excluded.reference_end_sec""",
+             reference_end_sec=excluded.reference_end_sec,
+             reference_images_json=excluded.reference_images_json""",
         (slug, d.get("name").strip(), d.get("medium"), d.get("prompt_prefix").strip(),
          json.dumps(d.get("palette") or []), d.get("avoid"), cap,
          d.get("notes"), d.get("derived_from"), (d.get("aspect") or "").strip() or None,
          (d.get("reference_media_id") or "").strip() or None, d.get("reference_note"),
          (d.get("reference_url") or "").strip() or None,
          (d.get("reference_source") or "").strip() or None,
-         d.get("reference_start_sec"), d.get("reference_end_sec")),
+         d.get("reference_start_sec"), d.get("reference_end_sec"),
+         json.dumps(d.get("reference_images") or [])),
     )
     conn.commit()
     conn.close()
@@ -3605,6 +3608,10 @@ def _render_style_row(conn, slug):
     if not r:
         return None
     d = dict(r)
+    try:
+        d["reference_images"] = json.loads(d.pop("reference_images_json", None) or "[]")
+    except json.JSONDecodeError:
+        d["reference_images"] = []
     try:
         d["palette"] = json.loads(d.pop("palette_json") or "[]")
     except json.JSONDecodeError:
@@ -6674,7 +6681,8 @@ def api_assembly_plan(creation_id):
                 brief["palette"] = json.loads(brief.pop("palette_json") or "[]")
             except json.JSONDecodeError:
                 brief["palette"] = []
-    reference_frames = _reference_frame_urls(conn, channel_id) if channel_id else []
+    _n_refs = min(16, max(0, request.args.get("refs", 4, type=int)))
+    reference_frames = _reference_frame_urls(conn, channel_id, n=_n_refs) if channel_id else []
     # Read while the connection is still OPEN. This block sat AFTER
     # conn.close() and took the whole endpoint down with "Cannot operate on a
     # closed database" — a 500 on every plan, including the ones that do not

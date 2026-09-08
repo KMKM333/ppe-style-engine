@@ -153,6 +153,23 @@ def openai(path, payload, timeout=300, attempts=6):
             _t.sleep(20)
 
 
+def make_card(caption, out_path, look="black"):
+    """A title card the way he sets them: a short line in big serif caps on
+    near-black (or paper), a yellow highlighter stroke under the words. No
+    image model involved — this is drawn, and costs nothing."""
+    txt = _ff_escape(_wrap_caption((caption or "").strip().upper(), limit=14))
+    ground = "0x141414" if look == "black" else "0xE9E0C9"
+    ink = "0xF7F3EA" if look == "black" else "0x1A1A1A"
+    fs, off = 118, 50
+    vf = (f"drawtext=fontfile={FONT_SERIF}:text='{txt}':fontcolor=0xF2D24A:fontsize={fs}:"
+          f"line_spacing=22:box=1:boxcolor=0xF2D24A@1.0:boxborderw=8:x=(w-text_w)/2:y=(h-text_h)/2+{off},"
+          f"drawtext=fontfile={FONT_SERIF}:text='{txt}':fontcolor={ink}:fontsize={fs}:"
+          f"line_spacing=22:x=(w-text_w)/2:y=(h-text_h)/2,noise=alls=6:allf=t")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c={ground}:s=1024x1536",
+                    "-frames:v", "1", "-vf", vf, str(out_path)], check=True, capture_output=True)
+    return out_path
+
+
 def make_image(prompt, size, out_path, quality="low"):
     raw = openai("/images/generations",
                  {"model": IMAGE_MODEL, "prompt": prompt, "size": size, "n": 1, "quality": quality})
@@ -553,14 +570,25 @@ def probe_seconds(path):
         return 0.0
 
 
-def assign_shot_types(shots, style):
-    """Which of a style's looks each shot gets.
+SHOT_CLASSIFIER_MODEL = os.environ.get("SHOT_CLASSIFIER_MODEL", "gpt-4o-mini")
 
-    A style may be several looks cut between on purpose. Cue words in the
-    shot's own text decide first (a country wants a map, a number a chart);
-    the beat it sits in decides next; failing both, the type furthest below
-    its share, so the mix stays close to the weights. Runs before the
-    estimate so a dry run shows the mix and the cost counts real references.
+
+def assign_shot_types(shots, style, cache_path=None):
+    """Which of a style's looks each shot gets — decided by what the narration
+    MEANS, for the whole script at once.
+
+    The first version matched cue words and then pushed the remaining shots
+    round-robin onto whatever type was furthest below its share. That put a
+    China route map and an archival photo into a story about a tennis pass:
+    nothing in the script asked for them, the quota did. There is no quota
+    now. A type is used only where the narration warrants it — geography for a
+    map, a quantity for a chart, a quoted source for a document, history for
+    archival — and every other shot takes the style's default type. The model
+    also rewrites each shot's subject to fit the chosen type's grammar, so a
+    chart says what its line measures and a map says which region.
+
+    One small call per video, cached beside the panels. Falls back to the
+    default type for every shot if the call fails, and says so.
     """
     types = (style or {}).get("shot_types") or []
     if isinstance(types, str):
@@ -568,47 +596,73 @@ def assign_shot_types(shots, style):
             types = json.loads(types)
         except Exception:
             types = []
-    type_for, counts = {}, {}
     if not types:
-        return types, type_for, counts
-    counts = {t["key"]: 0 for t in types}
-    wsum = sum(float(t.get("weight", 1)) for t in types) or 1.0
+        return types, {}, {}
+    by_key = {t["key"]: t for t in types}
+    default_key = ((style or {}).get("default_shot_type")
+                   or next((t["key"] for t in types if t.get("default")), types[0]["key"]))
+
+    data = None
+    if cache_path and Path(cache_path).exists():
+        try:
+            data = json.loads(Path(cache_path).read_text())
+            print("  shot types: from cache", flush=True)
+        except Exception:
+            data = None
+    if data is None:
+        menu = "\n".join(f"- {t['key']}: {t.get('when') or t.get('label') or ''}" for t in types)
+        lines = "\n".join(
+            f"{s_['shot']}. caption: {str(s_.get('caption') or '')!r} | narration: "
+            f"{str(s_.get('voiceover') or '')} | current subject: {str(s_.get('subject') or '')}"
+            for s_ in shots)
+        system = (
+            "You are the picture editor of a documentary explainer in the style of the "
+            "account described. For EACH shot pick ONE visual type from the menu, chosen by "
+            "what the narration MEANS: a map only when there is real geography, a chart only "
+            "when there is a quantity or a trend, a document only when a source or rule is "
+            "being cited, archival only when the past is invoked, a title card only for a "
+            "short declarative line that deserves to stand alone. If nothing specific "
+            "applies, use the DEFAULT type — do not spread types around for variety. Then "
+            "write a one-sentence SUBJECT for the panel in that type's grammar: for a chart, "
+            "what the line measures and which way it goes; for a map, which region and what "
+            "the badges stand for; for a document, what kind of document and what the "
+            "highlighted line is about; for desk evidence, which physical object is "
+            "photographed and what is circled; for a cutout, who or what is cut out; for a "
+            "flowchart, what the nodes and arrows represent; for a screen capture, which "
+            "kind of page. Keep the story coherent shot to shot. Return JSON only: "
+            "{\"shots\": [{\"shot\": n, \"type\": key, \"subject\": str, \"why\": str}]}")
+        user = f"ACCOUNT: {(style or {}).get('name') or ''}\nDEFAULT TYPE: {default_key}\n\nTYPES:\n{menu}\n\nSHOTS:\n{lines}"
+        try:
+            raw = openai("/chat/completions", {
+                "model": SHOT_CLASSIFIER_MODEL, "temperature": 0.2,
+                "response_format": {"type": "json_object"},
+                "messages": [{"role": "system", "content": system},
+                             {"role": "user", "content": user}]}, timeout=120)
+            if isinstance(raw, (bytes, bytearray)):
+                raw = json.loads(raw.decode())
+            elif isinstance(raw, str):
+                raw = json.loads(raw)
+            data = json.loads(raw["choices"][0]["message"]["content"])
+            if cache_path:
+                Path(cache_path).write_text(json.dumps(data, indent=1))
+        except Exception as e:
+            print(f"  ! shot classifier failed ({type(e).__name__}: {str(e)[:80]}) — "
+                  f"every shot takes the default type '{default_key}'", flush=True)
+            data = {"shots": []}
+
+    by_shot = {int(r.get("shot", -1)): r for r in (data.get("shots") or []) if isinstance(r, dict)}
+    type_for, counts = {}, {t["key"]: 0 for t in types}
     for s_ in shots:
-        # Only the shot's OWN words. image_prompt is the engine's account-wide
-        # survey, identical on every shot and full of the very cue words
-        # (maps, archival, illustrate...) that would send them all one way.
-        text = " ".join(str(s_.get(k) or "") for k in
-                        ("subject", "voiceover", "narration", "line", "caption")).lower()
-        beat = str(s_.get("beat_role") or s_.get("beat_name") or s_.get("beat") or "").lower()
-        chosen, why = None, ""
-        import re as _re
-        def _hits(c):
-            c = c.lower().strip()
-            if not c:
-                return False
-            if c[0].isalnum() and c[-1].isalnum():
-                # whole words only: "rate" must not fire on "illustrate"
-                return _re.search(r"\b" + _re.escape(c) + r"\b", text) is not None
-            return c in text
-        for t in types:
-            hit = next((c for c in (t.get("cues") or []) if _hits(c)), None)
-            if hit:
-                chosen, why = t, "cue " + repr(hit)
-                break
-        if not chosen and beat:
-            for t in types:
-                if beat in [str(x).lower() for x in (t.get("beats") or [])]:
-                    chosen, why = t, "beat " + repr(beat)
-                    break
-        if not chosen:
-            done = sum(counts.values())
-            chosen = max(types, key=lambda t: float(t.get("weight", 1)) / wsum
-                         - ((counts[t["key"]] / done) if done else 0.0))
-            why = "share"
-        counts[chosen["key"]] += 1
-        type_for[id(s_)] = chosen
-        print("  shot %2d -> %-18s (%s)" % (s_["shot"], chosen["key"], why), flush=True)
-    print("  mix: " + ", ".join("%s %d" % (k, v) for k, v in counts.items()), flush=True)
+        rec = by_shot.get(int(s_["shot"]))
+        key = rec["type"] if (rec and rec.get("type") in by_key) else default_key
+        t = by_key[key]
+        type_for[id(s_)] = t
+        counts[key] += 1
+        if rec and rec.get("subject"):
+            s_["subject"] = str(rec["subject"]).strip()   # rewritten for this type
+        why = (rec or {}).get("why") or ("default" if not rec else "")
+        print("  shot %2d -> %-20s %s" % (s_["shot"], key, str(why)[:70]), flush=True)
+    print("  mix: " + ", ".join("%s %d" % (k, v) for k, v in counts.items() if v), flush=True)
     return types, type_for, counts
 
 
@@ -707,7 +761,6 @@ def main():
     if not plan.get("ok"):
         sys.exit(plan.get("error"))
     shots = plan["shots"]
-    _types, _type_for, _type_counts = assign_shot_types(shots, style)
 
     # Reuse one panel across a beat's shots when capped: the pictures repeat
     # while the audio runs on, which is what the cheaper end of this format
@@ -742,6 +795,12 @@ def main():
         _suffix += "_nocap"
     if getattr(args, "static", False):
         _suffix += "_static"
+    # which look each shot gets — after _suffix exists, so the decision can be
+    # cached beside the panels, and before the estimate, so it counts real refs
+    _wd = OUT_DIR / f"work_{args.creation_id}{_suffix}"
+    _wd.mkdir(parents=True, exist_ok=True)
+    _types, _type_for, _type_counts = assign_shot_types(
+        shots, style, cache_path=(_wd / "shot_types.json") if getattr(args, "style", None) else None)
     _work = OUT_DIR / f"work_{args.creation_id}{_suffix}"
     _have = {k for k in {sh["_img_key"] for sh in shots}
              if (_work / f"{k}.png").exists() and (_work / f"{k}.png").stat().st_size > 2048}
@@ -904,6 +963,14 @@ def main():
             else:
                 prompt = s["image_prompt"] or ""
                 _t = _type_for.get(id(s))
+                if _t and _t.get("generator") == "card":
+                    print(f"  card  {s['shot']}/{len(shots)}: {s.get('caption')!r}", flush=True)
+                    make_card(s.get("caption") or s.get("subject") or "", img,
+                              look=_t.get("card_look", "black"))
+                    s["_no_caption"] = True      # the words are the picture
+                    s["_img"] = img
+                    last_good = img
+                    continue
                 if _t:
                     # this shot's look: its own prompt and its own pictures
                     body = (s.get("subject") or "").strip() or prompt
@@ -1051,7 +1118,7 @@ def main():
                     mv = _tt["motion"]      # e.g. "wipe" for a route or a line drawing in
                 if not (seg.exists() and seg.stat().st_size > 4096):
                     print(f"  treating shot {s['shot']}/{len(shots)} [{mv}]…", flush=True)
-                    cap = None if args.no_caption_overlay else s.get("caption")
+                    cap = None if (args.no_caption_overlay or s.get("_no_caption")) else s.get("caption")
                     treat_shot(s["_img"], s["duration_sec"], cap, seg, i, motion=mv,
                                no_texture=args.no_texture,
                                look=(args.look or "illustrated"))

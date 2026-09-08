@@ -261,7 +261,59 @@ the same class of error as the run once quoted at $1.95 that billed about $9.
 - `/production/reference-clips` — the clips, grouped by account.
 
 
-## The johnny-harris style: six looks, cut between (2026-09-08)
+## The johnny-harris style: ten looks, chosen by meaning (2026-09-08)
+
+The first mixed cut was **rejected**: types were picked by cue words, then the
+rest were forced round-robin onto shots to hit a one-sixth quota. A story about
+a tennis pass got a China route map and an archival photo of a bottle — nothing
+in the script asked for them, the quota did. The user's words: *"much better at
+identifying what to replicate, but completely lost the logic to script."*
+
+**Selection is now by meaning.** `assign_shot_types` sends the whole script to
+a small model (`SHOT_CLASSIFIER_MODEL`, default gpt-4o-mini, ~0.1¢ a video,
+cached as `shot_types.json` beside the panels) with each type's **`when`** rule
+— the editorial condition for using it. A type is used only where the narration
+warrants it; every other shot takes the style's **default** type (`default:
+true` on the type; for him, evidence-on-desk). No quota, no cue words. The
+model also rewrites each shot's `subject` in that type's grammar — a chart says
+what its line measures, a map which region — which is what made the panels
+follow the sentences.
+
+On the tennis script that gives eleven desk shots and one cutout-on-black
+where Richard Thaler is introduced. That is correct.
+
+| type | when | motion | refs |
+|---|---|---|---|
+| evidence-on-desk (default) | a physical thing photographed as evidence | in | 5 Arena |
+| parchment-map | real geography only | in | 5 |
+| dark-map-route | money, goods or people moving between places | wipe | 4 |
+| scanned-document | a source or rule cited or quoted | in | 3 |
+| archival-footage | the past invoked | out | 7 |
+| chart-on-paper | a quantity, rate or trend | wipe | 1 |
+| title-card | a short declarative line that stands alone; ≤2 per video | in | drawn, no model |
+| cutout-on-black | a named person or institution as subject | in | 2 |
+| flowchart-on-paper | a process, hierarchy, chain of causes | wipe | 4 |
+| screen-capture | something seen on a screen | in | 3 |
+
+`when` is the field that generalises: another artist's style is their types,
+their rules, their frames. The selector code does not change.
+
+Snapshot of the renderer that produced the clean run is beside this file.
+
+### Traps this round
+
+- **Panels are cached by shot number, not by prompt.** When the selector
+  rewrites subjects, the old panels are silently reused. Clear `s0*.png` in the
+  work dir before a render whose assignment changed (this cost a $0.65
+  regenerate). Prompt-hash cache keys are the proper fix, not done yet.
+- **Anchor patches on text you have printed, not text you remember.** Two
+  call-site insertions failed silently because the `_suffix` block had changed
+  shape; the fix was to walk the block programmatically.
+- **The engine has no `default_shot_type` column** — the flag lives on the type
+  itself (`default: true`), which the selector reads.
+- The classifier's cutout face came out sharper than his (he uses press photos
+  with the face turned or shadowed); a turned-face reference would pin it.
+
 
 The desk-only render reproduced the right idiom for every shot; the user's
 verdict was that the desk look belongs at about a sixth. The `johnny-harris`

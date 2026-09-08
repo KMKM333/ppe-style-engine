@@ -157,10 +157,14 @@ def make_card(caption, out_path, look="black"):
     """A title card the way he sets them: a short line in big serif caps on
     near-black (or paper), a yellow highlighter stroke under the words. No
     image model involved — this is drawn, and costs nothing."""
-    txt = _ff_escape(_wrap_caption((caption or "").strip().upper(), limit=14))
+    raw = (caption or "").strip().upper()
+    txt = _ff_escape(_wrap_caption(raw, limit=12))
     ground = "0x141414" if look == "black" else "0xE9E0C9"
     ink = "0xF7F3EA" if look == "black" else "0x1A1A1A"
-    fs, off = 118, 50
+    # size to the longest line so nothing runs off a 1024px card
+    longest = max(len(x) for x in _wrap_caption(raw, limit=12).split("\n"))
+    fs = max(64, min(118, int(1024 * 0.88 / (longest * 0.62))))
+    off = int(fs * 0.42)
     vf = (f"drawtext=fontfile={FONT_SERIF}:text='{txt}':fontcolor=0xF2D24A:fontsize={fs}:"
           f"line_spacing=22:box=1:boxcolor=0xF2D24A@1.0:boxborderw=8:x=(w-text_w)/2:y=(h-text_h)/2+{off},"
           f"drawtext=fontfile={FONT_SERIF}:text='{txt}':fontcolor={ink}:fontsize={fs}:"
@@ -1161,7 +1165,8 @@ def main():
                     mv = _tt["motion"]      # e.g. "wipe" for a route or a line drawing in
                 if not (seg.exists() and seg.stat().st_size > 4096):
                     print(f"  treating shot {s['shot']}/{len(shots)} [{mv}]…", flush=True)
-                    cap = None if (args.no_caption_overlay or s.get("_no_caption")) else s.get("caption")
+                    _is_card = (_type_for.get(id(s)) or {}).get("generator") == "card"
+                    cap = None if (args.no_caption_overlay or s.get("_no_caption") or _is_card) else s.get("caption")
                     treat_shot(s["_img"], s["duration_sec"], cap, seg, i, motion=mv,
                                no_texture=args.no_texture,
                                look=(args.look or "illustrated"))

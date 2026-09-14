@@ -407,3 +407,52 @@ Fixes, all in the renderer:
 
 Final tennis cut: nine desk shots, one cutout on black (Thaler), two title
 cards closing (the question, then LET IT GO). Style spend today ≈ $2.50.
+
+## Hero shots (2026-09-14): his motion on our panel
+
+A hero shot is one shot in a stills cut made as real video. The recipe that
+worked first time, on creation 7 (the egg story):
+
+| input | Seedance role | carries |
+|---|---|---|
+| our OpenAI panel for that shot | `start_image` | the subject and the look — so the hero matches the shots either side |
+| a clip cut from **his own video**, same shot type | `video_references` | the motion — how his route draws, how his line lands |
+
+Prompt names only the action, and says twice: *animate the start image
+exactly as it is; take only the motion from the reference*. Both heroes
+came back with the panel untouched and his motion on it: the map route drew
+across the border and pulsed at the badges; the chart line drew in, falling,
+and a circle landed on the end.
+
+**Cost, preflighted at the real inputs:** 12.5 credits per 5 s hero at 480p.
+The two references add nothing. Two heroes a video ≈ $1.25 on top of the
+$0.67 panel route. Full Seedance would be ~$7–10 — and his videos mostly hold
+still, so heroes buy nearly all of the visible motion for a fifth of that.
+
+**Motion clips per shot type** (`motion_clip` on the type, `hero_ok` flag):
+dark-map-route, parchment-map, flowchart-on-paper, chart-on-paper,
+archival-footage — each an 4–8 s cut from his footage, verified frame by
+frame on a contact sheet before upload. Cards, cutouts and screen captures are
+never heroes. The selector prints `[hero-capable]` on shots whose type has a
+clip; the operator picks which to generate.
+
+**The split is deliberate.** The renderer's own Higgsfield path shells out to
+a `higgsfield` CLI that is not installed on the box and has never run.
+Heroes are generated through the MCP in-session and dropped into
+`<workdir>/hero/shot_NNN.mp4`; `--hero 7,9` makes the renderer trim, grade,
+caption and cut those files in place of the pushed still (`treat_clip`: no
+zoompan on a clip that already moves). A flagged shot with no file falls
+back to the still and says so.
+
+### Traps this round
+
+- **Higgsfield intercepts prompts with a preset suggestion** ("IN THE DARK")
+  and submits nothing. Resubmit with `declined_preset_id`. Nothing is charged
+  by the intercept.
+- **Two of my first five motion cuts were wrong** at the timestamps I
+  believed — a Sky News hearing and a plane. Cut, sheet, look, *then* upload.
+- **Don't guess where a shot sits in the cut.** My verification strip was
+  taken at 27 s and 37 s; the heroes were at 22.1 s and 32.4 s. Read the
+  order and durations out of `treated.txt`.
+- His frames and clips are still 480p (cached source downloads). The heroes
+  inherit that softness. 1080p re-pull remains queued.

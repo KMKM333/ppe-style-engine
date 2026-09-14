@@ -387,6 +387,22 @@ def _caption_filters(caption):
     return []
 
 
+def treat_clip(src, duration, caption, out_path, no_texture=False):
+    """A generated clip through the still's finishing pass: trimmed to the
+    shot, scaled to frame, grain, caption. No zoompan — the clip already
+    moves, and a push on top of real motion reads as two cameras."""
+    d = max(0.4, float(duration or 2.5))
+    vf = [f"scale={FRAME_W}:{FRAME_H}:force_original_aspect_ratio=increase",
+          f"crop={FRAME_W}:{FRAME_H}", f"fps={TREATED_FPS}", "noise=alls=4:allf=t"]
+    vf += _caption_filters(caption)
+    vf.append("format=yuv420p")
+    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(src), "-t", f"{d:.3f}",
+                    "-vf", ",".join(vf), "-r", str(TREATED_FPS), "-c:v", "libx264", "-crf", "24",
+                    "-preset", "medium", "-pix_fmt", "yuv420p", "-an", str(out_path)],
+                   check=True, capture_output=True)
+    return out_path
+
+
 def wipe_pass(seg, caption=None):
     """A route or a line 'drawing in': the finished shot is revealed left to
     right from under a paper-coloured cover over 1.3s. Split the stream,
@@ -700,7 +716,9 @@ def assign_shot_types(shots, style, cache_path=None):
         if rec and rec.get("subject"):
             s_["subject"] = str(rec["subject"]).strip()   # rewritten for this type
         why = (rec or {}).get("why") or ("default" if not rec else "")
-        print("  shot %2d -> %-20s %s" % (s_["shot"], key, str(why)[:70]), flush=True)
+        s_["_hero_ok"] = bool(t.get("hero_ok")) and bool(t.get("motion_clip"))
+        print("  shot %2d -> %-20s %s%s" % (s_["shot"], key, str(why)[:66],
+              "  [hero-capable]" if s_["_hero_ok"] else ""), flush=True)
     print("  mix: " + ", ".join("%s %d" % (k, v) for k, v in counts.items() if v), flush=True)
     return types, type_for, counts
 
@@ -724,6 +742,11 @@ def main():
                     help="anton = condensed sans on a dark box (unchanged default); "
                          "serif-highlight = serif caps with a yellow highlighter stroke, "
                          "the treatment seen across @johnnyharris")
+    ap.add_argument("--hero", default="", metavar="SHOTS",
+                    help="comma-separated shot numbers to cut as real video (hero shots). The clip "
+                         "for shot N is read from <workdir>/hero/shot_NNN.mp4 — generated outside "
+                         "this script (Seedance via MCP, from the panel + the type's motion clip). "
+                         "A flagged shot with no clip on disk falls back to its pushed still.")
     ap.add_argument("--reference-frames", type=int, default=0, metavar="N",
                     help="use N of the account's OWN frames as visual reference "
                          "(image edit) instead of generating from the text prompt alone")
@@ -1163,6 +1186,20 @@ def main():
                     _tt = None
                 if _tt and _tt.get("motion") and not args.static:
                     mv = _tt["motion"]      # e.g. "wipe" for a route or a line drawing in
+                _hero_set = {int(x) for x in str(getattr(args, "hero", "") or "").replace(" ", "").split(",") if x.isdigit()}
+                _hero_clip = tmp / "hero" / f"shot_{s['shot']:03d}.mp4"
+                if s["shot"] in _hero_set and _hero_clip.exists() and _hero_clip.stat().st_size > 4096:
+                    # Real motion for this shot. The clip is trimmed to the shot's
+                    # length and given the same grade, grain and caption as a
+                    # still, so nothing in the cut reveals which shots moved.
+                    if not (seg.exists() and seg.stat().st_size > 4096):
+                        print(f"  treating shot {s['shot']}/{len(shots)} [HERO clip]…", flush=True)
+                        cap = None if (args.no_caption_overlay or s.get("_no_caption")) else s.get("caption")
+                        treat_clip(_hero_clip, s["duration_sec"], cap, seg, no_texture=args.no_texture)
+                    parts.append(seg)
+                    continue
+                elif s["shot"] in _hero_set:
+                    print(f"  shot {s['shot']}: flagged hero but no clip at {_hero_clip.name} — using the still", flush=True)
                 if not (seg.exists() and seg.stat().st_size > 4096):
                     print(f"  treating shot {s['shot']}/{len(shots)} [{mv}]…", flush=True)
                     _is_card = (_type_for.get(id(s)) or {}).get("generator") == "card"

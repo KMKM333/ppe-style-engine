@@ -520,3 +520,107 @@ it lives in the style notes and is passed to the renderer as a value.
   `declined_preset_id` on every Seedance call.
 - The dry-run work dir carries a `_nocap` suffix when the style is baked;
   the assignment cache is there, not in the un-suffixed dir.
+
+## Typing every account from its own footage (2026-09-14)
+
+`discover_looks.py --dry-run` names the looks well enough (4–7 per account,
+each with a `when` rule), but its cut-and-verify step kept almost nothing for
+accounts built around a real person: the vision model declines face frames
+(`content=None`, now handled in `vision()`), and the re-classification rejects
+most cutaways. So nine accounts were **typed by hand from the contact
+sheets**, the way Johnny Harris and Guijooorge were. The tooling for that is
+beside this file:
+
+- `type_account.py` — reads `/tmp/spec.json` and `/tmp/sheet_index.json` on
+  the VPS, cuts one still per `[sheet, k]` pick (k row-major, six per row) at
+  the time that frame was really sampled (see the timing rule below), an 8 s
+  clip from the first pick of each look, uploads both under a revisioned key
+  (`REF_REV`, default `r2` — the engine refuses to overwrite an asset key),
+  registers the looks on the style, and writes a labelled
+  `/tmp/typed_<slug>_sheet.jpg` of every still to check by eye.
+- `typing_specs/*.json` — the specs that were run. Format:
+  `{account, slug, medium, caption_mode, avoid, note, crop?, looks:[{key,
+  label, when, prompt, motion, default?, generate?, crop?, frames:[[sheet,k]
+  or [sheet,k,crop]]}]}`.
+- `postpass.py` — afterwards: any look whose key or label says
+  talking-head / on-camera / vlog / interview / presenter is forced
+  `generate:false`, and a style whose default is not generatable is
+  re-pointed to the generatable look with the most stills.
+- `tally.py` — the final table (who is ready, who is thin, who is script-only).
+
+### Where every account stands (end of 2026-09-14)
+
+All 18 styles typed from their own footage, every generatable still checked
+by eye against the sheet after the timing fix. "stills" = real frames on the
+generatable looks; one 8 s clip per look for hero shots.
+
+| style | default look | generatable looks (stills) | never generated |
+|---|---|---|---|
+| johnny-harris | evidence-on-desk | 10 looks (34) | — |
+| searchpartynp | map-card | green-infographic, headline-card, investigation-board, sports-footage, archival-photo (22) | news-figure, talking-head |
+| damileearch | neon-diagram | 3d-architecture, gold-geometry, desert-diagram, papyrus-illustration (18) | talking-head |
+| maxfishershow | dark-map | winner-grid, source-screenshot, ladder-diagram, old-print-scan (18) | cutout-cast, news-figure, archival-footage, talking-head |
+| casuallyfinance | stick-figure-scene | country-character, screenshot-evidence (14) | title-card, meme-insert |
+| kylascan | whiteboard-sketch | article-highlight, title-on-black (14) | talking-head |
+| null-histories | group-in-scene | single-figure, object-subject, map-diagram, crowd-vortex (13) | — |
+| sovra-money | paper-collage | money-macro, map-cutout, sky-title (12) | chrome-lettering, portrait-cutout |
+| business-stick | character-in-scene | character-closeup, crowd-wide, title-banner (10) | — |
+| fryrsquared | flat-diagram | science-illustration, nature-footage, photo-strip-list (10) | talking-head, outdoor-vlog |
+| guijooorge-flat | figure-in-scene | object-symbol, big-numeral, hand-lettering, assembling-stack (9) | — |
+| robdwillis | keynote-stage | film-scene (9) | talking-head-desk |
+| barrys-economics | text-card | cartoon-explainer, article-screenshot, flowchart-diagram (8) | talking-head, podcast-inset, borrowed-footage |
+| moneymindnews | panel-footage | panel-screenshot (8) | comparison-card, talking-head-split |
+| versobooks | news-footage | article-screenshot (6) | talking-head-interview, news-figure |
+| philedwardsinc | object-in-hand | archival-photo-tinted, vintage-print-on-black (5) | talking-head-cup, film-still |
+| americanbaron | — | none: one presenter on camera | on-camera |
+| mcgregorlevf | — | none: one presenter at a bookshelf | talking-head-bookshelf |
+
+`tally.py` prints this live from the engine. The check montage caps at 24
+stills (6×4); looks that sort late alphabetically (talking-head, winner-grid)
+fall off it — verify those from the run log or a separate strip.
+
+### Rules that came out of reading 38 sheets
+
+- **THE TIMING RULE. Sheet frame k is NOT at `2 + k·step`.** The sheets were
+  sampled with ffmpeg's `fps=1/step` after `-ss 2`, and that filter puts in
+  slot k the *last* frame before `2 + (k + 0.5)·step` — half a step later than
+  the timestamp list handed to the vision model and to every cutting script.
+  Proven on a dense strip of the philedwardsinc video (`phil_strip.jpg`): the
+  building the sheet shows at k=2 is at 22 s, not 18.6 s. Every hand-typed
+  account cut before this was found (Barry's, damileearch, fryrsquared,
+  kylascan, Null.histories, business.stick, Guijooorge, and the four typed
+  tonight) had its stills half a step early — at 20+ cuts a minute that is the
+  *previous shot*, which is how the presenter's face ended up as a reference
+  for kylascan's whiteboard look. It is also why `discover_looks.py`'s
+  cut-and-verify "kept almost nothing": its cuts never matched what the model
+  had looked at. Fixed three ways: `type_account.py` uses
+  `2 + (k + 0.5)·step − 0.05` for old sheets; `discover_looks.py` now samples
+  with an explicit `select` expression and writes a `<sheet>.json` sidecar
+  with the exact times, which the typer prefers when present; everything was
+  recut and re-checked by eye. **Never trust a frame→time formula you have not
+  checked against a strip of frames cut at known times.**
+- **Crop the caption out of the reference, not the subject.** The default
+  `crop=iw:ih*0.88` only removes a bottom caption. Captions sit mid-frame on
+  robdwillis and versobooks (top 57–60 % kept), at 0.65 on philedwardsinc
+  (top 63 %), at 0.83 on sovra.money (top 80 %). Letterboxed cutaways get the
+  slide band only (`crop=iw:ih*0.27:0:ih*0.325`). Crop is per account, per
+  look, or per frame — a still with a sentence in it teaches the model to
+  paint sentences.
+- **A frame with the account's own words in it is not a reference.** sovra's
+  yellow-highlighted Arabic hook lines, the hex dump, the chrome lettering:
+  skipped or non-generatable. The words come from the caption overlay
+  (`serif-highlight` is exactly sovra's hook style).
+- **Real people are never references for a generatable look.** Presenters,
+  interviewees, the founder cut-out, news stills of public figures, film
+  stills of actors: registered as looks so the selector can name them, all
+  `generate:false`. A generatable look may contain people only at a distance
+  or in profile (robdwillis `film-scene`, versobooks `news-footage`).
+- **Pick for subject variety inside a look.** Six keynote slides showing six
+  different objects; six collage cut-outs of six different things. Five
+  frames of the same thing become the subject.
+- **An account can be script-only.** mcgregorlevf is one presenter at a
+  bookshelf with corner insets too small to cut; americanbaron likewise. They
+  carry cadence and caption style, nothing generatable. Say so in the notes
+  rather than inventing a look.
+- **Same film twice** — sovra's Arabic and English versions are one video;
+  don't count them as two sources.

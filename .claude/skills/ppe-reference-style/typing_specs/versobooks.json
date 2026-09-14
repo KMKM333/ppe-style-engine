@@ -1,0 +1,20 @@
+{"account":"@versobooks","slug":"versobooks",
+ "medium":"interview on camera against a bookshelf, white serif captions mid-frame; cutaways are documentary news footage and news photos of public figures",
+ "caption_mode":"overlay",
+ "avoid":"illustration, cartoon, 3D render, studio lighting, stock-photo gloss, text baked into the image",
+ "note":"Two interviewees, both non-generatable, as are the news stills of real public figures. Captions sit mid-frame, so reference stills are cropped to the top 57% to keep them out. Caption: white bold serif, centred, short phrases.",
+ "crop":"crop=iw:ih*0.57:0:0",
+ "looks":[
+  {"key":"talking-head-interview","label":"Interviewee at the bookshelf","generate":false,"motion":"none","crop":"crop=iw:ih*0.88:0:0",
+   "when":"the interviewee on camera - never generated.","frames":[[0,0],[2,1],[3,0]]},
+  {"key":"news-footage","label":"Documentary news footage","default":true,"motion":"in",
+   "when":"a place, a workplace, an institution, an event in the real world - shown as filmed news footage.",
+   "prompt":"Documentary news footage: the subject filmed in the real world with a handheld camera - a field, a shop counter, a corridor, a yard - natural available light, slightly soft broadcast video, a little motion blur, muted true-to-life colour, people only at a distance or from behind. No text.",
+   "frames":[[3,3],[3,2],[3,7],[3,8],[3,6,"crop=iw:ih*0.36:0:ih*0.64"]]},
+  {"key":"article-screenshot","label":"News article screenshot","motion":"in",
+   "when":"a report, a study, a headline, a published claim - shown as a screenshot of the article.",
+   "prompt":"A screenshot of an online news article floating over a dark blurred background: white page, a small masthead line at the top, a large bold serif headline as two or three lines of grey illegible text, a byline line, and a photo below the headline. No real publication name, no readable words.",
+   "frames":[[2,11,"crop=iw:ih*0.28:0:ih*0.30"]]},
+  {"key":"news-figure","label":"News still of a public figure","generate":false,"motion":"none","crop":"crop=iw:ih*0.88:0:0",
+   "when":"a named public figure - real news footage only, never generated.","frames":[[2,0],[2,9],[2,10]]}
+ ]}

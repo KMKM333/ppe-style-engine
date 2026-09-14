@@ -1,0 +1,153 @@
+{
+"account": "@damileearch",
+"slug": "damileearch",
+"medium": "architectural history: neon-outline diagrams on black, 3D building renders, desert geometry diagrams, papyrus illustrations, cut into a studio talking head",
+"caption_mode": "overlay",
+"avoid": "flat cartoon, stick figures, photography of people, gradients on flat panels, glossy stock imagery, legible text",
+"note": "Her on camera and the meme/film cutaways are non-generatable. Five generatable looks from the sheets. Recut 2026-09-14 with the corrected frame timing; neon picks re-read from sheet 0 (12 frames); split frames cropped to the graphic above the presenter.",
+"looks": [
+{
+"key": "talking-head",
+"label": "Presenter in studio",
+"generate": false,
+"motion": "none",
+"when": "the creator on camera — never generated.",
+"frames": [
+[
+0,
+4
+],
+[
+1,
+11
+]
+],
+"crop": "crop=iw:ih*0.88:0:0"
+},
+{
+"key": "neon-diagram",
+"label": "Neon-outline diagram on black",
+"default": true,
+"motion": "wipe",
+"when": "a system, a sequence, a comparison, a quantity — explained as a glowing diagram.",
+"prompt": "A technical diagram on pure black: thin glowing neon outlines in hot pink, orange and white — simple shapes (triangles for structures, boxes for stages), connected by thin bright lines and small arrows, a faint grid, small labels as illegible marks, a soft glow around every line. Nothing else in frame.",
+"frames": [
+[
+0,
+7,
+"crop=iw:ih*0.42:0:0"
+],
+[
+0,
+6,
+"crop=iw:ih*0.62:0:0"
+],
+[
+0,
+3
+],
+[
+0,
+8,
+"crop=iw:ih*0.33:0:0"
+],
+[
+0,
+9,
+"crop=iw:ih*0.33:0:0"
+]
+]
+},
+{
+"key": "3d-architecture",
+"label": "3D architectural render",
+"motion": "in",
+"when": "a building, a city, a monument — shown as a lit 3D model, often from above or a low dramatic angle.",
+"prompt": "A cinematic 3D render of an ancient structure — a Roman amphitheatre, a pyramid, a colonnade — in warm stone tones under dramatic low light, tiny figures for scale, dust and haze in the air, clean geometry, photoreal materials.",
+"frames": [
+[
+1,
+0
+],
+[
+1,
+5
+],
+[
+1,
+10
+],
+[
+3,
+4
+],
+[
+3,
+1
+]
+]
+},
+{
+"key": "gold-geometry",
+"label": "Gold geometry on black",
+"motion": "in",
+"when": "a shape, an angle, a proportion — the abstract form of a structure isolated and lit.",
+"prompt": "A single luminous geometric form — a pyramid, a nested square, a ramp — rendered in glowing gold on pure black, soft light bloom, seen slightly from above, nothing else in frame.",
+"frames": [
+[
+4,
+2,
+"crop=iw:ih*0.60:0:0"
+],
+[
+4,
+4
+],
+[
+0,
+5,
+"crop=iw:ih*0.44:0:0"
+]
+]
+},
+{
+"key": "desert-diagram",
+"label": "Measured diagram on sand",
+"motion": "wipe",
+"when": "dimensions, angles, footprints, distances — a measurement drawn over the real ground.",
+"prompt": "A warm orange-sand landscape seen from above with a thin white measurement diagram drawn over it — a triangle with an angle marked, a footprint outlined with an area label as illegible marks, a compass rose — technical lines over natural ground.",
+"frames": [
+[
+2,
+4
+],
+[
+4,
+3
+]
+]
+},
+{
+"key": "papyrus-illustration",
+"label": "Egyptian papyrus illustration",
+"motion": "in",
+"when": "the ancient world's own record — figures, boats, plants — as painted on papyrus or a tomb wall.",
+"prompt": "An ancient Egyptian painting in the flat profile style of tomb walls and papyrus: figures in profile with linear limbs, ochre, rust, black and cream, hieroglyph-like marks as illegible symbols, aged texture, a boat or reeds or workers.",
+"frames": [
+[
+2,
+1
+],
+[
+4,
+5
+],
+[
+0,
+11
+]
+]
+}
+],
+"crop": "crop=iw:ih*0.64:0:0"
+}

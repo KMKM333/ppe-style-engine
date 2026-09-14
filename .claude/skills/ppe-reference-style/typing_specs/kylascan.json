@@ -1,0 +1,116 @@
+{
+"account": "@kylascan",
+"slug": "kylascan",
+"medium": "finance explainer: hand-drawn whiteboard sketches, article screenshots with a highlighted line, section titles on black, cut into a presenter at her desk",
+"caption_mode": "overlay",
+"avoid": "3D render, flat vector, glossy stock imagery, photography of people, gradients, neon",
+"note": "Presenter on camera is non-generatable. Three generatable looks; the whiteboard sketch is her signature and the default.",
+"looks": [
+{
+"key": "talking-head",
+"label": "Presenter at desk",
+"generate": false,
+"motion": "none",
+"when": "the creator on camera — never generated.",
+"frames": [
+[
+0,
+0
+],
+[
+1,
+0
+]
+]
+},
+{
+"key": "whiteboard-sketch",
+"label": "Hand-drawn whiteboard sketch",
+"default": true,
+"motion": "wipe",
+"when": "the default — any idea explained as a quick marker drawing: stick figures, boxes, arrows, a few handwritten words.",
+"prompt": "A quick hand-drawn explainer on a plain white ground: thin black marker lines, stick figures with round heads and simple faces, rectangles for documents or money, arrows between them, and short handwritten labels in loose capitals, one word underlined in pink or red. Sketchy, fast, deliberately rough. The handwritten words are illegible marks unless they are the caption.",
+"frames": [
+[
+0,
+3
+],
+[
+0,
+8
+],
+[
+0,
+10
+],
+[
+1,
+1
+],
+[
+1,
+12
+],
+[
+4,
+2
+],
+[
+4,
+17
+]
+]
+},
+{
+"key": "article-highlight",
+"label": "Article screenshot, one line highlighted",
+"motion": "in",
+"when": "a source is cited — a newspaper or wire headline, a report page, a post — with the key sentence highlighted.",
+"prompt": "A clean screenshot of a financial newspaper article: a masthead across the top, a serif headline in two lines, a small photo, body text as illegible grey marks, and one sentence marked with a pale blue or yellow highlighter band. Shown flat on white.",
+"frames": [
+[
+1,
+4
+],
+[
+1,
+7
+],
+[
+2,
+0
+],
+[
+2,
+10
+],
+[
+3,
+2
+],
+[
+4,
+0
+]
+]
+},
+{
+"key": "title-on-black",
+"label": "Section title on black",
+"motion": "none",
+"generate": true,
+"when": "a chapter break — 'Part 2', a named topic — a few words alone on black.",
+"prompt": "(drawn, not generated) two to four words in plain white sans-serif, centred on solid black, nothing else.",
+"frames": [
+[
+2,
+3
+],
+[
+3,
+8
+]
+]
+}
+]
+}

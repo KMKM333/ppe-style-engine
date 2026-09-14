@@ -1,0 +1,9 @@
+{"account":"@mcgregorlevf","slug":"mcgregorlevf",
+ "medium":"the creator on camera against a bookshelf, pink-and-white caption words; occasional tiny corner insets",
+ "caption_mode":"overlay",
+ "avoid":"",
+ "note":"Every frame is the creator on camera. The corner insets (a portrait, a battle map, a painting) are too small to serve as references. One non-generatable look; script/cadence source only.",
+ "looks":[
+  {"key":"talking-head-bookshelf","label":"Creator on camera, bookshelf","default":true,"generate":false,"motion":"none",
+   "when":"every shot — this account is one presenter to camera.","frames":[[0,0],[2,0],[3,0]]}
+ ]}

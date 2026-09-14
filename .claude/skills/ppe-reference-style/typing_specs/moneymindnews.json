@@ -1,0 +1,20 @@
+{"account":"@moneymindnews","slug":"moneymindnews",
+ "medium":"split screen: a real-world clip, product photo or screenshot in a panel above, the creator below on black; white italic bold caps captions",
+ "caption_mode":"overlay",
+ "avoid":"illustration, cartoon, 3D render, coloured backgrounds, text baked into the image",
+ "note":"Every frame is the creator with a panel above him; only the panel is generatable, so reference stills are cropped to the panel. Comparison cards carry their numbers as baked text - never generated. Caption: white italic bold caps, centred low.",
+ "crop":"crop=iw:ih*0.36:0:ih*0.15",
+ "looks":[
+  {"key":"panel-footage","label":"Real-world clip in the top panel","default":true,"motion":"in",
+   "when":"the default - the thing itself: a product, a place, a process, food, a machine - as filmed footage or a product photo.",
+   "prompt":"A widescreen photograph or video frame of the subject in the real world - food on a tray, a machine at work, a shop front, a fixture on a tiled wall - natural or overhead light, true colour, slightly soft like a phone clip, filling the frame edge to edge. No words.",
+   "frames":[[1,4],[0,3],[0,1],[2,5],[4,6,"crop=iw:ih*0.42:0:ih*0.13"],[0,4]]},
+  {"key":"panel-screenshot","label":"Screenshot in the top panel","motion":"in",
+   "when":"a listing, a price, a website, an app screen, a piece of software - shown as a screenshot.",
+   "prompt":"A widescreen screenshot of a web page or an app: white or dark grey interface, a product image or two, price and title lines as illegible grey text, clean flat layout, filling the frame. No readable words, no real brand names.",
+   "frames":[[2,2],[3,2,"crop=iw:ih*0.42:0:ih*0.13"]]},
+  {"key":"comparison-card","label":"Two things side by side with numbers","generate":false,"motion":"none",
+   "when":"two items compared with a number under each - the numbers are baked text, never generated.","frames":[[2,4],[3,6,"crop=iw:ih*0.42:0:ih*0.13"]]},
+  {"key":"talking-head-split","label":"Creator below the panel","generate":false,"motion":"none","crop":"crop=iw:ih*0.88:0:0",
+   "when":"the creator on camera - never generated.","frames":[[0,6],[1,3],[3,3]]}
+ ]}

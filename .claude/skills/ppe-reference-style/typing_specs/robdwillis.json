@@ -1,0 +1,17 @@
+{"account":"@robdwillis","slug":"robdwillis",
+ "medium":"the creator at a desk under a lightbox sign; cutaways are widescreen clips letterboxed on black - keynote stages and film scenes; bold white caps captions with one hot-pink word",
+ "caption_mode":"overlay",
+ "avoid":"illustration, cartoon, 3D render, vertical-framed cutaways, bright flat studio light, text baked into the image",
+ "note":"Almost all talking head. Both cutaway looks are widescreen frames letterboxed on black - the black bars ARE the look. Caption: bold white caps, centred mid-frame, one keyword in hot pink. Reference stills are cropped to the slide band so his caption is not in them.",
+ "looks":[
+  {"key":"talking-head-desk","label":"Creator at the desk","generate":false,"motion":"none","crop":"crop=iw:ih*0.88:0:0",
+   "when":"the creator on camera - never generated.","frames":[[0,0],[1,4],[2,0]]},
+  {"key":"keynote-stage","label":"Keynote slide on a dark stage","default":true,"motion":"in","crop":"crop=iw:ih*0.27:0:ih*0.325",
+   "when":"a famous example, a product, a big reveal, a moment of great communication - shown as a slide on a giant stage screen.",
+   "prompt":"A widescreen 16:9 frame letterboxed with black bars above and below: a dark conference stage, a huge screen showing one large object or icon on a black or deep-purple slide, a small speaker figure in silhouette at the far left, soft stage haze. Archival keynote footage, slightly soft video quality, no words on the slide.",
+   "frames":[[2,4],[2,5],[2,8],[2,14],[2,13],[2,1]]},
+  {"key":"film-scene","label":"Film scene, letterboxed","motion":"in","crop":"crop=iw:ih*0.6:0:0",
+   "when":"a scene between people - a pitch, a meeting, an interview, someone doing it right or wrong - shown as a movie scene.",
+   "prompt":"A widescreen 16:9 frame letterboxed with black bars above and below: a cinematic scene of two or three people in a dim office or boardroom, seen in profile or three-quarter, mid-conversation, muted teal-and-grey grade, soft window light, shallow focus, film grain. Nobody looks at the camera, no text.",
+   "frames":[[1,0],[1,1],[1,2]]}
+ ]}

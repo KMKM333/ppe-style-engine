@@ -62,9 +62,13 @@ def sheet(video, out, every=8.0, cols=6):
     step = max(1.0, (d - 4) / n)
     ts = [round(2 + i * step, 1) for i in range(n)]
     rows = (n + cols - 1) // cols
-    # fps sampling from t=2s: frame k lands at 2 + k*step, matching ts exactly
-    sh(["ffmpeg", "-v", "error", "-y", "-ss", "2", "-i", video, "-vf",
-        f"fps=1/{step:.3f},scale=320:-2,tile={cols}x{rows}", "-frames:v", "1", out])
+    # Explicit sampling: frame k is the first frame at or after 2 + k*step. (The old fps=1/step
+    # sampler put the LAST frame before 2 + (k+0.5)*step in slot k - half a step later than the
+    # timestamps handed to the model, which is why its cuts landed on the neighbouring shot.)
+    sel = f"gte(t,2)*(isnan(prev_selected_t)+gte(t-prev_selected_t,{step - 0.02:.3f}))"
+    sh(["ffmpeg", "-v", "error", "-y", "-i", video, "-vf",
+        f"select='{sel}',scale=320:-2,tile={cols}x{rows}", "-fps_mode", "passthrough", "-frames:v", "1", out])
+    json.dump({"ts": ts, "step": step, "n": n, "video": video}, open(out[:-4] + ".json", "w"))
     return ts
 
 
@@ -78,7 +82,17 @@ def vision(messages, timeout=180):
     for attempt in range(4):
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return json.loads(json.loads(r.read().decode())["choices"][0]["message"]["content"])
+                content = json.loads(r.read().decode())["choices"][0]["message"].get("content")
+                # The model returns content=None when it declines a frame — a
+                # real person's face, typically. That is a "no" from the
+                # verifier, not a crash: json.loads(None) took out 13 of 14
+                # accounts on the first cut of their talking-head look.
+                if not content:
+                    return {}
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError:
+                    return {}
         except urllib.error.HTTPError as e:
             if e.code in (429, 500, 502, 503) and attempt < 3:
                 time.sleep(20 * (attempt + 1)); continue
@@ -149,6 +163,11 @@ def cut_and_verify(account, looks, meta):
                 "-c:v", "libx264", "-crf", "20", "-preset", "fast", "-an", clip])
             sh(["ffmpeg", "-v", "error", "-y", "-ss", f"{t0+3}", "-i", v, "-frames:v", "1", "-q:v", "2", still])
             if not (os.path.exists(still) and os.path.getsize(still) > 3000):
+                # a timestamp past the end of the video writes nothing; that
+                # was kylascan's FileNotFoundError one line further down
+                for f in (clip, still):
+                    try: os.remove(f)
+                    except OSError: pass
                 continue
             chk = vision([{"role": "user", "content": [{"type": "text", "text": CHECK + menu}, img_part(still)]}])
             if chk.get("key") == l["key"] and float(chk.get("confidence") or 0) >= 0.6:
@@ -181,8 +200,13 @@ def write_style(account, looks, kept):
         st = {"slug": sl, "name": account.lstrip("@"), "medium": "", "prompt_prefix": "", "palette": [],
               "caption_mode": "overlay", "aspect": "9:16", "avoid": "", "notes": "", "reference_images": []}
     for k in ("palette", "reference_images", "shot_types"):
-        if isinstance(st.get(k), str):
-            try: st[k] = json.loads(st[k] or "[]")
+        v = st.get(k)
+        # a brand-new style has no row yet, so these come back None, and
+        # json.loads(None) is a TypeError — that took out 13 of 14 accounts
+        if v is None or v == "":
+            st[k] = []
+        elif isinstance(v, str):
+            try: st[k] = json.loads(v)
             except Exception: st[k] = []
     types = []
     for l in looks:
@@ -200,7 +224,7 @@ def write_style(account, looks, kept):
     st["shot_types"] = types
     if not st.get("prompt_prefix"):
         d = next((l for l in looks if l.get("default")), looks[0] if looks else None)
-        st["prompt_prefix"] = (d or {}).get("description") or ""
+        st["prompt_prefix"] = ((d or {}).get("description") or "") or f"In the visual style of {account}."
         st["medium"] = "; ".join(l.get("label", "") for l in looks)[:200]
     st["notes"] = (st.get("notes") or "") + (
         f"\n\n--- {time.strftime('%Y-%m-%d')} looks discovered from the account's own videos: "

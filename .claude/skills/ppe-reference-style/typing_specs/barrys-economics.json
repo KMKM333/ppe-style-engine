@@ -1,0 +1,130 @@
+{
+"account": "@Barry’s Economics",
+"slug": "barrys-economics",
+"medium": "the creator at a wooden desk in a teal room; cutaways are bold text cards in purple and orange on white, flat vector cartoons, article screenshots and simple flowcharts",
+"caption_mode": "overlay",
+"avoid": "photographs of people, dark backgrounds, 3D render, handwriting, readable words baked into the image",
+"note": "He is on camera ~90% of the time; that look is non-generatable. The generatable cutaways: text-card (default), article-screenshot, cartoon-explainer, podcast-inset. Recut 2026-09-14 with the corrected frame timing; text-card picks re-read from sheet 2.",
+"looks": [
+{
+"key": "talking-head-at-desk",
+"label": "Barry at his desk",
+"generate": false,
+"motion": "none",
+"when": "the creator on camera — never generated.",
+"frames": [
+[
+0,
+0
+],
+[
+1,
+0
+],
+[
+3,
+0
+]
+]
+},
+{
+"key": "text-card",
+"label": "Purple text card, orange bullets",
+"default": true,
+"motion": "in",
+"when": "a list, a stat, a definition, a named concept — the point stated as text on a card.",
+"prompt": "A bold flat text card: a saturated purple panel on a plain white or teal ground, two to four short lines in heavy orange or white sans-serif capitals, numbered or bulleted, generous margins, no imagery. The lines are the caption.",
+"frames": [
+[
+2,
+9
+],
+[
+2,
+14
+],
+[
+2,
+18
+]
+]
+},
+{
+"key": "cartoon-explainer",
+"label": "Flat cartoon explainer scene",
+"motion": "in",
+"when": "an idea acted out by characters — people, houses, money — a simple scene that stands for the argument.",
+"prompt": "A flat vector cartoon scene in bright saturated colour: simple rounded figures with plain faces, a suburban street or office as a stage, speech bubbles holding a single symbol, clean outlines, no gradients, no text.",
+"frames": [
+[
+2,
+1
+],
+[
+2,
+20
+],
+[
+4,
+10
+]
+]
+},
+{
+"key": "article-screenshot",
+"label": "Newspaper / article screenshot",
+"motion": "in",
+"when": "a source is cited — a headline, an op-ed, a report — shown as the page itself.",
+"prompt": "A clean screenshot of a newspaper opinion page: white ground, a masthead bar across the top, a centred serif headline in two lines, a small round byline portrait, two short paragraphs of body text rendered as illegible grey marks.",
+"frames": [
+[
+2,
+8
+]
+]
+},
+{
+"key": "flowchart-diagram",
+"label": "Flowchart on white",
+"motion": "in",
+"when": "a process, a loop, a chain of causes - boxes and arrows.",
+"prompt": "A simple flowchart on plain white: a row of rounded boxes in pale pink and pale green joined by thin orange arrows, one arrow looping back underneath, box labels as short illegible grey marks, small and centred with lots of white space; flat, no shading.",
+"frames": [
+[
+4,
+5
+]
+]
+},
+{
+"key": "podcast-inset",
+"label": "Two-up podcast / interview frame",
+"generate": false,
+"motion": "none",
+"when": "a quoted conversation shown as a two-person studio frame — real footage, never generated.",
+"frames": [
+[
+3,
+8
+]
+]
+},
+{
+"key": "borrowed-footage",
+"label": "Borrowed clip or film still",
+"generate": false,
+"motion": "none",
+"when": "a stand-up clip, a film still, a meme - real footage only, never generated.",
+"frames": [
+[
+4,
+2
+],
+[
+4,
+23
+]
+]
+}
+]
+}

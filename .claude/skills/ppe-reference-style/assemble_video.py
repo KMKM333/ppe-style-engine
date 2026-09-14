@@ -281,6 +281,8 @@ def strip_caption_instruction(prompt):
 FONT_DISPLAY = Path(__file__).resolve().parent / "fonts" / "Anton.ttf"
 FONT_SERIF = Path("/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf")
 CAPTION_LOOK = "anton"   # set from --caption-look at startup
+CAPTION_INK = "light"    # --caption-ink: "dark" for light material (paper, whiteboard) — white serif vanished on sovra's paper
+CAPTION_BOTTOM = 190     # --caption-bottom: px from the bottom edge; 190 sits under the Instagram UI on light frames
 
 
 def _ff_escape(t):
@@ -364,25 +366,31 @@ def _caption_filters(caption):
     fade = "alpha='if(lt(t,0.25),t/0.25,1)'"
     if CAPTION_LOOK == "serif-highlight" and FONT_SERIF.is_file():
         fs = 72
-        off = int(fs * 0.42)          # tuck the stroke under the baseline
+        dark = CAPTION_INK == "dark"
+        # light ink: the box is tucked under the baseline so only its lower band
+        # shows below white letters (the @johnnyharris treatment on dark footage).
+        # dark ink: the box sits fully behind near-black letters — a highlighter
+        # over print — which is what light material (sovra's paper) needs; white
+        # letters on white paper were invisible.
+        off = 0 if dark else int(fs * 0.42)
+        ink = "0x1A1A1A" if dark else "0xF7F3EA"
         return [
             # the highlighter: same text in yellow on a fully opaque yellow box,
-            # sat lower and drawn first, so only its lower band shows below the
-            # white letters. Opaque, or dark panels ghost the glyphs through it.
+            # drawn first. Opaque, or dark panels ghost the glyphs through it.
             f"drawtext=fontfile={FONT_SERIF}:text='{txt}':"
             f"fontcolor=0xF2D24A:fontsize={fs}:line_spacing=12:"
-            f"box=1:boxcolor=0xF2D24A@1.0:boxborderw=6:"
-            f"x=(w-text_w)/2:y=h-text_h-190+{off}:{fade}",
+            f"box=1:boxcolor=0xF2D24A@1.0:boxborderw={14 if dark else 6}:"
+            f"x=(w-text_w)/2:y=h-text_h-{CAPTION_BOTTOM}+{off}:{fade}",
             f"drawtext=fontfile={FONT_SERIF}:text='{txt}':"
-            f"fontcolor=0xF7F3EA:fontsize={fs}:line_spacing=12:"
-            f"x=(w-text_w)/2:y=h-text_h-190:{fade}",
+            f"fontcolor={ink}:fontsize={fs}:line_spacing=12:"
+            f"x=(w-text_w)/2:y=h-text_h-{CAPTION_BOTTOM}:{fade}",
         ]
     if FONT_DISPLAY.is_file():
         return [
             f"drawtext=fontfile={FONT_DISPLAY}:text='{txt}':"
             f"fontcolor=0xF5F0E6:fontsize=76:line_spacing=8:"
             f"box=1:boxcolor=0x1A1A1A@0.62:boxborderw=26:"
-            f"x=(w-text_w)/2:y=h-text_h-190:{fade}",
+            f"x=(w-text_w)/2:y=h-text_h-{CAPTION_BOTTOM}:{fade}",
         ]
     return []
 
@@ -742,6 +750,11 @@ def main():
                     help="anton = condensed sans on a dark box (unchanged default); "
                          "serif-highlight = serif caps with a yellow highlighter stroke, "
                          "the treatment seen across @johnnyharris")
+    ap.add_argument("--caption-ink", choices=["light", "dark"], default="light",
+                    help="serif-highlight only: dark = near-black letters on the yellow box, for light "
+                         "material (paper, whiteboard); light = white letters with the box tucked under")
+    ap.add_argument("--caption-bottom", type=int, default=190, metavar="PX",
+                    help="caption distance from the bottom edge in px (190 default; ~330 clears the app UI)")
     ap.add_argument("--hero", default="", metavar="SHOTS",
                     help="comma-separated shot numbers to cut as real video (hero shots). The clip "
                          "for shot N is read from <workdir>/hero/shot_NNN.mp4 — generated outside "
@@ -779,6 +792,9 @@ def main():
     args = ap.parse_args()
     global CAPTION_LOOK
     CAPTION_LOOK = getattr(args, "caption_look", "anton")
+    global CAPTION_INK, CAPTION_BOTTOM
+    CAPTION_INK = getattr(args, "caption_ink", "light")
+    CAPTION_BOTTOM = int(getattr(args, "caption_bottom", 190) or 190)
     # Both presets tested well; they differ only in how the caption is made.
     # Integrated lettering belongs on an illustrated panel, where it is part of
     # the composition. Drawn type belongs over photographic archive, where
@@ -992,7 +1008,8 @@ def main():
                       f"+ account frames, {len(urls)} total", flush=True)
             if urls:
                 refs = fetch_reference_frames(urls, tmp / "refs")
-                print(f"  reference: {len(refs)} real frame(s) from {plan.get('account')}", flush=True)
+                print(f"  reference: {len(refs)} real frame(s) from {plan.get('account')} — the FALLBACK set, "
+                      f"used only by shots without a look; a typed shot sends its own look's stills", flush=True)
             else:
                 print("  ! no reference frames available for this account — "
                       "falling back to the text prompt alone", flush=True)

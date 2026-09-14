@@ -579,6 +579,25 @@ generatable looks; one 8 s clip per look for hero shots.
 stills (6×4); looks that sort late alphabetically (talking-head, winner-grid)
 fall off it — verify those from the run log or a separate strip.
 
+### Rendering on a typed style — two traps (2026-09-15)
+
+- **Pass `--reference-frames N` or the stills are not used at all.** The
+  flag defaults to 0, and 0 means text-prompted panels: the dry run then
+  quotes "22 images @ $0.02" with no "refs/panel" term. With `--reference-frames 8`
+  each typed shot sends up to 8 of *its own look's* stills (the estimate
+  shows the real average, e.g. "5.4 refs/panel").
+- **"reference: 8 real frame(s) from Barry's Economics" is not what the
+  panels use.** That opening line is the fallback set — the creation's
+  account frames — for shots that have no look. Every typed shot takes
+  `_refs_by_type[look]`, its own stills. The renderer now says so in the
+  line itself. (A render was killed on this misreading after two panels;
+  assets persist between runs, so the re-run bought only the rest.)
+- The classifier is conservative by design: on the Growth Myth script it put
+  all 22 shots on sovra's default collage look even after the money and
+  title rules were widened. The cached `shot_types.json` in the work dir is
+  the picture editor's cut — edit it by hand (type + subject) and re-run;
+  the cache is honoured.
+
 ### Rules that came out of reading 38 sheets
 
 - **THE TIMING RULE. Sheet frame k is NOT at `2 + k·step`.** The sheets were

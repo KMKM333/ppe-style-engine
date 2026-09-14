@@ -456,3 +456,54 @@ back to the still and says so.
   order and durations out of `treated.txt`.
 - His frames and clips are still 480p (cached source downloads). The heroes
   inherit that softness. 1080p re-pull remains queued.
+
+## Option B (2026-09-14): the account's real clip as the ONLY visual input
+
+The user's original suggestion, finally run as stated: Seedance 2.5 in
+`omni_reference` gets **one clip cut from the account's own video** as
+`video_references` and the subject in the prompt — no panel, no OpenAI still.
+The look *and* the motion come from the creator's footage.
+
+Tested on script #13 (Growth Myth) in Guijooorge's style, five non-figure
+shots at 10–12.5 credits each, **57.5 credits ≈ $2.80**; the 17 figure shots
+stayed as panels. Four of five came back unmistakably his: black brush-script
+words painting on letter by letter over a flat pink ground; two bars rising on
+vermilion with a tiny figure for scale; a white-and-black arrow shape with a
+curve drawing over it on royal blue. Every ground a different saturated
+colour — his per-scene rule, learned from the clip, never prompted.
+
+**The one limit: Seedance cannot reliably spell.** "WHO WINS?" rendered as
+W-H-I-S for four seconds before resolving. For hand-lettering and big-numeral
+looks the word must come from the renderer's caption overlay; Seedance should
+draw only the ground and any figures. (Not yet wired — the B prompts above
+asked Seedance for the word.)
+
+### Typing an account's looks from its own footage
+
+`discover_looks.py` (beside this file) does for any account what was done by
+hand for Johnny Harris: contact sheets per source video, one vision call to
+name 4–8 recurring looks with a `when` rule and example timestamps, then an
+8 s real clip and still per look, each re-classified and dropped if it does
+not match. **Run it `--dry-run` first and read what it names.** On Guijooorge
+it returned one look ("flat-colour illustration") — true of the medium, wrong
+about the looks. The sheets showed five: figure-in-scene, object-symbol,
+big-numeral, hand-lettering, assembling-stack. A one-medium account still has
+several *ways a shot is built*, and Option B needs that split to hand each
+shot the right clip. Those five were typed by hand from the sheets, caption
+band cropped (`crop=iw:ih*0.88`), and registered on `guijooorge-flat`.
+
+Cadence for him measured for the first time: **22 cuts/min, median shot
+2.3 s** (`analyse_timeline.py --path`). The engine has no `cadence` column, so
+it lives in the style notes and is passed to the renderer as a value.
+
+### Traps this round
+
+- Two of Guijooorge's five "source videos" are broken downloads (80 KB and
+  550 KB). Check file sizes before sampling.
+- The classifier's rewritten subjects were panel descriptions ("chalk diagram
+  on a blackboard") — wrong for a look like big-numeral. For B shots, write the
+  prompt from the **caption and the look**, not the subject.
+- Higgsfield's preset intercept did not fire this time; still pass
+  `declined_preset_id` on every Seedance call.
+- The dry-run work dir carries a `_nocap` suffix when the style is baked;
+  the assignment cache is there, not in the un-suffixed dir.

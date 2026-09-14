@@ -457,6 +457,19 @@ back to the still and says so.
 - His frames and clips are still 480p (cached source downloads). The heroes
   inherit that softness. 1080p re-pull remains queued.
 
+
+## STANDING RULE (user verdict, 2026-09-14)
+
+Two methods are in use. A third was tried and is **dropped**.
+
+| method | status |
+|---|---|
+| **OpenAI panels** — one still per shot, look chosen by meaning against the style's shot types, the account's real frames as references, pushed and treated by the renderer | **THE DEFAULT.** Preferred by the user twice, over two different Seedance routes. |
+| **Hero shots** — for the 2–3 shots per video that genuinely move: our panel as `start_image` + a clip cut from the account's own video as `video_references`, 12.5 cr at 480p, cut in by `--hero` | **KEEP.** Used only where a still cannot carry the shot — a route drawing across a map, a line landing on a chart. |
+| Option B — Seedance from the account's clip alone, no panel | **DROPPED.** Right medium, thinner frames than the panels around them, cannot spell. Do not rebuild it. |
+
+The Option B section below is kept as the record of why, not as a method.
+
 ## Option B (2026-09-14): the account's real clip as the ONLY visual input
 
 The user's original suggestion, finally run as stated: Seedance 2.5 in

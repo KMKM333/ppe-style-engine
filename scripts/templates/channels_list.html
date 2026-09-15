@@ -36,10 +36,11 @@
 <div class="card">
   {% if channels %}
   <table>
-    <tr><th>Channel</th><th>Subject</th><th class="num">Videos</th><th>Analysed</th><th>Profile</th><th>Status</th><th></th></tr>
+    <tr><th>Channel</th><th class="num">Videos</th><th>Subject</th><th>Analysed</th><th>Profile</th><th>Status</th><th></th></tr>
     {% for c in channels %}
     <tr class="channel-row" data-entity="channel" data-id="{{ c.channel_id }}" data-name="{{ c.channel_name }}" onclick="toggleChannelVideos({{ c.channel_id }})" style="cursor:pointer">
       <td><span id="chev-{{ c.channel_id }}" class="muted" style="display:inline-block;width:14px">▸</span><strong>{{ c.channel_name }}</strong></td>
+      <td class="num">{{ c.n_videos }}</td>
       <td onclick="event.stopPropagation()">
         <form method="post" action="{{ url_for('channel_set_subject', channel_id=c.channel_id) }}" class="subject-picker" data-autosubmit>
           <select name="subject" class="{{ '' if c.subject else 'is-empty' }}" title="Set this channel's subject{{ ' (saved on its profile ' ~ c.profile_code ~ ')' if c.profile_code else '' }}" aria-label="Subject for {{ c.channel_name }}">
@@ -48,7 +49,6 @@
           </select>
         </form>
       </td>
-      <td class="num">{{ c.n_videos }}</td>
       <td>
         <span class="pill {{ 'confirmed' if c.is_analysed else ('draft' if c.n_analysed > 0 else 'bad') }}" title="{{ c.n_analysed }} of {{ c.n_videos }} videos have an analysis breakdown">
           {% if c.is_analysed %}Analysed{% elif c.n_analysed > 0 %}{{ c.analysed_pct }}% analysed{% else %}Not analysed{% endif %}

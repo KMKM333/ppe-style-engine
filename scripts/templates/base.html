@@ -30,12 +30,21 @@
   .sidebar-brand { display:flex; align-items:center; gap:10px; font-weight:700; font-size:14.5px;
     padding:4px 8px 16px; white-space:nowrap; }
   .sidebar-brand .brand-icon { width:22px; height:22px; border-radius:6px; background:var(--accent); flex-shrink:0; }
-  .theme-toggle { position:fixed; top:18px; right:24px; z-index:80;
-    display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px;
-    border-radius:9px; border:1px solid var(--border); background:var(--panel2); color:var(--muted);
-    cursor:pointer; flex-shrink:0; box-shadow:0 2px 8px rgba(0,0,0,.15); }
-  .theme-toggle:hover { color:var(--text); border-color:var(--muted); }
-  .theme-toggle svg { width:17px; height:17px; }
+  /* The light/dark switch. It starts life in the sidebar's mobile row (so it
+     exists on every page) and the header script moves it to the right end of
+     the page header row — the top right of the screen — on any page that has
+     one. It used to be position:fixed inside the sidebar, but the sidebar is
+     position:sticky, which is its own stacking context, so the header band
+     (later in the DOM) painted straight over it: present in the DOM, invisible
+     on screen. In flow, in the header, it cannot be covered. */
+  .theme-toggle { display:inline-flex; align-items:center; gap:8px; height:32px; padding:0 13px 0 11px;
+    margin-left:auto; border-radius:999px; border:1px solid var(--border); background:var(--panel);
+    color:var(--text); cursor:pointer; flex-shrink:0; font:inherit; font-size:13px; font-weight:600;
+    letter-spacing:.01em; white-space:nowrap; box-shadow:0 1px 3px rgba(0,0,0,.12); }
+  .theme-toggle:hover { border-color:var(--accent); color:var(--accent); }
+  .theme-toggle:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .theme-toggle svg { width:16px; height:16px; }
+  .theme-toggle .theme-toggle-label { line-height:1; }
   .sidebar-collapse-btn { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px;
     margin-left:auto; border-radius:6px; border:1px solid var(--border); background:var(--panel2); color:var(--muted);
     cursor:pointer; flex-shrink:0; padding:0; }
@@ -102,7 +111,7 @@
        — position:relative (not static) keeps it in flow for alignment
        while still letting z-index lift it above the drawer/backdrop
        (105-110) so it stays reachable while the drawer is open. */
-    .theme-toggle { position:relative; top:auto; right:auto; z-index:120; box-shadow:none; }
+    .theme-toggle { box-shadow:none; }
 
     /* No manual gap needed above the header band any more — the menu row
        above is real in-flow content, so it already pushes the band down
@@ -583,8 +592,8 @@
       <button type="button" class="mobile-nav-toggle" title="Open menu" onclick="toggleMobileNav()">
         {{ icon('menu') }}
       </button>
-      <button type="button" class="theme-toggle" id="theme-toggle" title="Toggle light / dark mode" onclick="toggleTheme()">
-        <span id="theme-toggle-icon">{{ icon('moon') }}</span>
+      <button type="button" class="theme-toggle" id="theme-toggle" title="Switch to light mode" aria-label="Switch to light mode" onclick="toggleTheme()">
+        <span id="theme-toggle-icon">{{ icon('sun') }}</span><span class="theme-toggle-label" id="theme-toggle-label">Light mode</span>
       </button>
     </div>
     <div class="sidebar-backdrop" onclick="toggleMobileNav()"></div>
@@ -696,8 +705,15 @@
 <script>
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
+    // The button names the mode you would switch TO — in dark mode it offers
+    // "Light mode" with a sun, in light mode "Dark mode" with a moon.
+    var goingLight = theme !== 'light';
     var iconSpan = document.getElementById('theme-toggle-icon');
-    if (iconSpan) iconSpan.innerHTML = theme === 'light' ? `{{ icon('sun') }}` : `{{ icon('moon') }}`;
+    if (iconSpan) iconSpan.innerHTML = goingLight ? `{{ icon('sun') }}` : `{{ icon('moon') }}`;
+    var label = document.getElementById('theme-toggle-label');
+    if (label) label.textContent = goingLight ? 'Light mode' : 'Dark mode';
+    var btn = document.getElementById('theme-toggle');
+    if (btn) { btn.title = goingLight ? 'Switch to light mode' : 'Switch to dark mode'; btn.setAttribute('aria-label', btn.title); }
   }
   function toggleTheme() {
     var current = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -926,6 +942,11 @@
       homeBtn.innerHTML = homeSvg + '<span>Home</span>';
       row.appendChild(homeBtn);
     }
+
+    // The light/dark switch sits at the right end of this row — the top right
+    // of the screen on every page with a header (see the .theme-toggle note).
+    var themeBtn = document.getElementById('theme-toggle');
+    if (themeBtn) row.appendChild(themeBtn);
 
     var sub = h1.nextElementSibling;
     if (!(sub && sub.classList.contains('sub'))) sub = null;

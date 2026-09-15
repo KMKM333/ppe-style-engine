@@ -1370,6 +1370,13 @@ def inputs_list():
     word_max = request.args.get("word_max", type=int)
     sort = request.args.get("sort", "ingested_at")
     direction = "asc" if request.args.get("dir") == "asc" else "desc"
+    # Subject is a property of the style PROFILE (videos inherit it through
+    # their channel) and of the BOOK itself; "Unassigned" means no subject or
+    # one outside the seven-subject taxonomy. Anything else is ignored.
+    subject = request.args.get("subject", "").strip()
+    if subject not in SUBJECTS and subject != "Unassigned":
+        subject = ""
+    _subject_placeholders = ", ".join("?" for _ in SUBJECTS)
 
     conn = get_conn()
     rows = []
@@ -1401,11 +1408,17 @@ def inputs_list():
         if example:
             where.append("EXISTS (SELECT 1 FROM video_examples ve WHERE ve.video_id = v.video_id AND ve.example_title = ? COLLATE NOCASE)")
             params.append(example)
+        if subject == "Unassigned":
+            where.append(f"(p.subject IS NULL OR p.subject NOT IN ({_subject_placeholders}))")
+            params.extend(SUBJECTS)
+        elif subject:
+            where.append("p.subject = ?")
+            params.append(subject)
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
         video_rows = conn.execute(
             f"""SELECT v.video_id, v.title, v.url, v.media_type, v.ingested_at, v.duration_sec,
-                       c.channel_name, c.channel_id, p.profile_code, a.word_count, a.title_format,
+                       c.channel_name, c.channel_id, p.profile_code, p.subject, a.word_count, a.title_format,
                        a.you_freq_per_100w, a.readability_score
                 FROM videos v
                 JOIN channels c ON c.channel_id = v.channel_id
@@ -1426,6 +1439,7 @@ def inputs_list():
                 "channel_name": v["channel_name"],
                 "channel_id": v["channel_id"],
                 "profile_code": v["profile_code"],
+                "subject": v["subject"] if v["subject"] in SUBJECTS else None,
                 "unresolved_channel": v["channel_name"] == "Instagram Import",
                 "title": v["title"],
                 "title_format": v["title_format"],
@@ -1464,11 +1478,18 @@ def inputs_list():
         if example:
             where.append("EXISTS (SELECT 1 FROM book_examples be WHERE be.book_id = b.book_id AND be.example_title = ? COLLATE NOCASE)")
             params.append(example)
+        # a book's own subject first, its author's profile subject as the fallback
+        if subject == "Unassigned":
+            where.append(f"(COALESCE(b.subject, p.subject) IS NULL OR COALESCE(b.subject, p.subject) NOT IN ({_subject_placeholders}))")
+            params.extend(SUBJECTS)
+        elif subject:
+            where.append("COALESCE(b.subject, p.subject) = ?")
+            params.append(subject)
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
         book_rows = conn.execute(
             f"""SELECT b.book_id, b.title, b.author, b.word_count, b.page_count, b.ingested_at,
-                       b.source_file_path, b.source_note,
+                       b.source_file_path, b.source_note, COALESCE(b.subject, p.subject) AS subject,
                        COALESCE(a.classified_by, 'pending') AS classified_by, a.readability_score, p.profile_code
                 FROM books b
                 LEFT JOIN book_attributes a ON a.book_id = b.book_id
@@ -1511,6 +1532,7 @@ def inputs_list():
                 "media_type": "Book",
                 "channel_name": b["author"] or "—",
                 "profile_code": b["profile_code"],
+                "subject": b["subject"] if b["subject"] in SUBJECTS else None,
                 "unresolved_channel": False,
                 "title": b["title"],
                 "title_format": None,
@@ -1537,6 +1559,7 @@ def inputs_list():
         "title": lambda r: (r["title"] or "").lower(),
         "media_type": lambda r: (r["media_type"] or "").lower(),
         "channel_name": lambda r: (r["channel_name"] or "").lower(),
+        "subject": lambda r: (r.get("subject") or "").lower(),
         "word_count": lambda r: r["word_count"] if r["word_count"] is not None else -1,
         "duration_sec": lambda r: r["duration_sec"] if r["duration_sec"] is not None else -1,
         "title_format": lambda r: (r["title_format"] or "").lower(),
@@ -1605,9 +1628,10 @@ def inputs_list():
         n_long_videos=n_long_videos, n_long_videos_only=n_long_videos_only,
         n_long_video_examples=n_long_video_examples, n_long_video_channels=n_long_video_channels,
         n_news=n_news, n_all_inputs=n_all_inputs,
+        subjects=SUBJECTS, subject_icons=SUBJECT_ICONS,
         filters={
             "kind": kind, "channel_id": channel_id, "q": q, "title_format": title_format,
-            "term": term, "example": example,
+            "term": term, "example": example, "subject": subject,
             "word_min": word_min, "word_max": word_max, "sort": sort, "dir": direction,
         },
     )

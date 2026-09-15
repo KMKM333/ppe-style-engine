@@ -133,6 +133,11 @@ python3 migrate_add_video_timelines.py || echo "WARNING: migrate_add_video_timel
 # cut a clip of one. Same idempotent pattern, safe on every boot.
 python3 migrate_add_section_timing.py || echo "WARNING: migrate_add_section_timing.py failed — continuing so the site still serves; see /api/health"
 
+# A subject for channels that have no profile yet, so the Books / Short
+# videos / Long videos pages can show and edit one for every row. Read as
+# COALESCE(profile.subject, channels.subject). Same idempotent pattern.
+python3 migrate_add_channel_subject.py || echo "WARNING: migrate_add_channel_subject.py failed — continuing so the site still serves; see /api/health"
+
 # A long video's segments are not all editorial: some are the creator selling
 # their own venture or a sponsor. Those readings are true but describe a sales
 # pitch, and averaging them into the profile teaches the wrong style. Lets a

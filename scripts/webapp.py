@@ -52,6 +52,96 @@ SUBJECT_ICONS = {
     "Sustainability": "🌱", "Science": "🔬", "Technology": "💻", "Unassigned": "🏷️",
 }
 
+# The per-video "domain" attribute (Content taxonomy) speaks a looser
+# vocabulary than the seven subjects — "Science/Mathematics",
+# "Psychology-adjacent", "Communication/Rhetoric". This is the bridge, used to
+# derive a channel's subject from the videos already analysed, so the Subject
+# column fills itself without another model call.
+_DOMAIN_SUBJECT_HINTS = [
+    ("econom", "Economics"), ("financ", "Economics"), ("business", "Economics"), ("market", "Economics"),
+    ("politic", "Politics"), ("geopolit", "Politics"), ("history", "Politics"), ("law", "Politics"),
+    ("philosoph", "Philosophy"), ("ethic", "Philosophy"),
+    ("psycholog", "Psychology"), ("behavio", "Psychology"), ("self-help", "Psychology"),
+    ("sustainab", "Sustainability"), ("environment", "Sustainability"), ("climate", "Sustainability"), ("ecolog", "Sustainability"),
+    ("scien", "Science"), ("math", "Science"), ("physic", "Science"), ("biolog", "Science"),
+    ("technolog", "Technology"), ("comput", "Technology"), ("software", "Technology"), ("ai", "Technology"),
+]
+
+
+def subject_from_domain(domain):
+    """Map a video's free-text domain onto one of SUBJECTS, or None when it
+    names nothing in the taxonomy ("Communication/Rhetoric", "Interdisciplinary")."""
+    d = (domain or "").strip().lower()
+    if not d:
+        return None
+    for subject in SUBJECTS:
+        if subject.lower() in d:
+            return subject
+    for needle, subject in _DOMAIN_SUBJECT_HINTS:
+        if needle == "ai":
+            if re.search(r"\bai\b", d):
+                return subject
+        elif needle in d:
+            return subject
+    return None
+
+
+def derive_channel_subjects(conn, force=False):
+    """Give every channel with videos a subject, voted from its analysed videos'
+    domains. Writes to the profile when the channel has one (subject lives
+    there), otherwise to channels.subject. Only fills gaps unless force. Returns
+    what changed and what could not be decided."""
+    report = {"set": [], "undecided": [], "kept": 0}
+    rows = conn.execute(
+        """SELECT c.channel_id, c.channel_name, c.subject AS channel_subject,
+                  p.profile_id, p.subject AS profile_subject
+           FROM channels c
+           LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
+           WHERE EXISTS (SELECT 1 FROM videos v WHERE v.channel_id = c.channel_id)"""
+    ).fetchall()
+    for c in rows:
+        current = c["profile_subject"] or c["channel_subject"]
+        if current in SUBJECTS and not force:
+            report["kept"] += 1
+            continue
+        votes = {}
+        for d in conn.execute(
+            """SELECT a.domain, COUNT(*) AS n FROM videos v
+               JOIN video_attributes a ON a.video_id = v.video_id
+               WHERE v.channel_id = ? AND a.domain IS NOT NULL GROUP BY a.domain""",
+            (c["channel_id"],),
+        ):
+            subject = subject_from_domain(d["domain"])
+            if subject:
+                votes[subject] = votes.get(subject, 0) + d["n"]
+        if not votes:
+            report["undecided"].append(c["channel_name"])
+            continue
+        winner = sorted(votes.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        if c["profile_id"]:
+            conn.execute("UPDATE style_profiles SET subject = ? WHERE profile_id = ?", (winner, c["profile_id"]))
+        else:
+            conn.execute("UPDATE channels SET subject = ? WHERE channel_id = ?", (winner, c["channel_id"]))
+        report["set"].append({"channel": c["channel_name"], "subject": winner, "votes": votes,
+                              "stored_on": "profile" if c["profile_id"] else "channel"})
+    conn.commit()
+    return report
+
+
+def _set_channel_subject(conn, channel_id, subject):
+    """The subject picker: profile first (that is where subject lives),
+    channels.subject when there is no profile yet. Empty clears."""
+    subject = subject if subject in SUBJECTS else None
+    prof = conn.execute(
+        """SELECT profile_id FROM style_profiles WHERE channel_id = ?
+           AND (media_type IS NULL OR media_type != 'ProductionSpec')""", (channel_id,)
+    ).fetchone()
+    if prof:
+        conn.execute("UPDATE style_profiles SET subject = ? WHERE profile_id = ?", (subject, prof["profile_id"]))
+    conn.execute("UPDATE channels SET subject = ? WHERE channel_id = ?", (subject, channel_id))
+    conn.commit()
+
 # Sentinel channel name the Instagram import tool falls back to when the
 # "channel" field is left blank on transcription. It must never be treated
 # as a real channel — see _unresolved_import_batch() / the channel-fix modal.
@@ -1409,16 +1499,17 @@ def inputs_list():
             where.append("EXISTS (SELECT 1 FROM video_examples ve WHERE ve.video_id = v.video_id AND ve.example_title = ? COLLATE NOCASE)")
             params.append(example)
         if subject == "Unassigned":
-            where.append(f"(p.subject IS NULL OR p.subject NOT IN ({_subject_placeholders}))")
+            where.append(f"(COALESCE(p.subject, c.subject) IS NULL OR COALESCE(p.subject, c.subject) NOT IN ({_subject_placeholders}))")
             params.extend(SUBJECTS)
         elif subject:
-            where.append("p.subject = ?")
+            where.append("COALESCE(p.subject, c.subject) = ?")
             params.append(subject)
         where_sql = f"WHERE {' AND '.join(where)}" if where else ""
 
         video_rows = conn.execute(
             f"""SELECT v.video_id, v.title, v.url, v.media_type, v.ingested_at, v.duration_sec,
-                       c.channel_name, c.channel_id, p.profile_code, p.subject, a.word_count, a.title_format,
+                       c.channel_name, c.channel_id, p.profile_code, COALESCE(p.subject, c.subject) AS subject,
+                       a.word_count, a.title_format,
                        a.you_freq_per_100w, a.readability_score
                 FROM videos v
                 JOIN channels c ON c.channel_id = v.channel_id
@@ -2481,7 +2572,8 @@ def channels_list():
         # The EXISTS also drops channels with no library videos at all —
         # this page's own description is "every creator with ingested
         # videos", and a production-only creator has none.
-        """SELECT c.channel_id, c.channel_name, p.profile_code, p.subject, p.status, p.n_videos_analysed,
+        """SELECT c.channel_id, c.channel_name, p.profile_code, COALESCE(p.subject, c.subject) AS subject,
+                  p.status, p.n_videos_analysed,
                   (SELECT COUNT(*) FROM videos v WHERE v.channel_id = c.channel_id) AS n_videos
            FROM channels c
            LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
@@ -2518,8 +2610,45 @@ def channels_list():
             "is_analysed": is_analysed, "analysed_pct": analysed_pct,
         })
     conn.close()
+    total = len(channels)
+    # Filters live in the page header; the list is small enough to sift here.
+    q = request.args.get("q", "").strip()
+    subject = request.args.get("subject", "").strip()
+    if subject not in SUBJECTS and subject != "Unassigned":
+        subject = ""
+    analysed = request.args.get("analysed", "").strip()
+    has_profile = request.args.get("profile", "").strip()
+    sort = request.args.get("sort", "name").strip()
+    if q:
+        channels = [c for c in channels if q.lower() in (c["channel_name"] or "").lower()]
+    if subject == "Unassigned":
+        channels = [c for c in channels if c["subject"] not in SUBJECTS]
+    elif subject:
+        channels = [c for c in channels if c["subject"] == subject]
+    if analysed == "analysed":
+        channels = [c for c in channels if c["is_analysed"]]
+    elif analysed == "partial":
+        channels = [c for c in channels if c["n_analysed"] and not c["is_analysed"]]
+    elif analysed == "not":
+        channels = [c for c in channels if not c["n_analysed"]]
+    if has_profile == "yes":
+        channels = [c for c in channels if c["profile_code"]]
+    elif has_profile == "no":
+        channels = [c for c in channels if not c["profile_code"]]
+    if sort == "videos":
+        channels.sort(key=lambda c: -(c["n_videos"] or 0))
+    elif sort == "analysed":
+        channels.sort(key=lambda c: (-(c["analysed_pct"] or 0), (c["channel_name"] or "").lower()))
+    elif sort == "subject":
+        channels.sort(key=lambda c: ((c["subject"] or "~").lower(), (c["channel_name"] or "").lower()))
+    else:
+        channels.sort(key=lambda c: (c["channel_name"] or "").lower())
     active = "channels" if platform == "Instagram" else "channels-youtube"
-    return render_template("channels_list.html", active=active, channels=channels, platform=platform)
+    filters = {"q": q, "subject": subject, "analysed": analysed, "profile": has_profile, "sort": sort}
+    return render_template("channels_list.html", active=active, channels=channels, platform=platform,
+                           total=total, filters=filters,
+                           filters_active=any(v for k, v in filters.items() if k != "sort"),
+                           subjects=SUBJECTS, subject_icons=SUBJECT_ICONS)
 
 
 @app.route("/api/ingest/book", methods=["POST"])
@@ -6882,16 +7011,95 @@ def production_spec_creation_delete(creation_id):
 
 @app.route("/books")
 def books_list():
+    q = request.args.get("q", "").strip()
+    subject = request.args.get("subject", "").strip()
+    if subject not in SUBJECTS and subject != "Unassigned":
+        subject = ""
+    status = request.args.get("status", "").strip()
+    read = request.args.get("read", "").strip()
+    sort = request.args.get("sort", "newest").strip()
+    where, params = [], []
+    if q:
+        where.append("(b.title LIKE ? OR b.author LIKE ?)")
+        params += [f"%{q}%", f"%{q}%"]
+    if subject == "Unassigned":
+        where.append(f"(b.subject IS NULL OR b.subject NOT IN ({', '.join('?' for _ in SUBJECTS)}))")
+        params += SUBJECTS
+    elif subject:
+        where.append("b.subject = ?")
+        params.append(subject)
+    if status == "classified":
+        where.append("a.classified_by IS NOT NULL AND a.classified_by NOT IN ('pending', 'needs_review')")
+    elif status == "pending":
+        where.append("(a.classified_by IS NULL OR a.classified_by = 'pending')")
+    elif status == "needs_review":
+        where.append("a.classified_by = 'needs_review'")
+    if read == "read":
+        where.append("b.is_read = 1")
+    elif read == "unread":
+        where.append("(b.is_read IS NULL OR b.is_read = 0)")
+    order = {
+        "newest": "b.ingested_at DESC", "title": "b.title COLLATE NOCASE ASC",
+        "author": "b.author COLLATE NOCASE ASC, b.title COLLATE NOCASE ASC",
+        "year": "b.publication_year DESC, b.title COLLATE NOCASE ASC",
+        "words": "b.word_count DESC", "subject": "b.subject COLLATE NOCASE ASC, b.title COLLATE NOCASE ASC",
+    }.get(sort, "b.ingested_at DESC")
+    where_sql = f"WHERE {' AND '.join(where)}" if where else ""
     conn = get_conn()
     rows = conn.execute(
-        """SELECT b.book_id, b.title, b.author, b.subject, b.publication_year, b.word_count, b.is_read,
-                  COALESCE(a.classified_by, 'pending') AS classified_by,
-                  (SELECT COUNT(*) FROM book_examples e WHERE e.book_id = b.book_id) AS n_examples
-           FROM books b LEFT JOIN book_attributes a ON a.book_id = b.book_id
-           ORDER BY b.ingested_at DESC"""
+        f"""SELECT b.book_id, b.title, b.author, b.subject, b.publication_year, b.word_count, b.is_read,
+                   COALESCE(a.classified_by, 'pending') AS classified_by,
+                   (SELECT COUNT(*) FROM book_examples e WHERE e.book_id = b.book_id) AS n_examples
+            FROM books b LEFT JOIN book_attributes a ON a.book_id = b.book_id
+            {where_sql}
+            ORDER BY {order}""",
+        params,
     ).fetchall()
+    total = conn.execute("SELECT COUNT(*) FROM books").fetchone()[0]
     conn.close()
-    return render_template("books_list.html", active="books", books=rows)
+    filters = {"q": q, "subject": subject, "status": status, "read": read, "sort": sort}
+    return render_template("books_list.html", active="books", books=rows, total=total,
+                           filters=filters, filters_active=any(v for k, v in filters.items() if k != "sort"),
+                           subjects=SUBJECTS, subject_icons=SUBJECT_ICONS)
+
+
+@app.route("/books/<int:book_id>/subject", methods=["POST"])
+def book_set_subject(book_id):
+    """The subject picker on the Books page. Empty clears."""
+    subject = (request.form.get("subject") or "").strip()
+    conn = get_conn()
+    if not conn.execute("SELECT 1 FROM books WHERE book_id = ?", (book_id,)).fetchone():
+        conn.close()
+        abort(404)
+    conn.execute("UPDATE books SET subject = ? WHERE book_id = ?", (subject if subject in SUBJECTS else None, book_id))
+    conn.commit()
+    conn.close()
+    return redirect(request.referrer or url_for("books_list"))
+
+
+@app.route("/channels/<int:channel_id>/subject", methods=["POST"])
+def channel_set_subject(channel_id):
+    """The subject picker on the Short videos / Long videos pages."""
+    conn = get_conn()
+    if not conn.execute("SELECT 1 FROM channels WHERE channel_id = ?", (channel_id,)).fetchone():
+        conn.close()
+        abort(404)
+    _set_channel_subject(conn, channel_id, (request.form.get("subject") or "").strip())
+    conn.close()
+    return redirect(request.referrer or url_for("channels_list"))
+
+
+@app.route("/api/subjects/backfill", methods=["POST"])
+def api_subjects_backfill():
+    """Fill every empty channel subject from the videos already analysed
+    (see derive_channel_subjects). Body: {"force": false}. Key-protected."""
+    if not INGEST_API_KEY or request.headers.get("X-Ingest-Key") != INGEST_API_KEY:
+        abort(403)
+    force = bool((request.get_json(silent=True) or {}).get("force"))
+    conn = get_conn()
+    report = derive_channel_subjects(conn, force=force)
+    conn.close()
+    return jsonify({"ok": True, **report})
 
 
 @app.route("/books/<int:book_id>/toggle-read", methods=["POST"])

@@ -7,6 +7,35 @@
   subject taxonomy as style profiles. Books imported from the Instagram Bulk Transcriber land here and
   classify themselves automatically within a few minutes — no manual step needed.
 </div>
+<form method="get" action="{{ url_for('books_list') }}" class="page-filters" data-autosubmit>
+  <input type="text" name="q" value="{{ filters.q }}" placeholder="Search title or author" aria-label="Search books">
+  <select name="subject" aria-label="Subject">
+    <option value="">All subjects</option>
+    {% for sname in subjects %}<option value="{{ sname }}" {{ 'selected' if filters.subject == sname }}>{{ subject_icons.get(sname, '') }} {{ sname }}</option>{% endfor %}
+    <option value="Unassigned" {{ 'selected' if filters.subject == 'Unassigned' }}>{{ subject_icons.get('Unassigned', '') }} Unassigned</option>
+  </select>
+  <select name="status" aria-label="Status">
+    <option value="">Any status</option>
+    <option value="classified" {{ 'selected' if filters.status == 'classified' }}>Classified</option>
+    <option value="pending" {{ 'selected' if filters.status == 'pending' }}>Pending</option>
+    <option value="needs_review" {{ 'selected' if filters.status == 'needs_review' }}>Needs review</option>
+  </select>
+  <select name="read" aria-label="Read">
+    <option value="">Read or unread</option>
+    <option value="read" {{ 'selected' if filters.read == 'read' }}>Read</option>
+    <option value="unread" {{ 'selected' if filters.read == 'unread' }}>Unread</option>
+  </select>
+  <select name="sort" aria-label="Sort">
+    <option value="newest" {{ 'selected' if filters.sort == 'newest' }}>Newest first</option>
+    <option value="title" {{ 'selected' if filters.sort == 'title' }}>Title A–Z</option>
+    <option value="author" {{ 'selected' if filters.sort == 'author' }}>Author A–Z</option>
+    <option value="subject" {{ 'selected' if filters.sort == 'subject' }}>Subject</option>
+    <option value="year" {{ 'selected' if filters.sort == 'year' }}>Year, newest</option>
+    <option value="words" {{ 'selected' if filters.sort == 'words' }}>Longest</option>
+  </select>
+  <span class="page-filters-count">{{ books|length }} of {{ total }}</span>
+  {% if filters_active %}<a class="page-filters-clear" href="{{ url_for('books_list') }}">Clear filters</a>{% endif %}
+</form>
 <div class="card">
   {% if books %}
   <table>
@@ -15,7 +44,14 @@
     <tr>
       <td><strong>{{ b.title }}</strong></td>
       <td>{{ b.author or '—' }}</td>
-      <td class="{{ 'muted' if not b.subject }}">{{ b.subject or '—' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('book_set_subject', book_id=b.book_id) }}" class="subject-picker" data-autosubmit>
+          <select name="subject" class="{{ '' if b.subject else 'is-empty' }}" title="Set this book's subject" aria-label="Subject for {{ b.title }}">
+            <option value="" {{ 'selected' if not b.subject }}>— no subject</option>
+            {% for sname in subjects %}<option value="{{ sname }}" {{ 'selected' if b.subject == sname }}>{{ subject_icons.get(sname, '') }} {{ sname }}</option>{% endfor %}
+          </select>
+        </form>
+      </td>
       <td class="num">{{ b.publication_year or '—' }}</td>
       <td class="num">{{ b.word_count or '—' }}</td>
       <td class="num {{ 'muted' if not b.n_examples }}">{{ b.n_examples or '—' }}</td>
@@ -37,6 +73,12 @@
     </tr>
     {% endfor %}
   </table>
+  {% elif filters_active %}
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('book') }}</div>
+    <p>No books match these filters.</p>
+    <a href="{{ url_for('books_list') }}" class="btn secondary">Clear filters</a>
+  </div>
   {% else %}
   <div class="empty-state">
     <div class="empty-icon">{{ icon('book') }}</div>

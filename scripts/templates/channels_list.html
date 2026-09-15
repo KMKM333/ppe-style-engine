@@ -5,6 +5,34 @@
 <div class="sub">
   Every {{ platform }} creator with ingested videos, each fingerprinted into its own style profile.
 </div>
+<form method="get" action="{{ url_for('channels_list') }}" class="page-filters" data-autosubmit>
+  <input type="hidden" name="platform" value="{{ platform }}">
+  <input type="text" name="q" value="{{ filters.q }}" placeholder="Search channels" aria-label="Search channels">
+  <select name="subject" aria-label="Subject">
+    <option value="">All subjects</option>
+    {% for sname in subjects %}<option value="{{ sname }}" {{ 'selected' if filters.subject == sname }}>{{ subject_icons.get(sname, '') }} {{ sname }}</option>{% endfor %}
+    <option value="Unassigned" {{ 'selected' if filters.subject == 'Unassigned' }}>{{ subject_icons.get('Unassigned', '') }} Unassigned</option>
+  </select>
+  <select name="analysed" aria-label="Analysed">
+    <option value="">Any analysis state</option>
+    <option value="analysed" {{ 'selected' if filters.analysed == 'analysed' }}>Fully analysed</option>
+    <option value="partial" {{ 'selected' if filters.analysed == 'partial' }}>Partly analysed</option>
+    <option value="not" {{ 'selected' if filters.analysed == 'not' }}>Not analysed</option>
+  </select>
+  <select name="profile" aria-label="Profile">
+    <option value="">With or without profile</option>
+    <option value="yes" {{ 'selected' if filters.profile == 'yes' }}>Has a profile</option>
+    <option value="no" {{ 'selected' if filters.profile == 'no' }}>No profile yet</option>
+  </select>
+  <select name="sort" aria-label="Sort">
+    <option value="name" {{ 'selected' if filters.sort == 'name' }}>Name A–Z</option>
+    <option value="videos" {{ 'selected' if filters.sort == 'videos' }}>Most videos</option>
+    <option value="analysed" {{ 'selected' if filters.sort == 'analysed' }}>Most analysed</option>
+    <option value="subject" {{ 'selected' if filters.sort == 'subject' }}>Subject</option>
+  </select>
+  <span class="page-filters-count">{{ channels|length }} of {{ total }}</span>
+  {% if filters_active %}<a class="page-filters-clear" href="{{ url_for('channels_list', platform=platform) }}">Clear filters</a>{% endif %}
+</form>
 <div class="card">
   {% if channels %}
   <table>
@@ -12,7 +40,14 @@
     {% for c in channels %}
     <tr class="channel-row" data-entity="channel" data-id="{{ c.channel_id }}" data-name="{{ c.channel_name }}" onclick="toggleChannelVideos({{ c.channel_id }})" style="cursor:pointer">
       <td><span id="chev-{{ c.channel_id }}" class="muted" style="display:inline-block;width:14px">▸</span><strong>{{ c.channel_name }}</strong></td>
-      <td class="{{ 'muted' if not c.subject }}">{{ c.subject or '—' }}</td>
+      <td onclick="event.stopPropagation()">
+        <form method="post" action="{{ url_for('channel_set_subject', channel_id=c.channel_id) }}" class="subject-picker" data-autosubmit>
+          <select name="subject" class="{{ '' if c.subject else 'is-empty' }}" title="Set this channel's subject{{ ' (saved on its profile ' ~ c.profile_code ~ ')' if c.profile_code else '' }}" aria-label="Subject for {{ c.channel_name }}">
+            <option value="" {{ 'selected' if not c.subject }}>— no subject</option>
+            {% for sname in subjects %}<option value="{{ sname }}" {{ 'selected' if c.subject == sname }}>{{ subject_icons.get(sname, '') }} {{ sname }}</option>{% endfor %}
+          </select>
+        </form>
+      </td>
       <td class="num">{{ c.n_videos }}</td>
       <td>
         <span class="pill {{ 'confirmed' if c.is_analysed else ('draft' if c.n_analysed > 0 else 'bad') }}" title="{{ c.n_analysed }} of {{ c.n_videos }} videos have an analysis breakdown">
@@ -51,6 +86,12 @@
     {% endfor %}
     {% endfor %}
   </table>
+  {% elif filters_active %}
+  <div class="empty-state">
+    <div class="empty-icon">{{ icon('instagram') if platform == 'Instagram' else icon('youtube') }}</div>
+    <p>No {{ platform }} channels match these filters.</p>
+    <a href="{{ url_for('channels_list', platform=platform) }}" class="btn secondary">Clear filters</a>
+  </div>
   {% else %}
   <div class="empty-state">
     <div class="empty-icon">{{ icon('instagram') if platform == 'Instagram' else icon('youtube') }}</div>

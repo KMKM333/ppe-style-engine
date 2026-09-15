@@ -243,7 +243,10 @@
      which pushed the subject picker up against the video count. */
   .channels-table { table-layout: fixed; }
   .channels-table th { white-space: nowrap; }
-  .channels-table td { overflow-wrap: anywhere; vertical-align: middle; }
+  .channels-table td { vertical-align: middle; }
+  .channels-table td:first-child { overflow-wrap: anywhere; }
+  /* pills and the action button never break mid-word */
+  .channels-table .pill, .channels-table .btn { white-space: nowrap; }
   .channels-table .subject-picker select { max-width: 100%; }
   @media (max-width: 860px) { .channels-table { table-layout: auto; } }
   table.attr-table col.col-attribute { width: 19%; }

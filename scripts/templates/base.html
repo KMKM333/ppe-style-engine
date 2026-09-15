@@ -1100,7 +1100,13 @@
     sessionStorage.setItem('channelFixDismissed', '1');
   }
   if (!sessionStorage.getItem('channelFixDismissed')) {
+  // The unresolved-import modal opens once per session, not on every page:
+  // the banner above the page keeps the reminder, and Activity lists it.
+  var _fixSeen = false; try { _fixSeen = sessionStorage.getItem('ppe-channel-fix-seen') === '1'; } catch (e) {}
+    if (!_fixSeen) {
+    try { sessionStorage.setItem('ppe-channel-fix-seen', '1'); } catch (e) {}
     openChannelFixModal();
+    }
   }
 </script>
 {% endif %}

@@ -10,6 +10,7 @@
   {% if creation.profile_code %} &middot; targeting <a href="{{ url_for('production_profile_detail', code=creation.profile_code) }}">{{ creation.profile_code }}</a> ({{ creation.profile_channel_name }}){% endif %}
   {% if creation.source_title %} &middot; source: {{ creation.source_title }}{% endif %}
 </div>
+{{ pipeline_strip(pipeline_for(video_id=creation.creation_id), 'video') }}
 
 {% if creation.brief %}
 <div class="card">

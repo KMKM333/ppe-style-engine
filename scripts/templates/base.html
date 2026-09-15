@@ -53,6 +53,37 @@
   .sidebar-search input { width:100%; background:var(--panel2); border:1px solid var(--border); border-radius:8px;
     color:var(--text); padding:8px 10px; font-size:13px; margin-bottom:14px; }
   .sidebar-nav { display:flex; flex-direction:column; gap:1px; }
+  /* Two modes, one shape. The sidebar shows either the Writing pipeline or
+     the Production pipeline — Inputs, Profiles, Transform, Creations — never
+     both; that split is how the engine is actually built, and showing both
+     at once was the clutter. Shared pages sit above the switch. */
+  .mode-switch { display:flex; gap:4px; margin:6px 0 14px; padding:4px; border-radius:10px; background:var(--panel2);
+    border:1px solid var(--border); }
+  .mode-switch button { flex:1; height:30px; border:none; border-radius:7px; background:transparent; color:var(--muted);
+    font:inherit; font-size:13px; font-weight:600; cursor:pointer; margin:0; padding:0; }
+  .mode-switch button.active { background:var(--panel); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.18); }
+  .mode-switch button:hover { color:var(--text); }
+  .sidebar[data-mode="writing"] .nav-group[data-mode-group="production"],
+  .sidebar[data-mode="production"] .nav-group[data-mode-group="writing"] { display:none; }
+  .nav-group-secondary { opacity:.85; }
+  .page-tabs { display:flex; flex-wrap:wrap; gap:4px; margin:16px 0 0; padding:4px; border-radius:10px;
+    background:var(--panel2); border:1px solid var(--border); width:max-content; max-width:100%; }
+  .page-tab { padding:6px 12px; border-radius:7px; font-size:13px; font-weight:600; color:var(--muted);
+    text-decoration:none; white-space:nowrap; }
+  .page-tab:hover { color:var(--text); }
+  .page-tab.active { background:var(--panel); color:var(--text); box-shadow:0 1px 3px rgba(0,0,0,.18); }
+  .page-tabs + .page-filters { margin-top:12px; }
+  .demo-banner { background:var(--accent); color:#fff; font-size:13px; font-weight:600; text-align:center;
+    padding:7px 12px; letter-spacing:.01em; }
+  .pipeline-strip { display:flex; align-items:center; gap:6px; margin:14px 0 0; flex-wrap:wrap; }
+  .pipeline-step { display:inline-flex; align-items:center; gap:7px; height:30px; padding:0 12px; border-radius:999px;
+    border:1px solid var(--border); background:var(--panel); color:var(--muted); font-size:12.5px; font-weight:600;
+    text-decoration:none; white-space:nowrap; }
+  .pipeline-step.done { color:var(--good); border-color:rgba(74,222,128,.35); }
+  .pipeline-step.current { color:var(--text); border-color:var(--accent); box-shadow:0 0 0 2px rgba(var(--accent-rgb),.18); }
+  .pipeline-step.next { color:var(--accent); border-style:dashed; }
+  .pipeline-step .dot { width:8px; height:8px; border-radius:50%; background:currentColor; }
+  .pipeline-arrow { color:var(--muted); opacity:.6; }
   .nav-group { margin-top:20px; }
   .nav-group-label { color:var(--text); font-size:15px; font-weight:700; padding:2px 8px 8px;
     display:flex; align-items:center; }
@@ -610,6 +641,18 @@
 {% elif name == 'heart' %}
 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
 {% endif %}{% endmacro %}
+{% macro page_tabs(items, current) %}<div class="page-tabs" role="tablist">{% for href, key, label in items %}<a href="{{ href }}" class="page-tab {{ 'active' if key == current else '' }}" {% if key == current %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</div>{% endmacro %}
+{% macro pipeline_strip(pl, current) %}
+<div class="pipeline-strip" aria-label="Where this story is">
+  {% set steps = [('script', 'Script', pl.script_url), ('shots', 'Shots', pl.shots_url), ('video', 'Video', pl.video_url)] %}
+  {% for key, label, href in steps %}
+    {% if href %}<a href="{{ href }}" class="pipeline-step {{ 'current' if key == current else 'done' }}"><span class="dot"></span>{{ label }}</a>
+    {% else %}<a href="{{ pl.next_urls[key] }}" class="pipeline-step next">+ {{ 'Write the script' if key == 'script' else ('Plan the shots' if key == 'shots' else 'Render the video') }}</a>{% endif %}
+    {% if not loop.last %}<span class="pipeline-arrow">›</span>{% endif %}
+  {% endfor %}
+</div>
+{% endmacro %}
+{% if demo_mode %}<div class="demo-banner">Demo environment &middot; a snapshot of the data, nothing here spends money &middot; the live engine is unchanged</div>{% endif %}
 <div class="app-shell">
   <aside class="sidebar">
     <div class="sidebar-brand">
@@ -636,58 +679,50 @@
     <div class="sidebar-search">
       <input type="text" id="nav-search" placeholder="Search" oninput="filterNav(this.value)">
     </div>
-    <nav class="sidebar-nav">
+    {% set _prod_keys = ('production-inputs','production-format-inputs','production-formats','production-profiles','production-transform','production-spec-creations','production-creations','production-styles','production-reference-clips','production-render','production-pipeline') %}
+    {% set _writing_keys = ('workflow','inputs','books','channels','channels-youtube','transform','creations','profiles') %}
+    {% set nav_mode = 'production' if active in _prod_keys else ('writing' if active in _writing_keys else '') %}
+    <div class="mode-switch" role="tablist" aria-label="Which half of the engine">
+      <button type="button" data-mode="writing" onclick="setNavMode('writing', true)">Writing</button>
+      <button type="button" data-mode="production" onclick="setNavMode('production', true)">Production</button>
+    </div>
+    <nav class="sidebar-nav" data-server-mode="{{ nav_mode }}">
       <a href="{{ url_for('dashboard') }}" class="nav-item top-level {{ 'active' if active=='dashboard' else '' }}">
         <span class="nav-icon">{{ icon('dashboard') }}</span>Dashboard
+      </a>
+      <a href="{{ url_for('activity_page') }}" class="nav-item top-level {{ 'active' if active=='activity' else '' }}">
+        <span class="nav-icon">{{ icon('bar-chart') }}</span>Activity
+        {% if nav_attention_count %}<span class="nav-badge">{{ nav_attention_count }}</span>{% endif %}
       </a>
       <a href="{{ url_for('swipe_page') }}" class="nav-item top-level {{ 'active' if active=='swipe' else '' }}">
         <span class="nav-icon">{{ icon('heart') }}</span>Swipe
       </a>
 
-      <div class="nav-group">
-        <a href="{{ url_for('workflow_start') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='workflow' else '' }}">Studio</a>
-        <a href="{{ url_for('inputs_list') }}" class="nav-item {{ 'active' if active=='inputs' else '' }}"><span class="nav-icon">{{ icon('archive') }}</span>Library</a>
-        <a href="{{ url_for('transform_form') }}" class="nav-item {{ 'active' if active=='transform' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Transform</a>
+      <div class="nav-group" data-mode-group="writing">
+        <a href="{{ url_for('workflow_start') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='workflow' else '' }}">Writing</a>
+        <a href="{{ url_for('inputs_list') }}" class="nav-item {{ 'active' if active in ('inputs','books','channels','channels-youtube') else '' }}"><span class="nav-icon">{{ icon('archive') }}</span>Inputs</a>
+        <a href="{{ url_for('profiles_list') }}" class="nav-item {{ 'active' if active=='profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Profiles</a>
+        <a href="{{ url_for('transform_form') }}" class="nav-item {{ 'active' if active=='transform' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Write a script</a>
         <a href="{{ url_for('creations_list') }}" class="nav-item {{ 'active' if active=='creations' else '' }}">
-          <span class="nav-icon">{{ icon('sparkles') }}</span>Creations
+          <span class="nav-icon">{{ icon('sparkles') }}</span>Scripts
           {% if nav_creations_count %}<span class="nav-badge">{{ nav_creations_count }}</span>{% endif %}
         </a>
       </div>
 
-      <div class="nav-group">
-        <a href="{{ url_for('inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='inputs' else '' }}">Input Library</a>
-        <a href="{{ url_for('books_list') }}" class="nav-item {{ 'active' if active=='books' else '' }}"><span class="nav-icon">{{ icon('book') }}</span>Books</a>
-        <a href="{{ url_for('channels_list') }}" class="nav-item {{ 'active' if active=='channels' else '' }}"><span class="nav-icon">{{ icon('instagram') }}</span>Short Videos, Instagram</a>
-        <a href="{{ url_for('channels_list', platform='YouTube') }}" class="nav-item {{ 'active' if active=='channels-youtube' else '' }}"><span class="nav-icon">{{ icon('youtube') }}</span>Long videos, Youtube</a>
-        <span class="nav-item disabled"><span class="nav-icon">{{ icon('news') }}</span>News</span>
+      <div class="nav-group" data-mode-group="production">
+        <a href="{{ url_for('pipeline_page') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='production-pipeline' else '' }}">Production</a>
+        <a href="{{ url_for('production_inputs_list') }}" class="nav-item {{ 'active' if active in ('production-inputs','production-format-inputs','production-reference-clips','production-styles') else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Inputs</a>
+        <a href="{{ url_for('production_profiles_list') }}" class="nav-item {{ 'active' if active in ('production-profiles','production-formats') else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Profiles</a>
+        <a href="{{ url_for('production_transform_form') }}" class="nav-item {{ 'active' if active=='production-transform' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Plan the shots</a>
+        <a href="{{ url_for('render_page') }}" class="nav-item {{ 'active' if active=='production-render' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Render</a>
+        <a href="{{ url_for('pipeline_page') }}" class="nav-item {{ 'active' if active in ('production-pipeline','production-spec-creations','production-creations') else '' }}"><span class="nav-icon">{{ icon('sparkles') }}</span>Creations</a>
       </div>
 
-      <div class="nav-group">
+      <div class="nav-group nav-group-secondary">
         <a href="{{ url_for('insights_overview') }}" class="nav-group-label nav-group-label-link {{ 'active' if active=='insights' else '' }}">Insights</a>
-        <a href="{{ url_for('profiles_list') }}" class="nav-item {{ 'active' if active=='profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Profiles</a>
         <a href="{{ url_for('subjects_page') }}" class="nav-item {{ 'active' if active=='subjects' else '' }}"><span class="nav-icon">{{ icon('grid') }}</span>Subjects</a>
         <a href="{{ url_for('attributes_page') }}" class="nav-item {{ 'active' if active=='attributes' else '' }}"><span class="nav-icon">{{ icon('tag') }}</span>Attributes</a>
         <a href="{{ url_for('tags_page') }}" class="nav-item {{ 'active' if active=='tags' else '' }}"><span class="nav-icon">{{ icon('hash') }}</span>Term &amp; Example Tags</a>
-      </div>
-
-      <div class="nav-group">
-        <a href="{{ url_for('production_inputs_list') }}" class="nav-group-label nav-group-label-link {{ 'active' if active in ('production-inputs','production-format-inputs','production-formats','production-profiles','production-transform','production-spec-creations','production-creations','production-styles','production-reference-clips') else '' }}">Production</a>
-        {# Ordered inputs → profiles, twice: the visual-only pair first, then
-           the P+S pair. Same shape as the Library, where the evidence and the
-           claim built from it are separate pages. #}
-        {# One import, two readings. A production video is downloaded once and
-           read twice — how it is CUT (PS) and how its visuals and script
-           RELATE (PVS). They stay separate pages because they measure
-           different things and are chosen independently in Transform; only
-           the importing is unified. #}
-        <a href="{{ url_for('production_inputs_list') }}" class="nav-item {{ 'active' if active in ('production-inputs','production-format-inputs') else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Production Inputs</a>
-        <a href="{{ url_for('production_profiles_list') }}" class="nav-item {{ 'active' if active=='production-profiles' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Editing Profiles (PS)</a>
-        <a href="{{ url_for('format_profiles_list') }}" class="nav-item {{ 'active' if active=='production-formats' else '' }}"><span class="nav-icon">{{ icon('users') }}</span>Script + Editing Profiles (PVS)</a>
-        <a href="{{ url_for('production_transform_form') }}" class="nav-item {{ 'active' if active=='production-transform' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Production Transform</a>
-        <a href="{{ url_for('reference_clips_list') }}" class="nav-item {{ 'active' if active=='production-reference-clips' else '' }}"><span class="nav-icon">{{ icon('layers') }}</span>Reference Clips</a>
-        <a href="{{ url_for('render_styles_list') }}" class="nav-item {{ 'active' if active=='production-styles' else '' }}"><span class="nav-icon">{{ icon('wand') }}</span>Render Styles</a>
-        <a href="{{ url_for('production_spec_creations_list') }}" class="nav-item {{ 'active' if active=='production-spec-creations' else '' }}"><span class="nav-icon">{{ icon('sparkles') }}</span>Production Specs Creations</a>
-        <a href="{{ url_for('video_creations_list') }}" class="nav-item {{ 'active' if active=='production-creations' else '' }}"><span class="nav-icon">{{ icon('sparkles') }}</span>Video Creations</a>
       </div>
     </nav>
     <div class="sidebar-advanced">
@@ -994,8 +1029,29 @@
     inner.appendChild(row);
     inner.appendChild(h1);
     if (sub) inner.appendChild(sub);
+    var tabs = main.querySelector('.page-tabs');
+    if (tabs) inner.appendChild(tabs);
     var filters = main.querySelector('.page-filters');
     if (filters) inner.appendChild(filters);
+    var strip = main.querySelector('.pipeline-strip');
+    if (strip) inner.appendChild(strip);
+  })();
+
+  // The sidebar mode. A page inside one half of the engine decides the mode;
+  // on a shared page the last choice is kept.
+  function setNavMode(mode, remember) {
+    var side = document.querySelector('.sidebar');
+    side.setAttribute('data-mode', mode);
+    document.querySelectorAll('.mode-switch button').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    if (remember) { try { localStorage.setItem('ppe-mode', mode); } catch (e) {} }
+  }
+  (function () {
+    var navEl = document.querySelector('.sidebar-nav');
+    var server = navEl ? navEl.getAttribute('data-server-mode') : '';
+    var stored = null; try { stored = localStorage.getItem('ppe-mode'); } catch (e) {}
+    setNavMode(server || stored || 'writing', false);
   })();
 
   // Header filters and row pickers save or apply themselves on change, so

@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Video Creations — PPE Engine{% endblock %}
 {% block content %}
-<h1>Video Creations</h1>
+<h1>Videos</h1>
 <div class="sub">
   Video outputs against a Production Spec profile, including ones assembled from a spec — a status board, not an
   auto-generation pipeline yet. Fill in a generation tool + output link once a video is actually made.
   {{ rows|length }} shown.
 </div>
+{{ page_tabs([(url_for('pipeline_page'), 'pipeline', 'Pipeline'), (url_for('production_spec_creations_list'), 'specs', 'Shot specs'), (url_for('video_creations_list'), 'videos', 'Videos')], 'videos') }}
 
 <a class="btn" href="{{ url_for('video_creation_create') }}">+ New video creation</a>
 

@@ -2,8 +2,9 @@
 {% block title %}Production Spec Profiles — PPE Engine{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
-<h1>Production Spec Profiles</h1>
+<h1>Editing profiles <span class="nav-code" style="vertical-align:middle">PS</span></h1>
 <div class="sub">Shot/pacing fingerprints built from one or more Production Spec Inputs per source — the video-format counterpart to the writing-style Profiles under Insights.</div>
+{{ page_tabs([(url_for('production_profiles_list'), 'ps', 'Editing profiles'), (url_for('format_profiles_list'), 'pvs', 'Script + editing profiles')], 'ps') }}
 <div class="card">
   {% if profiles %}
   <table>

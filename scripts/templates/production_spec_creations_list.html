@@ -1,12 +1,13 @@
 {% extends "base.html" %}
 {% block title %}Production Specs Creations — PPE Engine{% endblock %}
 {% block content %}
-<h1>Production Specs Creations</h1>
+<h1>Shot specs</h1>
 <div class="sub">
   Written production spec documents — shot-by-shot recreation briefs that combine a content source
   video, a writing-style profile, and a Production Spec (shot-pacing) profile, like
   <em>The Militia Divide</em>. Separate from Video Creations, which tracks actual rendered video output.
 </div>
+{{ page_tabs([(url_for('pipeline_page'), 'pipeline', 'Pipeline'), (url_for('production_spec_creations_list'), 'specs', 'Shot specs'), (url_for('video_creations_list'), 'videos', 'Videos')], 'specs') }}
 
 <a class="btn" href="{{ url_for('production_spec_creation_create') }}">+ New spec creation</a>
 

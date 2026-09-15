@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Creations — PPE Engine{% endblock %}
+{% block main_class %}wide{% endblock %}
+{% block content %}
+<h1>Creations</h1>
+<div class="sub">Every story the engine is making, across its three stages: the script, the shot plan, the rendered video. One row per story, whatever stage it is at.</div>
+{{ page_tabs([(url_for('pipeline_page'), 'pipeline', 'Pipeline'), (url_for('production_spec_creations_list'), 'specs', 'Shot specs'), (url_for('video_creations_list'), 'videos', 'Videos')], 'pipeline') }}
+<form method="get" action="{{ url_for('pipeline_page') }}" class="page-filters" data-autosubmit>
+  <input type="text" name="q" value="{{ filters.q }}" placeholder="Search stories or accounts" aria-label="Search">
+  <select name="stage" aria-label="Stage">
+    <option value="">Every stage ({{ counts.all }})</option>
+    <option value="script" {{ 'selected' if filters.stage == 'script' }}>Script only, no shots yet ({{ counts.script }})</option>
+    <option value="shots" {{ 'selected' if filters.stage == 'shots' }}>Shots planned, not rendered ({{ counts.shots }})</option>
+    <option value="video" {{ 'selected' if filters.stage == 'video' }}>Rendered ({{ counts.video }})</option>
+  </select>
+  <span class="page-filters-count">{{ rows|length }} of {{ counts.all }}</span>
+  {% if filters_active %}<a class="page-filters-clear" href="{{ url_for('pipeline_page') }}">Clear filters</a>{% endif %}
+</form>
+<div class="card">
+  {% if rows %}
+  <table class="channels-table">
+    <colgroup><col style="width:34%"><col style="width:14%"><col style="width:16%"><col style="width:16%"><col style="width:20%"></colgroup>
+    <tr><th>Story</th><th>Account</th><th>Script</th><th>Shots</th><th>Video</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td><strong>{{ r.title }}</strong><div class="muted" style="font-size:12px">{{ r.when or '' }}</div></td>
+      <td class="{{ 'muted' if not r.account }}">{{ r.account or '—' }}</td>
+      <td>{% if r.script %}<a class="pipeline-step done" href="{{ url_for('creation_detail', transformation_id=r.script.transformation_id) }}"><span class="dot"></span>Script</a>
+          {% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>{% if r.spec %}<a class="pipeline-step done" href="{{ url_for('production_spec_creation_detail', creation_id=r.spec.creation_id) }}"><span class="dot"></span>{{ (r.spec.target_shot_count_max ~ ' shots') if r.spec.target_shot_count_max else 'Shots' }}</a>
+          {% elif r.script %}<a class="pipeline-step next" href="{{ url_for('production_transform_form') }}">+ Plan the shots</a>
+          {% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>{% if r.video %}<a class="pipeline-step done" href="{{ url_for('video_creation_detail', creation_id=r.video.creation_id) }}"><span class="dot"></span>{{ r.video.status or 'video' }}</a>
+          {% elif r.spec %}<a class="pipeline-step next" href="{{ url_for('render_page', spec=r.spec.creation_id) }}">+ Render</a>
+          {% else %}<span class="muted">—</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% elif filters_active %}
+  <div class="empty-state"><div class="empty-icon">{{ icon('sparkles') }}</div><p>No stories match these filters.</p><a href="{{ url_for('pipeline_page') }}" class="btn secondary">Clear filters</a></div>
+  {% else %}
+  <div class="empty-state"><div class="empty-icon">{{ icon('sparkles') }}</div><p>Nothing made yet. Write a script first, then plan its shots, then render.</p><a href="{{ url_for('transform_form') }}" class="btn">Write a script</a></div>
+  {% endif %}
+</div>
+{% endblock %}

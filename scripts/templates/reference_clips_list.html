@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Reference Clips — PPE Engine{% endblock %}
 {% block content %}
-<h1>Reference Clips</h1>
+<h1>Reference clips</h1>
 <div class="sub">
   Short cuts of each account's real work, handed to a generator as a visual reference. These are
   the strongest input a render style has: given the clip, a generation reproduced an account's
@@ -9,6 +9,7 @@
   Cut at 20s because that is the measured ceiling a reference is accepted at, and away from the
   opening and closing seconds, which are the least representative in any video.
 </div>
+{{ page_tabs([(url_for('production_inputs_list'), 'inputs', 'Production inputs'), (url_for('reference_clips_list'), 'clips', 'Reference clips'), (url_for('render_styles_list'), 'styles', 'Render styles')], 'clips') }}
 
 <div class="card" style="margin-top:14px">
   <strong>{{ n_clips }}</strong> clips · <strong>{{ total_mb }} MB</strong> ·

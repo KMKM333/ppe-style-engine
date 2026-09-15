@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Activity — PPE Engine{% endblock %}
+{% block content %}
+<h1>Activity</h1>
+<div class="sub">What is running, what is waiting for a go, what needs a human, and what was made recently. Every paid step shows its estimate here before it runs and its actual after.</div>
+<div class="flex" style="align-items:flex-start;gap:18px;flex-wrap:wrap">
+  <div style="flex:1 1 420px;min-width:0">
+    <div class="card">
+      <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em">Jobs</div>
+      {% if jobs %}
+      <table style="margin-top:8px">
+        <tr><th>Job</th><th>Status</th><th class="num">Estimate</th><th class="num">Actual</th><th></th></tr>
+        {% for j in jobs %}
+        <tr>
+          <td><strong>{{ j.title }}</strong><div class="muted" style="font-size:12px">{{ j.kind }} · {{ j.created_at }}{% if j.note %} · {{ j.note }}{% endif %}</div></td>
+          <td><span class="pill {{ 'confirmed' if j.status in ('done','running') else ('draft' if j.status in ('queued','demo-held') else 'bad') }}">{{ j.status }}</span></td>
+          <td class="num">{% if j.estimate_usd is not none %}${{ '%.2f'|format(j.estimate_usd) }}{% else %}—{% endif %}</td>
+          <td class="num">{% if j.actual_usd is not none %}${{ '%.2f'|format(j.actual_usd) }}{% else %}—{% endif %}</td>
+          <td style="white-space:nowrap">
+            {% if j.status == 'queued' %}
+            <form method="post" action="{{ url_for('activity_job_action', job_id=j.job_id, action='start') }}" style="display:inline;margin:0"><button type="submit" style="margin:0;padding:5px 10px;font-size:12px">Go</button></form>
+            <form method="post" action="{{ url_for('activity_job_action', job_id=j.job_id, action='cancel') }}" style="display:inline;margin:0"><button type="submit" class="secondary" style="margin:0;padding:5px 10px;font-size:12px">Cancel</button></form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% if queued_total %}<div class="muted" style="font-size:12.5px;margin-top:10px">Queued jobs would spend about ${{ '%.2f'|format(queued_total) }} once started.</div>{% endif %}
+      {% else %}<div class="muted" style="margin-top:8px">Nothing queued or running. Renders you queue from the Render page appear here first.</div>{% endif %}
+    </div>
+    <div class="card">
+      <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em">Recently made</div>
+      <div class="flex" style="gap:18px;flex-wrap:wrap;margin-top:8px">
+        <div style="flex:1 1 200px"><div style="font-weight:600;margin-bottom:6px">Videos</div>
+          {% for v in recent_videos %}<div style="font-size:13px;padding:4px 0"><a href="{{ url_for('video_creation_detail', creation_id=v.creation_id) }}" style="color:var(--text)">{{ v.title or 'Video #' ~ v.creation_id }}</a> <span class="muted">· {{ v.status }}</span></div>{% else %}<div class="muted" style="font-size:13px">None yet</div>{% endfor %}</div>
+        <div style="flex:1 1 200px"><div style="font-weight:600;margin-bottom:6px">Shot plans</div>
+          {% for sp in recent_specs %}<div style="font-size:13px;padding:4px 0"><a href="{{ url_for('production_spec_creation_detail', creation_id=sp.creation_id) }}" style="color:var(--text)">{{ sp.title }}</a> <span class="muted">· {{ sp.status }}</span></div>{% else %}<div class="muted" style="font-size:13px">None yet</div>{% endfor %}</div>
+        <div style="flex:1 1 200px"><div style="font-weight:600;margin-bottom:6px">Scripts</div>
+          {% for t in recent_scripts %}<div style="font-size:13px;padding:4px 0"><a href="{{ url_for('creation_detail', transformation_id=t.transformation_id) }}" style="color:var(--text)">{{ t.generated_title or 'Script #' ~ t.transformation_id }}</a></div>{% else %}<div class="muted" style="font-size:13px">None yet</div>{% endfor %}</div>
+      </div>
+    </div>
+  </div>
+  <div style="flex:0 1 320px;min-width:260px">
+    <div class="card">
+      <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em">Needs a human</div>
+      {% if attention %}
+      <ul style="list-style:none;padding:0;margin:8px 0 0">
+        {% for a in attention %}<li style="padding:7px 0;border-bottom:1px solid var(--border)"><a href="{{ a.url }}" style="color:var(--text);text-decoration:none"><strong>{{ a.count }}</strong> {{ a.label }} <span style="color:var(--accent)">→</span></a></li>{% endfor %}
+      </ul>
+      {% else %}<div class="muted" style="margin-top:8px">Nothing waiting on you.</div>{% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

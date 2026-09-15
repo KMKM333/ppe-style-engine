@@ -12,11 +12,12 @@
   </th>
 {% endmacro %}
 {% block content %}
-<h1>Production Inputs</h1>
+<h1>Production inputs</h1>
 <div class="sub">Videos imported for production, grouped by account. Each is downloaded once and read twice —
   how it's <strong>cut</strong> (feeding <a href="{{ url_for('production_profiles_list') }}">Editing Profiles</a>)
   and how its <strong>visuals and script relate</strong> (feeding
   <a href="{{ url_for('format_profiles_list') }}">Script + Editing Profiles</a>). Click an account to open its videos.</div>
+{{ page_tabs([(url_for('production_inputs_list'), 'inputs', 'Production inputs'), (url_for('reference_clips_list'), 'clips', 'Reference clips'), (url_for('render_styles_list'), 'styles', 'Render styles')], 'inputs') }}
 
 <form method="get" action="{{ url_for('production_inputs_list') }}" class="card">
   <div class="flex">

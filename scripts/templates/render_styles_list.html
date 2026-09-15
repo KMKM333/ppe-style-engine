@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Render Styles — PPE Engine{% endblock %}
 {% block content %}
-<h1>Render Styles</h1>
+<h1>Render styles</h1>
 <div class="sub">
   Named looks the renderer can be asked for. Distinct from a PVS profile (how an account's words
   and pictures relate) and from a visual style brief (what ONE account's frames look like): these
@@ -9,6 +9,7 @@
   look keeps losing. The same beat prompted two ways came back as a flat vector poster and as a
   photographic collage.
 </div>
+{{ page_tabs([(url_for('production_inputs_list'), 'inputs', 'Production inputs'), (url_for('reference_clips_list'), 'clips', 'Reference clips'), (url_for('render_styles_list'), 'styles', 'Render styles')], 'styles') }}
 
 <div class="card" style="margin-top:16px">
   {% if styles %}

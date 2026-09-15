@@ -224,8 +224,87 @@ def inject_unresolved_imports():
 def inject_nav_counts():
     conn = get_conn()
     count = conn.execute("SELECT COUNT(*) FROM transformations").fetchone()[0]
+    attention = _attention_items(conn)
     conn.close()
-    return {"nav_creations_count": count}
+    return {"nav_creations_count": count, "nav_attention_count": sum(a["count"] for a in attention),
+            "demo_mode": DEMO_MODE}
+
+
+DEMO_MODE = os.environ.get("PPE_DEMO") == "1"
+# The renderer's own price list (assemble_video.py), so the Render page can
+# quote what a cut will cost before anything is bought.
+RENDER_IMAGE_USD = {"low": 0.02, "medium": 0.07, "high": 0.19}
+RENDER_REF_USD = {"low": 0.007, "high": 0.06}
+RENDER_TTS_USD_PER_1K = 0.015
+
+
+def _ensure_workflow_tables(conn):
+    """jobs: every paid or long step the engine runs, with its estimate and its
+    actual. render_presets: a style's working render settings, saved once."""
+    conn.execute("""CREATE TABLE IF NOT EXISTS jobs (
+        job_id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, title TEXT, params_json TEXT,
+        status TEXT DEFAULT 'queued', estimate_usd REAL, actual_usd REAL, note TEXT,
+        created_at TEXT DEFAULT (datetime('now')), started_at TEXT, finished_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS render_presets (
+        preset_id INTEGER PRIMARY KEY AUTOINCREMENT, style_slug TEXT NOT NULL, name TEXT NOT NULL,
+        params_json TEXT NOT NULL, created_at TEXT DEFAULT (datetime('now')))""")
+    conn.commit()
+
+
+def _attention_items(conn):
+    """What needs a human: the one inbox the Activity page and the nav badge share."""
+    items = []
+    try:
+        n = conn.execute("SELECT COUNT(*) FROM book_attributes WHERE classified_by = 'needs_review'").fetchone()[0]
+        if n: items.append({"count": n, "label": "book(s) whose classification failed", "url": url_for("books_list", status="needs_review")})
+        n = conn.execute("SELECT COUNT(*) FROM videos v JOIN channels c ON c.channel_id = v.channel_id WHERE c.channel_name = ?", (PLACEHOLDER_CHANNEL_NAME,)).fetchone()[0]
+        if n: items.append({"count": n, "label": "imported video(s) with no channel", "url": url_for("inputs_list")})
+        n = conn.execute("""SELECT COUNT(*) FROM channels c LEFT JOIN style_profiles p ON p.channel_id = c.channel_id
+                            AND (p.media_type IS NULL OR p.media_type != 'ProductionSpec')
+                            WHERE EXISTS (SELECT 1 FROM videos v WHERE v.channel_id = c.channel_id)
+                            AND COALESCE(p.subject, c.subject) IS NULL AND c.channel_name != ?""", (PLACEHOLDER_CHANNEL_NAME,)).fetchone()[0]
+        if n: items.append({"count": n, "label": "channel(s) without a subject", "url": url_for("channels_list", subject="Unassigned")})
+        n = conn.execute("SELECT COUNT(*) FROM production_spec_creations WHERE status = 'failed'").fetchone()[0]
+        if n: items.append({"count": n, "label": "shot spec(s) that failed to generate", "url": url_for("production_spec_creations_list")})
+        _ensure_workflow_tables(conn)
+        n = conn.execute("SELECT COUNT(*) FROM jobs WHERE status = 'queued'").fetchone()[0]
+        if n: items.append({"count": n, "label": "queued job(s) waiting for a go", "url": url_for("activity_page")})
+    except Exception:
+        pass
+    return items
+
+
+def pipeline_for(transformation_id=None, spec_id=None, video_id=None):
+    """A story's three stages, found from whichever id the page has. Used by
+    the pipeline strip on the script, shots and video pages."""
+    conn = get_conn()
+    try:
+        if video_id and not spec_id:
+            r = conn.execute("SELECT spec_creation_id FROM video_creations WHERE creation_id = ?", (video_id,)).fetchone()
+            spec_id = r["spec_creation_id"] if r else None
+        if spec_id and not transformation_id:
+            r = conn.execute("SELECT source_transformation_id FROM production_spec_creations WHERE creation_id = ?", (spec_id,)).fetchone()
+            transformation_id = r["source_transformation_id"] if r else None
+        if transformation_id and not spec_id:
+            r = conn.execute("SELECT creation_id FROM production_spec_creations WHERE source_transformation_id = ? ORDER BY creation_id DESC LIMIT 1", (transformation_id,)).fetchone()
+            spec_id = r["creation_id"] if r else None
+        if spec_id and not video_id:
+            r = conn.execute("SELECT creation_id FROM video_creations WHERE spec_creation_id = ? ORDER BY creation_id DESC LIMIT 1", (spec_id,)).fetchone()
+            video_id = r["creation_id"] if r else None
+    finally:
+        conn.close()
+    return {
+        "script_id": transformation_id, "spec_id": spec_id, "video_id": video_id,
+        "script_url": url_for("creation_detail", transformation_id=transformation_id) if transformation_id else None,
+        "shots_url": url_for("production_spec_creation_detail", creation_id=spec_id) if spec_id else None,
+        "video_url": url_for("video_creation_detail", creation_id=video_id) if video_id else None,
+        "next_urls": {"script": url_for("transform_form"),
+                      "shots": url_for("production_transform_form"),
+                      "video": url_for("render_page", spec=spec_id) if spec_id else url_for("render_page")},
+    }
+
+
+app.jinja_env.globals["pipeline_for"] = pipeline_for
 
 SUBTITLE_EXTS = {"srt", "vtt"}
 
@@ -9244,6 +9323,192 @@ def api_creation_from_text():
                     "score": (scored or {}).get("post_score"),
                     "url": url_for("creation_detail", transformation_id=transformation_id,
                                    _external=True)})
+
+
+# ---------------------------------------------------------------------------
+# The workflow pages: one list of every story across its three stages, one
+# place to render with the cost in front of you, and one activity inbox.
+# ---------------------------------------------------------------------------
+
+@app.route("/production/pipeline")
+def pipeline_page():
+    conn = get_conn()
+    scripts = conn.execute(
+        """SELECT t.transformation_id, t.generated_title, t.generated_at, p.profile_code, c.channel_name
+           FROM transformations t
+           LEFT JOIN style_profiles p ON p.profile_id = t.target_profile_id
+           LEFT JOIN channels c ON c.channel_id = p.channel_id
+           ORDER BY t.generated_at DESC"""
+    ).fetchall()
+    specs = conn.execute(
+        """SELECT sc.creation_id, sc.title, sc.status, sc.created_at, sc.source_transformation_id, sc.source_kind,
+                  sc.target_runtime_sec, sc.target_shot_count_max, pp.profile_code AS production_code
+           FROM production_spec_creations sc
+           LEFT JOIN style_profiles pp ON pp.profile_id = sc.production_profile_id
+           ORDER BY sc.creation_id DESC"""
+    ).fetchall()
+    videos = conn.execute(
+        "SELECT creation_id, title, status, spec_creation_id, output_url, created_at FROM video_creations ORDER BY creation_id DESC"
+    ).fetchall()
+    conn.close()
+    by_script, by_spec = {}, {}
+    for sp in specs:
+        if sp["source_transformation_id"]:
+            by_script.setdefault(sp["source_transformation_id"], []).append(sp)
+    for v in videos:
+        if v["spec_creation_id"]:
+            by_spec.setdefault(v["spec_creation_id"], []).append(v)
+    rows, seen_specs, seen_videos = [], set(), set()
+    for t in scripts:
+        sp = (by_script.get(t["transformation_id"]) or [None])[0]
+        vid = (by_spec.get(sp["creation_id"]) or [None])[0] if sp else None
+        if sp: seen_specs.add(sp["creation_id"])
+        if vid: seen_videos.add(vid["creation_id"])
+        rows.append({"title": t["generated_title"] or f"Script #{t['transformation_id']}", "account": t["channel_name"] or t["profile_code"],
+                     "script": t, "spec": sp, "video": vid, "when": t["generated_at"]})
+    for sp in specs:
+        if sp["creation_id"] in seen_specs: continue
+        vid = (by_spec.get(sp["creation_id"]) or [None])[0]
+        if vid: seen_videos.add(vid["creation_id"])
+        rows.append({"title": sp["title"], "account": sp["production_code"], "script": None, "spec": sp, "video": vid, "when": sp["created_at"]})
+    for v in videos:
+        if v["creation_id"] in seen_videos: continue
+        rows.append({"title": v["title"] or f"Video #{v['creation_id']}", "account": None, "script": None, "spec": None, "video": v, "when": v["created_at"]})
+    counts = {"script": sum(1 for r in rows if r["script"] and not r["spec"]),
+              "shots": sum(1 for r in rows if r["spec"] and not r["video"]),
+              "video": sum(1 for r in rows if r["video"]), "all": len(rows)}
+    stage = request.args.get("stage", "").strip()
+    if stage == "script": rows = [r for r in rows if r["script"] and not r["spec"]]
+    elif stage == "shots": rows = [r for r in rows if r["spec"] and not r["video"]]
+    elif stage == "video": rows = [r for r in rows if r["video"]]
+    q = request.args.get("q", "").strip()
+    if q: rows = [r for r in rows if q.lower() in (r["title"] or "").lower() or q.lower() in (r["account"] or "").lower()]
+    rows.sort(key=lambda r: r["when"] or "", reverse=True)
+    return render_template("pipeline.html", active="production-pipeline", rows=rows, counts=counts,
+                           filters={"stage": stage, "q": q}, filters_active=bool(stage or q))
+
+
+def _spec_estimate(spec, quality, refs, fidelity, audio):
+    """The renderer's estimate, from the spec alone: one image per shot, the
+    style's own stills as reference tokens, speech by the character."""
+    try:
+        beats = json.loads(spec["beats_json"] or "[]")
+    except Exception:
+        beats = []
+    n_shots = spec["target_shot_count_max"] or sum(int(b.get("shot_count_max") or 0) for b in beats) or 12
+    chars = 0
+    for b in beats:
+        pts = b.get("content_points") or []
+        chars += sum(len(str(x)) for x in (pts if isinstance(pts, list) else [pts]))
+    if not chars:
+        chars = int((spec["target_runtime_sec"] or 60) * 16)
+    images = n_shots * RENDER_IMAGE_USD[quality]
+    ref_cost = n_shots * refs * RENDER_REF_USD[fidelity]
+    speech = 0 if not audio else chars / 1000 * RENDER_TTS_USD_PER_1K
+    return {"n_shots": n_shots, "chars": chars, "images": round(images, 2), "refs": round(ref_cost, 2),
+            "speech": round(speech, 2), "total": round(images + ref_cost + speech, 2)}
+
+
+@app.route("/production/render", methods=["GET", "POST"])
+def render_page():
+    conn = get_conn()
+    _ensure_workflow_tables(conn)
+    specs = conn.execute(
+        """SELECT sc.creation_id, sc.title, sc.status, sc.beats_json, sc.target_runtime_sec, sc.target_shot_count_max,
+                  pp.profile_code AS production_code
+           FROM production_spec_creations sc LEFT JOIN style_profiles pp ON pp.profile_id = sc.production_profile_id
+           WHERE sc.status != 'failed' ORDER BY sc.creation_id DESC"""
+    ).fetchall()
+    styles = conn.execute("SELECT slug, name, medium, caption_mode FROM render_styles ORDER BY name").fetchall()
+    presets = conn.execute("SELECT preset_id, style_slug, name, params_json FROM render_presets ORDER BY preset_id DESC").fetchall()
+    form = {
+        "spec": request.values.get("spec", type=int), "style": request.values.get("style", "").strip(),
+        "quality": request.values.get("quality", "low"), "refs": request.values.get("refs", 8, type=int),
+        "fidelity": request.values.get("fidelity", "low"), "caption_look": request.values.get("caption_look", "serif-highlight"),
+        "caption_ink": request.values.get("caption_ink", "dark"), "hero": request.values.get("hero", "").strip(),
+        "audio": request.values.get("audio", "1") == "1",
+    }
+    if form["quality"] not in RENDER_IMAGE_USD: form["quality"] = "low"
+    if form["fidelity"] not in RENDER_REF_USD: form["fidelity"] = "low"
+    form["refs"] = max(0, min(16, form["refs"] or 0))
+    if not form["spec"] and specs: form["spec"] = specs[0]["creation_id"]
+    if not form["style"] and styles: form["style"] = styles[0]["slug"]
+    spec = next((x for x in specs if x["creation_id"] == form["spec"]), None)
+    estimate = _spec_estimate(spec, form["quality"], form["refs"], form["fidelity"], form["audio"]) if spec else None
+    message = None
+    if request.method == "POST":
+        action = request.form.get("action")
+        if action == "queue" and spec and estimate:
+            title = f"Render: {spec['title']} in {form['style']}"
+            conn.execute("INSERT INTO jobs (kind, title, params_json, status, estimate_usd, note) VALUES (?,?,?,?,?,?)",
+                         ("render", title, json.dumps(form), "queued", estimate["total"],
+                          "Demo environment: queued with the estimate shown; the renderer is not started here." if DEMO_MODE else None))
+            conn.commit()
+            conn.close()
+            flash(f"Queued: {title} — estimate ${estimate['total']:.2f}. Nothing is bought until it runs.", "success")
+            return redirect(url_for("activity_page"))
+        if action == "save_preset" and form["style"]:
+            name = (request.form.get("preset_name") or "").strip() or f"{form['style']} preset"
+            conn.execute("INSERT INTO render_presets (style_slug, name, params_json) VALUES (?,?,?)",
+                         (form["style"], name, json.dumps({k: form[k] for k in ("quality", "refs", "fidelity", "caption_look", "caption_ink", "audio")})))
+            conn.commit()
+            presets = conn.execute("SELECT preset_id, style_slug, name, params_json FROM render_presets ORDER BY preset_id DESC").fetchall()
+            message = f"Saved preset “{name}” for {form['style']}."
+    conn.close()
+    preset_rows = []
+    for pr in presets:
+        try: preset_rows.append({**dict(pr), "params": json.loads(pr["params_json"])})
+        except Exception: pass
+    return render_template("render_page.html", active="production-render", specs=specs, styles=styles, form=form,
+                           spec=spec, estimate=estimate, presets=preset_rows, message=message)
+
+
+@app.route("/production/render/preset/<int:preset_id>/apply")
+def render_preset_apply(preset_id):
+    conn = get_conn(); _ensure_workflow_tables(conn)
+    pr = conn.execute("SELECT * FROM render_presets WHERE preset_id = ?", (preset_id,)).fetchone()
+    conn.close()
+    if not pr: abort(404)
+    params = json.loads(pr["params_json"])
+    params["audio"] = "1" if params.get("audio", True) else "0"
+    return redirect(url_for("render_page", style=pr["style_slug"], spec=request.args.get("spec"), **params))
+
+
+@app.route("/activity")
+def activity_page():
+    conn = get_conn()
+    _ensure_workflow_tables(conn)
+    jobs = conn.execute("SELECT * FROM jobs ORDER BY job_id DESC LIMIT 50").fetchall()
+    attention = _attention_items(conn)
+    recent_videos = conn.execute(
+        """SELECT vc.creation_id, vc.title, vc.status, vc.created_at, vc.output_url, p.profile_code
+           FROM video_creations vc LEFT JOIN style_profiles p ON p.profile_id = vc.target_profile_id
+           ORDER BY vc.creation_id DESC LIMIT 10"""
+    ).fetchall()
+    recent_specs = conn.execute(
+        "SELECT creation_id, title, status, created_at FROM production_spec_creations ORDER BY creation_id DESC LIMIT 10"
+    ).fetchall()
+    recent_scripts = conn.execute(
+        "SELECT transformation_id, generated_title, generated_at FROM transformations ORDER BY generated_at DESC LIMIT 10"
+    ).fetchall()
+    conn.close()
+    queued = [j for j in jobs if j["status"] == "queued"]
+    return render_template("activity.html", active="activity", jobs=jobs, attention=attention,
+                           queued_total=round(sum(j["estimate_usd"] or 0 for j in queued), 2),
+                           recent_videos=recent_videos, recent_specs=recent_specs, recent_scripts=recent_scripts)
+
+
+@app.route("/activity/jobs/<int:job_id>/<string:action>", methods=["POST"])
+def activity_job_action(job_id, action):
+    conn = get_conn(); _ensure_workflow_tables(conn)
+    if action == "cancel":
+        conn.execute("UPDATE jobs SET status = 'cancelled', finished_at = datetime('now') WHERE job_id = ? AND status = 'queued'", (job_id,))
+    elif action == "start":
+        conn.execute("UPDATE jobs SET status = ?, started_at = datetime('now'), note = ? WHERE job_id = ? AND status = 'queued'",
+                     ("demo-held" if DEMO_MODE else "running",
+                      "Demo environment: this is where the renderer would start. Nothing was spent." if DEMO_MODE else None, job_id))
+    conn.commit(); conn.close()
+    return redirect(url_for("activity_page"))
 
 
 if __name__ == "__main__":

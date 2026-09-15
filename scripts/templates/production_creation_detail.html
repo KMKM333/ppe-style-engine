@@ -16,6 +16,7 @@
     <button type="submit" class="btn secondary" style="margin:0;padding:3px 10px;font-size:12.5px;vertical-align:middle">{{ 'Regenerate' if creation.status == 'generated' else 'Retry generation' }}</button>
   </form>
 </div>
+{{ pipeline_strip(pipeline_for(spec_id=creation.creation_id), 'shots') }}
 
 {% if creation.status == 'failed' %}
 <div class="card" style="border-color:#f87171;margin-top:14px">

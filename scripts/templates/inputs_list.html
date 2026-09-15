@@ -14,6 +14,7 @@
 {% block content %}
 <h1>Inputs</h1>
 <div class="sub">Everything ingested into the engine — Instagram videos and books so far, with YouTube videos and news articles to follow. {{ rows|length }} of {{ total }} shown.</div>
+{{ page_tabs([(url_for('inputs_list'), 'all', 'Everything'), (url_for('books_list'), 'books', 'Books'), (url_for('channels_list'), 'shorts', 'Short videos'), (url_for('channels_list', platform='YouTube'), 'long', 'Long videos')], 'all') }}
 
 <div class="card">
   <div class="muted">Total inputs ingested</div>

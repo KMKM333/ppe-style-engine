@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Render — PPE Engine{% endblock %}
+{% block content %}
+<h1>Render</h1>
+<div class="sub">Turn a shot plan into a video in a saved look. The cost is quoted before anything is bought; a preset remembers the settings that worked for a style.</div>
+{% if message %}<div class="card" style="border-color:var(--good);color:var(--good)">{{ message }}</div>{% endif %}
+<form method="post" action="{{ url_for('render_page') }}" id="render-form">
+<div class="flex" style="align-items:flex-start;gap:18px;flex-wrap:wrap">
+  <div class="card" style="flex:1 1 420px;min-width:0">
+    <label for="spec">Shot plan</label>
+    <select id="spec" name="spec" onchange="this.form.action.value='estimate';this.form.submit()">
+      {% for sp in specs %}<option value="{{ sp.creation_id }}" {{ 'selected' if form.spec == sp.creation_id }}>{{ sp.title }}{% if sp.production_code %} · {{ sp.production_code }}{% endif %}{% if sp.status != 'generated' %} · {{ sp.status }}{% endif %}</option>{% endfor %}
+      {% if not specs %}<option value="">No shot plans yet — plan the shots first</option>{% endif %}
+    </select>
+    <label for="style">Render style</label>
+    <select id="style" name="style">
+      {% for st in styles %}<option value="{{ st.slug }}" {{ 'selected' if form.style == st.slug }}>{{ st.name }}{% if st.medium %} — {{ st.medium|truncate(60) }}{% endif %}</option>{% endfor %}
+      {% if not styles %}<option value="">No render styles yet</option>{% endif %}
+    </select>
+    <div class="flex" style="gap:14px;flex-wrap:wrap">
+      <div style="flex:1 1 140px"><label for="quality">Panel quality</label>
+        <select id="quality" name="quality">{% for q, usd in [('low','low · $0.02'),('medium','medium · $0.07'),('high','high · $0.19')] %}<option value="{{ q }}" {{ 'selected' if form.quality == q }}>{{ usd }} / panel</option>{% endfor %}</select></div>
+      <div style="flex:1 1 140px"><label for="refs">Reference stills per panel</label>
+        <select id="refs" name="refs">{% for n in [0,4,6,8,12] %}<option value="{{ n }}" {{ 'selected' if form.refs == n }}>{{ n }}{% if n == 0 %} — text prompt only{% endif %}</option>{% endfor %}</select></div>
+      <div style="flex:1 1 140px"><label for="fidelity">Reference fidelity</label>
+        <select id="fidelity" name="fidelity"><option value="low" {{ 'selected' if form.fidelity == 'low' }}>low · $0.007 / ref</option><option value="high" {{ 'selected' if form.fidelity == 'high' }}>high · $0.06 / ref</option></select></div>
+    </div>
+    <div class="flex" style="gap:14px;flex-wrap:wrap">
+      <div style="flex:1 1 140px"><label for="caption_look">Caption look</label>
+        <select id="caption_look" name="caption_look"><option value="serif-highlight" {{ 'selected' if form.caption_look == 'serif-highlight' }}>Serif on yellow highlight</option><option value="anton" {{ 'selected' if form.caption_look == 'anton' }}>Condensed sans on dark box</option></select></div>
+      <div style="flex:1 1 140px"><label for="caption_ink">Caption ink</label>
+        <select id="caption_ink" name="caption_ink"><option value="dark" {{ 'selected' if form.caption_ink == 'dark' }}>Dark — for paper, whiteboard</option><option value="light" {{ 'selected' if form.caption_ink == 'light' }}>Light — for dark footage</option></select></div>
+      <div style="flex:1 1 140px"><label for="audio">Speech</label>
+        <select id="audio" name="audio"><option value="1" {{ 'selected' if form.audio }}>Generate the voice</option><option value="0" {{ 'selected' if not form.audio }}>No audio</option></select></div>
+    </div>
+    <label for="hero">Hero shots (shot numbers that should really move, comma-separated)</label>
+    <input type="text" id="hero" name="hero" value="{{ form.hero }}" placeholder="e.g. 7, 9">
+    <input type="hidden" name="action" value="estimate">
+    <div class="flex" style="gap:10px;flex-wrap:wrap">
+      <button type="submit" class="secondary" onclick="this.form.action.value='estimate'">Re-estimate</button>
+      <button type="submit" onclick="this.form.action.value='queue'" {{ '' if (spec and estimate) else 'disabled' }}>Queue this render{% if estimate %} · ${{ '%.2f'|format(estimate.total) }}{% endif %}</button>
+    </div>
+  </div>
+  <div style="flex:0 1 320px;min-width:260px">
+    <div class="card">
+      <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em">Estimate before you spend</div>
+      {% if estimate %}
+      <div style="font-size:34px;font-weight:700;margin:6px 0 10px">${{ '%.2f'|format(estimate.total) }}</div>
+      <table style="font-size:13px">
+        <tr><td class="muted">Panels</td><td class="num">{{ estimate.n_shots }} × ${{ '%.2f'|format(form.quality == 'low' and 0.02 or (form.quality == 'medium' and 0.07 or 0.19)) }}</td><td class="num">${{ '%.2f'|format(estimate.images) }}</td></tr>
+        <tr><td class="muted">Reference stills</td><td class="num">{{ form.refs }} / panel</td><td class="num">${{ '%.2f'|format(estimate.refs) }}</td></tr>
+        <tr><td class="muted">Speech</td><td class="num">{{ estimate.chars }} chars</td><td class="num">${{ '%.2f'|format(estimate.speech) }}</td></tr>
+      </table>
+      <div class="muted" style="font-size:12px;margin-top:10px">Hero shots are billed separately in Higgsfield credits (about 12.5 per 5 s shot at 480p).{% if form.refs == 0 %} With 0 reference stills the panels ignore the style's own frames.{% endif %}</div>
+      {% else %}<div class="muted" style="margin-top:8px">Pick a shot plan to see the cost.</div>{% endif %}
+    </div>
+    <div class="card">
+      <div class="muted" style="font-size:12px;text-transform:uppercase;letter-spacing:.04em">Presets</div>
+      {% if presets %}
+      <ul style="list-style:none;padding:0;margin:8px 0 0">
+        {% for pr in presets %}
+        <li style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1;min-width:0"><strong>{{ pr.name }}</strong><div class="muted" style="font-size:12px">{{ pr.style_slug }} · {{ pr.params.quality }} · {{ pr.params.refs }} refs · {{ pr.params.caption_look }}/{{ pr.params.caption_ink }}</div></div>
+          <a class="btn secondary" style="margin:0;padding:5px 10px;font-size:12px" href="{{ url_for('render_preset_apply', preset_id=pr.preset_id, spec=form.spec) }}">Apply</a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}<div class="muted" style="margin-top:8px">None yet. Set the controls the way a style needs them, then save.</div>{% endif %}
+      <label for="preset_name">Save the current settings as</label>
+      <input type="text" id="preset_name" name="preset_name" placeholder="e.g. sovra paper, dark ink">
+      <button type="submit" class="secondary" style="margin-top:10px" onclick="this.form.action.value='save_preset'">Save preset</button>
+    </div>
+  </div>
+</div>
+</form>
+{% endblock %}

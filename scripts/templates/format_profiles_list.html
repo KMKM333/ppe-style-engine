@@ -2,13 +2,14 @@
 {% block title %}Production P+S Profiles — PPE Engine{% endblock %}
 {% block main_class %}wide{% endblock %}
 {% block content %}
-<h1>Production P+S Profiles</h1>
+<h1>Script + editing profiles <span class="nav-code" style="vertical-align:middle">PVS</span></h1>
 <div class="sub">
   Format profiles (PVS.*) — how a creator's <strong>visuals</strong> and <strong>script</strong> relate to each other.
   Separate from both the writing-style Library (A.*/BK.*, what a video says) and Production Profiles
   (PS.*, how it's cut), because these attributes are <em>relational</em>: they don't exist in either pipeline alone.
   Built from the videos on <a href="{{ url_for('format_inputs_list') }}">Production Inputs (P+S)</a>.
 </div>
+{{ page_tabs([(url_for('production_profiles_list'), 'ps', 'Editing profiles'), (url_for('format_profiles_list'), 'pvs', 'Script + editing profiles')], 'pvs') }}
 
 {% if profiles | rejectattr('n_inputs_analysed') | list %}
 <div class="card" style="border-color:rgba(var(--accent-rgb),.35); background:rgba(var(--accent-rgb),.06)">

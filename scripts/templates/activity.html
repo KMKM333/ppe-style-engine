@@ -12,14 +12,20 @@
         <tr><th>Job</th><th>Status</th><th class="num">Estimate</th><th class="num">Actual</th><th></th></tr>
         {% for j in jobs %}
         <tr>
-          <td><strong>{{ j.title }}</strong><div class="muted" style="font-size:12px">{{ j.kind }} · {{ j.created_at }}{% if j.note %} · {{ j.note }}{% endif %}</div></td>
+          <td><strong>{{ j.title }}</strong><div class="muted" style="font-size:12px">{{ j.kind }} · {{ j.created_at }}{% if j.note %} · {{ j.note }}{% endif %}</div>
+            {% if j.command and j.status in ('queued', 'running') %}<code style="display:block;margin-top:6px;font-size:11.5px;white-space:pre-wrap;word-break:break-all;background:var(--panel2);padding:6px 8px;border-radius:6px">{{ j.command }}</code>{% endif %}</td>
           <td><span class="pill {{ 'confirmed' if j.status in ('done','running') else ('draft' if j.status in ('queued','demo-held') else 'bad') }}">{{ j.status }}</span></td>
           <td class="num">{% if j.estimate_usd is not none %}${{ '%.2f'|format(j.estimate_usd) }}{% else %}—{% endif %}</td>
           <td class="num">{% if j.actual_usd is not none %}${{ '%.2f'|format(j.actual_usd) }}{% else %}—{% endif %}</td>
           <td style="white-space:nowrap">
             {% if j.status == 'queued' %}
-            <form method="post" action="{{ url_for('activity_job_action', job_id=j.job_id, action='start') }}" style="display:inline;margin:0"><button type="submit" style="margin:0;padding:5px 10px;font-size:12px">Go</button></form>
+            <form method="post" action="{{ url_for('activity_job_action', job_id=j.job_id, action='start') }}" style="display:inline;margin:0"><button type="submit" style="margin:0;padding:5px 10px;font-size:12px" title="Mark it started on the VPS">Started</button></form>
             <form method="post" action="{{ url_for('activity_job_action', job_id=j.job_id, action='cancel') }}" style="display:inline;margin:0"><button type="submit" class="secondary" style="margin:0;padding:5px 10px;font-size:12px">Cancel</button></form>
+            {% elif j.status in ('running', 'demo-held') %}
+            <form method="post" action="{{ url_for('activity_job_action', job_id=j.job_id, action='done') }}" style="display:inline-flex;gap:6px;align-items:center;margin:0">
+              <input type="text" name="actual_usd" inputmode="decimal" placeholder="actual $" style="width:84px;height:28px;padding:0 8px;font-size:12px">
+              <button type="submit" style="margin:0;padding:5px 10px;font-size:12px">Done</button>
+            </form>
             {% endif %}
           </td>
         </tr>

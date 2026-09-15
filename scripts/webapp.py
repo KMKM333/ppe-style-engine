@@ -9440,8 +9440,15 @@ def render_page():
         action = request.form.get("action")
         if action == "queue" and spec and estimate:
             title = f"Render: {spec['title']} in {form['style']}"
+            # The renderer lives on the VPS beside the source videos, so a queued
+            # job carries the exact command to run there; Activity shows it.
+            cmd = (f"python3 assemble_video.py --creation_id {spec['creation_id']} --style {form['style']} "
+                   f"--caption-look {form['caption_look']} --caption-ink {form['caption_ink']} --quality {form['quality']} "
+                   f"--input-fidelity {form['fidelity']} --reference-frames {form['refs']}"
+                   + (f" --hero {form['hero'].replace(' ', '')}" if form["hero"] else "") + ("" if form["audio"] else " --no-audio"))
+            params = dict(form, command=cmd)
             conn.execute("INSERT INTO jobs (kind, title, params_json, status, estimate_usd, note) VALUES (?,?,?,?,?,?)",
-                         ("render", title, json.dumps(form), "queued", estimate["total"],
+                         ("render", title, json.dumps(params), "queued", estimate["total"],
                           "Demo environment: queued with the estimate shown; the renderer is not started here." if DEMO_MODE else None))
             conn.commit()
             conn.close()
@@ -9493,6 +9500,7 @@ def activity_page():
     ).fetchall()
     conn.close()
     queued = [j for j in jobs if j["status"] == "queued"]
+    jobs = [dict(j, command=(json.loads(j["params_json"] or "{}").get("command") if j["params_json"] else None)) for j in jobs]
     return render_template("activity.html", active="activity", jobs=jobs, attention=attention,
                            queued_total=round(sum(j["estimate_usd"] or 0 for j in queued), 2),
                            recent_videos=recent_videos, recent_specs=recent_specs, recent_scripts=recent_scripts)
@@ -9506,7 +9514,12 @@ def activity_job_action(job_id, action):
     elif action == "start":
         conn.execute("UPDATE jobs SET status = ?, started_at = datetime('now'), note = ? WHERE job_id = ? AND status = 'queued'",
                      ("demo-held" if DEMO_MODE else "running",
-                      "Demo environment: this is where the renderer would start. Nothing was spent." if DEMO_MODE else None, job_id))
+                      "Demo environment: this is where the renderer would start. Nothing was spent." if DEMO_MODE
+                      else "Started on the VPS with the command below.", job_id))
+    elif action == "done":
+        actual = request.form.get("actual_usd", type=float)
+        conn.execute("UPDATE jobs SET status = 'done', finished_at = datetime('now'), actual_usd = COALESCE(?, actual_usd) WHERE job_id = ? AND status IN ('queued', 'running', 'demo-held')",
+                     (actual, job_id))
     conn.commit(); conn.close()
     return redirect(url_for("activity_page"))
 

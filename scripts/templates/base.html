@@ -237,6 +237,15 @@
      are on mobile, and scrolls cleanly inside .card's own overflow-x:auto
      rather than corrupting the layout. */
   @media (max-width: 860px) { .inputs-table { table-layout: auto; } }
+  /* The channel pages (Short videos, Long videos): seven columns on fixed
+     percentages so Channel / Videos / Subject / Analysed / Profile / Status
+     keep one steady rhythm instead of each auto-sizing off its own content,
+     which pushed the subject picker up against the video count. */
+  .channels-table { table-layout: fixed; }
+  .channels-table th { white-space: nowrap; }
+  .channels-table td { overflow-wrap: anywhere; vertical-align: middle; }
+  .channels-table .subject-picker select { max-width: 100%; }
+  @media (max-width: 860px) { .channels-table { table-layout: auto; } }
   table.attr-table col.col-attribute { width: 19%; }
   table.attr-table col.col-type { width: 17%; }
   table.attr-table col.col-description { width: 25%; }

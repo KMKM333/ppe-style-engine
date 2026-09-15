@@ -35,12 +35,21 @@
 </form>
 <div class="card">
   {% if channels %}
-  <table>
-    <tr><th>Channel</th><th class="num">Videos</th><th>Subject</th><th>Analysed</th><th>Profile</th><th>Status</th><th></th></tr>
+  <table class="channels-table">
+    <colgroup>
+      <col style="width:23%">
+      <col style="width:9%">
+      <col style="width:19%">
+      <col style="width:15%">
+      <col style="width:10%">
+      <col style="width:11%">
+      <col style="width:13%">
+    </colgroup>
+    <tr><th>Channel</th><th>Videos</th><th>Subject</th><th>Analysed</th><th>Profile</th><th>Status</th><th></th></tr>
     {% for c in channels %}
     <tr class="channel-row" data-entity="channel" data-id="{{ c.channel_id }}" data-name="{{ c.channel_name }}" onclick="toggleChannelVideos({{ c.channel_id }})" style="cursor:pointer">
       <td><span id="chev-{{ c.channel_id }}" class="muted" style="display:inline-block;width:14px">▸</span><strong>{{ c.channel_name }}</strong></td>
-      <td class="num">{{ c.n_videos }}</td>
+      <td style="font-variant-numeric:tabular-nums">{{ c.n_videos }}</td>
       <td onclick="event.stopPropagation()">
         <form method="post" action="{{ url_for('channel_set_subject', channel_id=c.channel_id) }}" class="subject-picker" data-autosubmit>
           <select name="subject" class="{{ '' if c.subject else 'is-empty' }}" title="Set this channel's subject{{ ' (saved on its profile ' ~ c.profile_code ~ ')' if c.profile_code else '' }}" aria-label="Subject for {{ c.channel_name }}">
